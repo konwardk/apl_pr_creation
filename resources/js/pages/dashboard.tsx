@@ -22,6 +22,7 @@ import {
     Filter,
     ShieldCheck,
     Layers,
+    Package,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -110,6 +111,8 @@ export default function Dashboard({
 }: DashboardProps) {
     const { auth } = usePage().props as { auth: { user: User } };
     const user = auth?.user;
+    const isSuperAdmin = user?.is_superadmin || user?.role?.name === 'superadmin';
+    const isEmployee = user?.is_employee || user?.role?.name === 'employee';
 
     const [activeTab, setActiveTab] = useState('overview');
     const [searchQuery, setSearchQuery] = useState('');
@@ -165,13 +168,13 @@ export default function Dashboard({
 
     return (
         <SapAppLayout
-            title="Dashboard - SAP S/4HANA Cloud PR Portal"
+            title="Dashboard - Assam Petro-Chemicals Ltd."
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            onOpenCreatePr={() => setIsCreateOpen(true)}
+            onOpenCreatePr={() => router.visit('/purchase-requisitions/create')}
             onSearch={setSearchQuery}
         >
-            <Head title="SAP Public Cloud - Purchase Requisition Portal" />
+            <Head title="Dashboard - Assam Petro-Chemicals Ltd." />
 
             {/* TAB: OVERVIEW / REQUISITIONS */}
             {(activeTab === 'overview' || activeTab === 'requisitions') && (
@@ -182,27 +185,35 @@ export default function Dashboard({
                             <div>
                                 <div className="flex items-center gap-2">
                                     <h1 className="text-xl font-bold tracking-tight text-[#1c2d42]">
-                                        Procurement Overview & Purchase Requisitions
+                                        {isEmployee ? 'My Purchase Requisitions' : 'Procurement Overview & Purchase Requisitions'}
                                     </h1>
                                     <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-[#0070f2]">
-                                        Public Cloud 2408
+                                        {isEmployee ? (user?.department?.name || 'Requester') : 'Public Cloud 2408'}
                                     </span>
                                 </div>
                                 <p className="mt-1 text-xs text-[#556b82]">
-                                    Hello, <strong className="text-[#1c2d42]">{user?.name || 'Requester'}</strong>. Dual-posting active: all requisitions are recorded in local database (<code className="font-mono text-xs">apl_pr_db</code>) and synced to SAP Public Cloud via OData V4.
+                                    {isEmployee ? (
+                                        <>
+                                            Welcome, <strong className="text-[#1c2d42]">{user?.name}</strong>. Here you can create, view, and track the status of your purchase requisitions for Assam Petro-Chemicals Ltd.
+                                        </>
+                                    ) : (
+                                        <>
+                                            Hello, <strong className="text-[#1c2d42]">{user?.name || 'Requester'}</strong>. Dual-posting active: all requisitions are recorded in local database (<code className="font-mono text-xs">apl_pr_db</code>) and synced to SAP Public Cloud via OData V4.
+                                        </>
+                                    )}
                                 </p>
                             </div>
 
                             <div className="flex items-center gap-2.5">
                                 <button
                                     type="button"
-                                    onClick={() => setIsCreateOpen(true)}
+                                    onClick={() => router.visit('/purchase-requisitions/create')}
                                     className="flex items-center gap-2 rounded-md bg-[#0070f2] px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884]"
                                 >
                                     <Plus className="h-4 w-4" />
                                     <span>Create Requisition</span>
                                 </button>
-                                {stats.pending_sync_count > 0 && (
+                                {!isEmployee && stats.pending_sync_count > 0 && (
                                     <button
                                         type="button"
                                         onClick={handleSyncAllPending}
@@ -395,8 +406,20 @@ export default function Dashboard({
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                     {filteredPrs.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="py-8 text-center text-xs text-[#556b82]">
-                                                No Purchase Requisitions match the selected criteria.
+                                            <td colSpan={7} className="py-12 text-center text-xs text-[#556b82]">
+                                                <Package className="mx-auto h-10 w-10 text-slate-300 mb-3" />
+                                                <p className="font-semibold text-slate-700 text-sm">No Purchase Requisitions Found</p>
+                                                <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                                                    Get started by creating your first purchase requisition for SAP S/4HANA Cloud with all required fields.
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => router.visit('/purchase-requisitions/create')}
+                                                    className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-[#0070f2] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] transition-colors"
+                                                >
+                                                    <Plus className="h-3.5 w-3.5" />
+                                                    <span>Create Purchase Requisition</span>
+                                                </button>
                                             </td>
                                         </tr>
                                     ) : (
@@ -430,6 +453,11 @@ export default function Dashboard({
                                                             </span>
                                                         ) : (
                                                             <span>Standard PR (Type {pr.pr_type})</span>
+                                                        )}
+                                                        {pr.user && (
+                                                            <span className="text-slate-400 ml-1.5 font-normal">
+                                                                • By: <strong className="text-slate-600 font-medium">{pr.user.name}</strong> {pr.user.employee_id ? `(${pr.user.employee_id})` : ''}
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </td>
@@ -500,7 +528,7 @@ export default function Dashboard({
                                                             <span>Payload</span>
                                                         </button>
 
-                                                        {pr.sap_sync_status !== 'synced' && (
+                                                        {!isEmployee && pr.sap_sync_status !== 'synced' && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleSyncPr(pr)}
@@ -703,6 +731,3 @@ export default function Dashboard({
         </SapAppLayout>
     );
 }
-
-// Override default layout to use full-fidelity SAP Horizon layout
-Dashboard.layout = (page: React.ReactNode) => page;

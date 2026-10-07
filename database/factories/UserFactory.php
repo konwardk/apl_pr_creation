@@ -33,6 +33,7 @@ class UserFactory extends Factory
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
+            'is_active' => true,
         ];
     }
 
@@ -55,6 +56,27 @@ class UserFactory extends Factory
             'two_factor_secret' => encrypt('secret'),
             'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-1'])),
             'two_factor_confirmed_at' => now(),
+        ]);
+    }
+
+    public function superadmin(): static
+    {
+        return $this->state(fn () => [
+            'role_id' => \App\Models\Role::firstOrCreate(['name' => 'superadmin'], ['display_name' => 'Super Administrator'])->id,
+        ]);
+    }
+
+    public function admin(): static
+    {
+        return $this->state(fn () => [
+            'role_id' => \App\Models\Role::firstOrCreate(['name' => 'admin'], ['display_name' => 'Administrator'])->id,
+        ]);
+    }
+
+    public function employee(): static
+    {
+        return $this->state(fn () => [
+            'role_id' => \App\Models\Role::firstOrCreate(['name' => 'employee'], ['display_name' => 'Employee'])->id,
         ]);
     }
 }

@@ -56,12 +56,6 @@ export default function AuthSimpleLayout({
                                 <p className="mt-1 text-xs text-[#556b82]">
                                     {description || 'Sign in to access Purchase Requisitions for SAP Public Cloud'}
                                 </p>
-
-                                {/* Target System Pill */}
-                                <div className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-[#556b82]">
-                                    <span className="font-semibold text-[#0070f2]">OData V4:</span>
-                                    <span>API_PURCHASEREQUISITION_PROCESS_SRV</span>
-                                </div>
                             </div>
 
                             {/* Form Children */}
@@ -81,8 +75,6 @@ export default function AuthSimpleLayout({
                         <span className="hover:text-white cursor-pointer transition-colors">Privacy Statement</span>
                         <span>•</span>
                         <span className="hover:text-white cursor-pointer transition-colors">Terms of Use</span>
-                        <span>•</span>
-                        <span className="text-slate-500">Dual-posting (MySQL + SAP OData V4)</span>
                     </div>
                 </div>
             </footer>

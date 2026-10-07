@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Head } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import SapShellBar from '@/components/sap/SapShellBar';
 import {
     Home,
@@ -12,7 +12,9 @@ import {
     Database,
     Network,
     X,
+    Users,
 } from 'lucide-react';
+import type { User } from '@/types';
 
 interface SapAppLayoutProps {
     children: React.ReactNode;
@@ -28,17 +30,50 @@ export default function SapAppLayout({
     title = 'Purchase Requisitions - SAP S/4HANA Cloud',
     activeTab = 'overview',
     onTabChange,
-    onOpenCreatePr,
+    onOpenCreatePr = () => router.visit('/purchase-requisitions/create'),
     onSearch,
 }: SapAppLayoutProps) {
     const [isConfigOpen, setIsConfigOpen] = useState(false);
+    const { auth } = usePage().props as { auth?: { user?: User } };
+    const user = auth?.user;
 
-    const tabs = [
-        { id: 'overview', label: 'Overview (My Home)', icon: Home },
-        { id: 'requisitions', label: 'Purchase Requisitions', icon: FileSpreadsheet },
-        { id: 'sync-monitor', label: 'SAP OData V4 Monitor', icon: Server },
-        { id: 'architecture', label: 'Architecture & Dual-Posting', icon: Layers },
-    ];
+    const isSuperAdmin = user?.is_superadmin || user?.role?.name === 'superadmin';
+    const isEmployee = user?.is_employee || user?.role?.name === 'employee';
+
+    // Role-dependent spaces / tabs
+    const tabs = isEmployee
+        ? [
+              { id: 'overview', label: 'My Home & Overview', icon: Home, href: '/dashboard' },
+              { id: 'requisitions', label: 'My Requisitions', icon: FileSpreadsheet, href: '/dashboard' },
+          ]
+        : [
+              { id: 'overview', label: 'Overview (My Home)', icon: Home, href: '/dashboard' },
+              { id: 'requisitions', label: 'Purchase Requisitions', icon: FileSpreadsheet, href: '/dashboard' },
+              { id: 'sync-monitor', label: 'SAP OData V4 Monitor', icon: Server, href: '/dashboard' },
+              { id: 'architecture', label: 'Architecture & Dual-Posting', icon: Layers, href: '/dashboard' },
+              ...(isSuperAdmin
+                  ? [
+                        { id: 'users', label: 'User Management', icon: Users, href: '/users' },
+                    ]
+                  : []),
+          ];
+
+    const handleTabClick = (tab: { id: string; href?: string }) => {
+        if (tab.id === 'users') {
+            router.visit('/users');
+            return;
+        }
+
+        // If currently on another page (e.g. /users or /purchase-requisitions/create), visit /dashboard
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/dashboard')) {
+            router.visit('/dashboard');
+            return;
+        }
+
+        if (onTabChange) {
+            onTabChange(tab.id);
+        }
+    };
 
     return (
         <div className="flex min-h-screen flex-col bg-[#f5f6f8] text-[#1c2d42] font-sans antialiased selection:bg-[#0070f2] selection:text-white">
@@ -63,7 +98,7 @@ export default function SapAppLayout({
                                 <button
                                     key={tab.id}
                                     type="button"
-                                    onClick={() => onTabChange && onTabChange(tab.id)}
+                                    onClick={() => handleTabClick(tab)}
                                     className={`group flex items-center gap-2 border-b-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap transition-all ${
                                         isActive
                                             ? 'border-[#0070f2] text-[#0070f2]'
@@ -79,15 +114,23 @@ export default function SapAppLayout({
 
                     {/* Quick System Environment Tag */}
                     <div className="hidden lg:flex items-center gap-3 text-xs text-[#556b82]">
-                        <div className="flex items-center gap-1.5">
-                            <Database className="h-3.5 w-3.5 text-emerald-600" />
-                            <span>DB: <strong className="text-[#1c2d42]">MySQL apl_pr_db</strong></span>
-                        </div>
-                        <span className="text-slate-300">|</span>
-                        <div className="flex items-center gap-1.5">
-                            <Network className="h-3.5 w-3.5 text-[#0070f2]" />
-                            <span>OData: <strong className="text-[#1c2d42]">V4 JSON API</strong></span>
-                        </div>
+                        {!isEmployee ? (
+                            <>
+                                <div className="flex items-center gap-1.5">
+                                    <Database className="h-3.5 w-3.5 text-emerald-600" />
+                                    <span>DB: <strong className="text-[#1c2d42]">MySQL apl_pr_db</strong></span>
+                                </div>
+                                <span className="text-slate-300">|</span>
+                                <div className="flex items-center gap-1.5">
+                                    <Network className="h-3.5 w-3.5 text-[#0070f2]" />
+                                    <span>OData: <strong className="text-[#1c2d42]">V4 JSON API</strong></span>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex items-center gap-1.5 text-slate-600">
+                                <span>Plant: <strong className="text-[#1c2d42]">{user?.plant || 'Namrup, Assam (Plant 1000)'}</strong></span>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -97,25 +140,27 @@ export default function SapAppLayout({
                 {children}
             </main>
 
-            {/* SAP Footer */}
+            {/* Enterprise Footer */}
             <footer className="mt-auto border-t border-[#d9e2ec] bg-white py-3.5 px-6 text-center text-xs text-[#556b82]">
                 <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 sm:flex-row">
                     <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[#1c2d42]">SAP S/4HANA Cloud Edition</span>
+                        <span className="font-semibold text-[#1c2d42]">Assam Petro-Chemicals Ltd.</span>
                         <span>•</span>
-                        <span>Purchase Requisitions (APL Application)</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-[11px]">
-                        <span>OData V4: API_PURCHASEREQUISITION_PROCESS_SRV</span>
+                        <span>Purchase Requisition Portal</span>
                         <span>•</span>
-                        <button
-                            type="button"
-                            onClick={() => setIsConfigOpen(true)}
-                            className="font-medium text-[#0070f2] hover:underline"
-                        >
-                            View Connection Details
-                        </button>
+                        <span className="text-slate-500">Connected to SAP S/4HANA Cloud</span>
                     </div>
+                    {!isEmployee && (
+                        <div className="flex items-center gap-4 text-[11px]">
+                            <button
+                                type="button"
+                                onClick={() => setIsConfigOpen(true)}
+                                className="font-medium text-[#0070f2] hover:underline"
+                            >
+                                View Connection Details
+                            </button>
+                        </div>
+                    )}
                 </div>
             </footer>
 

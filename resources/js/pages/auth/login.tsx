@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Form, Head } from '@inertiajs/react';
-import { Mail, Lock, Sparkles, Server, CheckCircle2 } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TextLink from '@/components/text-link';
@@ -12,7 +12,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
-import PasskeyVerify from '@/components/passkey-verify';
 
 type Props = {
     status?: string;
@@ -20,48 +19,89 @@ type Props = {
 };
 
 export default function Login({ status, canResetPassword }: Props) {
-    const [demoEmail, setDemoEmail] = useState('');
-    const [demoPassword, setDemoPassword] = useState('');
+    const [selectedRole, setSelectedRole] = useState<'superadmin' | 'admin' | 'employee'>('superadmin');
+    const [demoEmail, setDemoEmail] = useState('test@example.com');
+    const [demoPassword, setDemoPassword] = useState('password');
 
-    const handleFillDemo = () => {
-        setDemoEmail('test@example.com');
-        setDemoPassword('password');
+    const handleSelectRole = (role: 'superadmin' | 'admin' | 'employee') => {
+        setSelectedRole(role);
+        const email =
+            role === 'superadmin'
+                ? 'test@example.com'
+                : role === 'admin'
+                ? 'admin@example.com'
+                : 'employee@example.com';
+        const password = 'password';
+
+        setDemoEmail(email);
+        setDemoPassword(password);
+
         const emailInput = document.getElementById('email') as HTMLInputElement | null;
         const passInput = document.getElementById('password') as HTMLInputElement | null;
         if (emailInput) {
-            emailInput.value = 'test@example.com';
+            emailInput.value = email;
             emailInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
         if (passInput) {
-            passInput.value = 'password';
+            passInput.value = password;
             passInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
     };
 
     return (
         <>
-            <Head title="SAP Cloud Login - Purchase Requisition Portal" />
+            <Head title="Sign In - Purchase Requisition Portal" />
 
-            <PasskeyVerify />
-
-            {/* Quick Demo Credentials Bar */}
-            <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50/70 p-3 text-left">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-[#0057c2]">
-                        <Sparkles className="h-3.5 w-3.5 text-[#0070f2]" />
-                        <span>Pre-seeded SAP Test Account:</span>
-                    </div>
+            {/* Quick Demo Credentials Switcher */}
+            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/90 p-2.5 text-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-semibold text-slate-700">Quick Test Credentials:</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Password: password</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
                     <button
                         type="button"
-                        onClick={handleFillDemo}
-                        className="rounded bg-[#0070f2] px-2 py-0.5 text-[11px] font-medium text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884]"
+                        onClick={() => handleSelectRole('superadmin')}
+                        className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
+                            selectedRole === 'superadmin'
+                                ? 'bg-purple-600 text-white shadow-2xs font-semibold'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
                     >
-                        Auto-fill
+                        Superadmin
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleSelectRole('admin')}
+                        className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
+                            selectedRole === 'admin'
+                                ? 'bg-[#0070f2] text-white shadow-2xs font-semibold'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                    >
+                        Admin
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleSelectRole('employee')}
+                        className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
+                            selectedRole === 'employee'
+                                ? 'bg-teal-700 text-white shadow-2xs font-semibold'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                    >
+                        Employee
                     </button>
                 </div>
-                <div className="mt-1 flex items-center justify-between text-[11px] text-[#556b82]">
-                    <span>Email: <strong className="text-[#1c2d42]">test@example.com</strong></span>
-                    <span>Password: <strong className="text-[#1c2d42]">password</strong></span>
+                <div className="mt-2 text-center text-[10px] text-slate-500">
+                    Active login:{' '}
+                    <strong className="text-slate-800 font-mono">
+                        {selectedRole === 'superadmin'
+                            ? 'test@example.com (Full Access)'
+                            : selectedRole === 'admin'
+                            ? 'admin@example.com (SAP & PRs)'
+                            : 'employee@example.com (PR Requester)'}
+                    </strong>
                 </div>
             </div>
 
@@ -75,7 +115,7 @@ export default function Login({ status, canResetPassword }: Props) {
                         <div className="grid gap-4">
                             <div className="grid gap-1.5 text-left">
                                 <Label htmlFor="email" className="text-xs font-semibold text-[#1c2d42]">
-                                    SAP User ID / Email
+                                    Email or User ID
                                 </Label>
                                 <div className="relative">
                                     <Mail className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[#556b82]" />
@@ -133,7 +173,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     className="data-[state=checked]:bg-[#0070f2] data-[state=checked]:border-[#0070f2]"
                                 />
                                 <Label htmlFor="remember" className="text-xs font-normal text-[#556b82] cursor-pointer">
-                                    Remember my user ID on this browser
+                                    Remember me
                                 </Label>
                             </div>
 
@@ -147,31 +187,19 @@ export default function Login({ status, canResetPassword }: Props) {
                                 {processing ? (
                                     <div className="flex items-center gap-2">
                                         <Spinner />
-                                        <span>Authenticating with SAP Portal...</span>
+                                        <span>Signing in...</span>
                                     </div>
                                 ) : (
-                                    'Log In to SAP Portal'
+                                    'Sign In'
                                 )}
                             </Button>
                         </div>
 
-                        <div className="mt-1 text-center text-xs text-[#556b82]">
-                            Need a new SAP requester profile?{' '}
+                        <div className="mt-2 text-center text-xs text-[#556b82]">
+                            Don't have an account?{' '}
                             <TextLink href={register()} tabIndex={5} className="font-semibold text-[#0070f2] hover:underline">
                                 Request Access
                             </TextLink>
-                        </div>
-
-                        {/* SAP Public Cloud Connection Status */}
-                        <div className="mt-2 border-t border-slate-100 pt-3 text-left">
-                            <div className="flex items-center gap-2 text-[11px] text-[#556b82]">
-                                <Server className="h-3.5 w-3.5 text-emerald-600" />
-                                <span>Connected Target: <strong className="text-[#1c2d42]">SAP S/4HANA Cloud (Public)</strong></span>
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[#556b82]">
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                                <span>Local Database: <strong className="text-[#1c2d42]">MySQL apl_pr_db</strong></span>
-                            </div>
                         </div>
                     </>
                 )}
@@ -187,6 +215,6 @@ export default function Login({ status, canResetPassword }: Props) {
 }
 
 Login.layout = {
-    title: 'SAP S/4HANA Cloud',
-    description: 'Purchase Requisition Portal • Public Cloud Edition',
+    title: 'Purchase Requisition Portal',
+    description: 'Sign in to access your account',
 };

@@ -1,20 +1,21 @@
-import { usePage } from '@inertiajs/react';
-
-import AppLogoIcon from '@/components/app-logo-icon';
+import React from 'react';
 
 export default function AppLogo() {
-    const { name } = usePage().props;
-
     return (
-        <>
-            <div className="flex aspect-square size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-                <AppLogoIcon className="size-5 fill-current text-white dark:text-black" />
-            </div>
-            <div className="ml-1 grid flex-1 text-left text-sm">
-                <span className="mb-0.5 truncate leading-tight font-semibold">
-                    {name}
+        <div className="flex items-center gap-2.5">
+            <img
+                src="/images/APL_Logo.jpg"
+                alt="Assam Petro-Chemicals Ltd."
+                className="h-8 w-auto rounded object-contain bg-white"
+            />
+            <div className="flex flex-col text-left leading-tight overflow-hidden">
+                <span className="truncate text-xs font-bold text-[#1c2d42]">
+                    Assam Petro-Chemicals Ltd.
+                </span>
+                <span className="truncate text-[10px] text-muted-foreground">
+                    Purchase Requisition Portal
                 </span>
             </div>
-        </>
+        </div>
     );
 }

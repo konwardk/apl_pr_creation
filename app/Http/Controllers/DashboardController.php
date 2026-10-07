@@ -14,9 +14,16 @@ class DashboardController extends Controller
      */
     public function index(Request $request): Response
     {
-        $prs = PurchaseRequisition::with(['items', 'user'])
-            ->latest()
-            ->get();
+        $user = $request->user();
+
+        $query = PurchaseRequisition::with(['items', 'user'])->latest();
+
+        // If employee, only show their own created PRs
+        if ($user && $user->isEmployee()) {
+            $query->where('user_id', $user->id);
+        }
+
+        $prs = $query->get();
 
         $stats = [
             'total_count' => $prs->count(),

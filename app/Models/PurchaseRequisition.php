@@ -16,11 +16,14 @@ class PurchaseRequisition extends Model
         'sap_pr_number',
         'user_id',
         'description',
+        'header_note',
         'pr_type',
+        'auto_source_determination',
         'company_code',
         'plant',
         'total_amount',
         'currency',
+        'requisitioner',
         'approval_status',
         'sap_sync_status',
         'sap_sync_message',
@@ -31,6 +34,7 @@ class PurchaseRequisition extends Model
 
     protected $casts = [
         'total_amount' => 'decimal:2',
+        'auto_source_determination' => 'boolean',
         'sap_synced_at' => 'datetime',
         'sap_payload' => 'array',
         'sap_response' => 'array',
@@ -51,11 +55,11 @@ class PurchaseRequisition extends Model
      */
     public function toSapODataV4Payload(): array
     {
-        return [
+        $payload = [
             'PurchaseRequisitionType' => $this->pr_type ?: 'NB',
             'PurReqnDescription' => $this->description,
             '_PurchaseRequisitionItem' => $this->items->map(function ($item) {
-                return [
+                $itemPayload = [
                     'PurchaseRequisitionItem' => $item->item_number,
                     'Material' => $item->material_code ?: '',
                     'PurchaseRequisitionItemText' => $item->description,
@@ -63,10 +67,16 @@ class PurchaseRequisition extends Model
                     'RequestedQuantity' => (float) $item->quantity,
                     'BaseUnit' => $item->unit_of_measure ?: 'PC',
                     'PurchaseRequisitionPrice' => (float) $item->unit_price,
-                    'PurReqnPriceQuantity' => 1,
-                    'Plant' => $item->plant ?: '1010',
+                    'PurReqnPriceQuantity' => (int) ($item->price_unit ?: 1),
+                    'Currency' => $item->currency ?: $this->currency ?: 'INR',
+                    'Plant' => $item->plant ?: $this->plant ?: '1010',
                     'StorageLocation' => $item->storage_location ?: '101A',
                     'AccountAssignmentCategory' => $item->account_assignment_category ?: 'K',
+                    'PurchasingGroup' => $item->purchasing_group ?: '101',
+                    'PurchasingOrganization' => $item->purchasing_organization ?: '',
+                    'Supplier' => $item->desired_supplier ?: '',
+                    'Batch' => $item->batch ?: '',
+                    'RequirementTracking' => $item->requirement_tracking_number ?: '',
                     'DeliveryDate' => $item->delivery_date ? $item->delivery_date->format('Y-m-d') : now()->addDays(7)->format('Y-m-d'),
                     '_PurchaseReqnAcctAssgmt' => [
                         [
@@ -76,7 +86,19 @@ class PurchaseRequisition extends Model
                         ]
                     ]
                 ];
+
+                if (!empty($item->tax_code)) {
+                    $itemPayload['TaxCode'] = $item->tax_code;
+                }
+
+                return $itemPayload;
             })->toArray(),
         ];
+
+        if (!empty($this->header_note)) {
+            $payload['PurReqnDescription'] = $this->description . ' - ' . substr($this->header_note, 0, 50);
+        }
+
+        return $payload;
     }
 }

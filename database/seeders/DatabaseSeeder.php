@@ -17,6 +17,8 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RoleAndDepartmentSeeder::class,
+            HeaderOptionSeeder::class,
+            PrDocumentTypeSeeder::class,
             PurchaseRequisitionSeeder::class,
         ]);
     }

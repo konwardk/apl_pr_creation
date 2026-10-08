@@ -1,16 +1,21 @@
 import React from 'react';
 import { router } from '@inertiajs/react';
 import { X, ExternalLink, Package } from 'lucide-react';
+import { HeaderOption, PrDocumentType } from '@/types';
 import PurchaseRequisitionForm from './PurchaseRequisitionForm';
 
 interface CreatePurchaseRequisitionModalProps {
     isOpen: boolean;
     onClose: () => void;
+    headerOptions?: HeaderOption[];
+    prDocumentTypes?: PrDocumentType[];
 }
 
 export default function CreatePurchaseRequisitionModal({
     isOpen,
     onClose,
+    headerOptions = [],
+    prDocumentTypes = [],
 }: CreatePurchaseRequisitionModalProps) {
     if (!isOpen) return null;
 
@@ -56,7 +61,12 @@ export default function CreatePurchaseRequisitionModal({
 
                 {/* Modal Scrollable Body */}
                 <div className="flex-1 overflow-y-auto p-6">
-                    <PurchaseRequisitionForm isModal onCloseModal={onClose} />
+                    <PurchaseRequisitionForm
+                        isModal
+                        onCloseModal={onClose}
+                        headerOptions={headerOptions}
+                        prDocumentTypes={prDocumentTypes}
+                    />
                 </div>
             </div>
         </div>

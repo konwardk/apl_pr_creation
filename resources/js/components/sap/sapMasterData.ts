@@ -21,6 +21,7 @@ export interface SapMasterDataConfig {
     revisionLevels: SearchHelpOption[];
     desiredSuppliers: SearchHelpOption[];
     attachmentDocTypes: SearchHelpOption[];
+    headerOptions?: SearchHelpOption[];
 }
 
 export const defaultSapMasterData: SapMasterDataConfig = {

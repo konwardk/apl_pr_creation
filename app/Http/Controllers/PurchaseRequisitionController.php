@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HeaderOption;
+use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
+use App\Services\SapMasterDataService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,24 +19,65 @@ use Inertia\Response;
 
 class PurchaseRequisitionController extends Controller
 {
+    protected SapMasterDataService $sapService;
+
+    public function __construct(SapMasterDataService $sapService)
+    {
+        $this->sapService = $sapService;
+    }
+
+    /**
+     * Fetch Materials / Products from SAP S/4HANA Cloud CDS View (YY1_MATERIALS_CDS)
+     */
+    public function getMaterials(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchMaterialsFromCdsView($search);
+
+        return response()->json($result);
+    }
+
     /**
      * Display the purchase requisition creation page.
      */
     public function create(Request $request): Response
     {
+        $headerOptions = HeaderOption::where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        $prDocumentTypes = PrDocumentType::where('is_active', true)
+            ->orderBy('code')
+            ->get();
+
+        $docTypesData = $prDocumentTypes->isNotEmpty()
+            ? $prDocumentTypes->map(fn($dt) => [
+                'code' => $dt->code,
+                'name' => $dt->name,
+                'extra' => $dt->description ?: $dt->category,
+            ])->toArray()
+            : [
+                ['code' => 'ZCOM', 'name' => 'Domestic Cmpste PR (ZCOM)', 'extra' => 'Domestic Standard Requisition'],
+                ['code' => 'NB', 'name' => 'Pur. Requisition (NB)', 'extra' => 'Standard Purchase Requisition'],
+                ['code' => 'NBS', 'name' => 'Pur. Requisition NBS (NBS)', 'extra' => 'Special Item PR'],
+                ['code' => 'RV', 'name' => 'Outline Agrmt. Reqn. (RV)', 'extra' => 'Outline Agreement'],
+                ['code' => 'ZICP', 'name' => 'Import Cmpste PR (ZICP)', 'extra' => 'Import Composite'],
+                ['code' => 'ZIMT', 'name' => 'Import Material PR (ZIMT)', 'extra' => 'Import Materials'],
+                ['code' => 'ZISR', 'name' => 'Import Service PR (ZISR)', 'extra' => 'Import Services'],
+                ['code' => 'ZMAT', 'name' => 'Domestic Material PR (ZMAT)', 'extra' => 'Domestic Materials'],
+                ['code' => 'ZSER', 'name' => 'Domestic Service PR (ZSER)', 'extra' => 'Domestic Services'],
+            ];
+
         return Inertia::render('purchase-requisitions/create', [
+            'headerOptions' => $headerOptions,
+            'prDocumentTypes' => $prDocumentTypes,
             'masterData' => [
-                'documentTypes' => [
-                    ['code' => 'ZCOM', 'name' => 'Domestic Cmpste PR (ZCOM)'],
-                    ['code' => 'NB', 'name' => 'Pur. Requisition (NB)'],
-                    ['code' => 'NBS', 'name' => 'Pur. Requisition NBS (NBS)'],
-                    ['code' => 'RV', 'name' => 'Outline Agrmt. Reqn. (RV)'],
-                    ['code' => 'ZICP', 'name' => 'Import Cmpste PR (ZICP)'],
-                    ['code' => 'ZIMT', 'name' => 'Import Material PR (ZIMT)'],
-                    ['code' => 'ZISR', 'name' => 'Import Service PR (ZISR)'],
-                    ['code' => 'ZMAT', 'name' => 'Domestic Material PR (ZMAT)'],
-                    ['code' => 'ZSER', 'name' => 'Domestic Service PR (ZSER)'],
-                ],
+                'headerOptions' => $headerOptions->map(fn($opt) => [
+                    'code' => (string)$opt->id,
+                    'name' => $opt->name,
+                    'extra' => $opt->code ?: '',
+                ])->toArray(),
+                'documentTypes' => $docTypesData,
                 'plants' => [
                     ['code' => '1200', 'name' => '1200 - Dibrugarh Manufacturing Plant', 'city' => 'Dibrugarh', 'street' => 'Parbatpur', 'country' => 'India (IN)', 'region' => 'Assam (AS)', 'postal' => '786623'],
                     ['code' => '1010', 'name' => '1010 - Plant Walldorf / US', 'city' => 'Walldorf', 'street' => 'Dietmar-Hopp-Allee 16', 'country' => 'Germany (DE)', 'region' => 'BW', 'postal' => '69190'],
@@ -130,6 +175,7 @@ class PurchaseRequisitionController extends Controller
         $validated = $request->validate([
             'description' => 'nullable|string|max:255',
             'header_note' => 'nullable|string',
+            'header_option_id' => 'nullable|exists:header_options,id',
             'pr_type' => 'required|string|max:10',
             'auto_source_determination' => 'nullable|boolean',
             'company_code' => 'nullable|string|max:10',
@@ -195,6 +241,7 @@ class PurchaseRequisitionController extends Controller
                 'user_id' => $request->user()?->id,
                 'description' => $primaryDesc,
                 'header_note' => $validated['header_note'] ?? null,
+                'header_option_id' => $validated['header_option_id'] ?? null,
                 'pr_type' => $validated['pr_type'] ?? 'ZCOM',
                 'auto_source_determination' => !empty($validated['auto_source_determination']),
                 'company_code' => $validated['company_code'] ?? '1010',

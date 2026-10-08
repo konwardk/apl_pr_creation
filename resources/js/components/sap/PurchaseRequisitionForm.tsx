@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
+import { HeaderOption, PrDocumentType } from '@/types';
 
 export interface PrItemData {
     id: string;
@@ -73,18 +74,31 @@ export interface PrItemData {
 
 interface PurchaseRequisitionFormProps {
     masterData?: Partial<SapMasterDataConfig>;
+    headerOptions?: HeaderOption[];
+    prDocumentTypes?: PrDocumentType[];
     isModal?: boolean;
     onCloseModal?: () => void;
 }
 
 export default function PurchaseRequisitionForm({
     masterData = {},
+    headerOptions = [],
+    prDocumentTypes = [],
     isModal = false,
     onCloseModal,
 }: PurchaseRequisitionFormProps) {
+    const activePrDocTypes = prDocumentTypes && prDocumentTypes.length > 0
+        ? prDocumentTypes.filter((dt) => dt.is_active).map((dt) => ({
+            code: dt.code,
+            name: dt.name,
+            extra: dt.description || dt.category || '',
+        }))
+        : null;
+
     const dataCatalog: SapMasterDataConfig = {
         ...defaultSapMasterData,
         ...masterData,
+        ...(activePrDocTypes ? { documentTypes: activePrDocTypes } : {}),
     };
 
     const getTodayString = (addDays = 0) => {
@@ -96,11 +110,28 @@ export default function PurchaseRequisitionForm({
     // Header State
     const [description, setDescription] = useState('AMC material and Service Request');
     const [prType, setPrType] = useState('ZCOM');
+    const [headerOptionId, setHeaderOptionId] = useState<string>('');
     const [autoSourceDetermination, setAutoSourceDetermination] = useState(false);
     const [headerNote, setHeaderNote] = useState('');
     const [companyCode, setCompanyCode] = useState('1010');
     const [currency, setCurrency] = useState('INR');
     const [requisitioner, setRequisitioner] = useState('Ashish Borgohain (CB9980000006)');
+
+    // Combined header options from props or masterData
+    const availableHeaderOptions = (
+        headerOptions && headerOptions.length > 0
+            ? headerOptions
+            : ((masterData as any)?.headerOptions || [])
+    ).map((opt: any) => ({
+        id: String(opt.id || opt.code),
+        name: opt.name || opt.code,
+        code: opt.code || '',
+        description: opt.description || opt.extra || '',
+    }));
+
+    const selectedHeaderOption = availableHeaderOptions.find(
+        (opt: any) => String(opt.id) === String(headerOptionId)
+    );
 
     // Active item selection & Item Level Tab
     const [activeItemIndex, setActiveItemIndex] = useState(0);
@@ -182,13 +213,17 @@ export default function PurchaseRequisitionForm({
         selectedCode?: string;
         field: keyof PrItemData | 'documentType';
         targetIndex?: number;
+        isLoading?: boolean;
     }>({
         isOpen: false,
         title: '',
         options: [],
         field: 'plant',
         targetIndex: 0,
+        isLoading: false,
     });
+
+    const [sapMaterialsCache, setSapMaterialsCache] = useState<SearchHelpOption[]>([]);
 
     const currentItem = items[activeItemIndex] || items[0];
 
@@ -206,7 +241,64 @@ export default function PurchaseRequisitionForm({
             selectedCode: currentCode || '',
             field,
             targetIndex: targetIndex !== undefined ? targetIndex : activeItemIndex,
+            isLoading: false,
         });
+    };
+
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_MATERIALS_CDS) API for Materials F4 Search Help.
+     * Shows Product (material number), ProductName (description), BaseUnit (UoM) and auto-fills fields.
+     */
+    const handleOpenMaterialSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+
+        if (sapMaterialsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Material - SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)',
+                options: sapMaterialsCache,
+                selectedCode: currentCode || '',
+                field: 'material_code',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Material - SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)',
+            options: dataCatalog.materials || [],
+            selectedCode: currentCode || '',
+            field: 'material_code',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-materials');
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapMaterialsCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch materials from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                isLoading: false,
+            }));
+        }
     };
 
     const handleSelectSearchHelp = (opt: SearchHelpOption) => {
@@ -218,21 +310,30 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Special handling when selecting Material: auto-populates relevant fields!
+        // Special handling when selecting Material: auto-populates Product, ProductName, and Unit of Measure (BaseUnit)!
         if (field === 'material_code') {
-            const mat = dataCatalog.materials.find((m) => m.code === opt.code);
+            const productCode = opt.Product || opt.code;
+            const productName = opt.ProductName || opt.name;
+            const uom = opt.BaseUnit || opt.UnitOfMeasure || opt.uom || 'PC';
+            const matGroup = opt.ProductGroup || opt.materialGroup || opt.MaterialGroup || 'L001';
+            const matType = opt.ProductType || opt.materialType || opt.MaterialType || 'ROH - Raw Materials';
+            const unitPrice = (opt.UnitPrice !== undefined && opt.UnitPrice > 0)
+                ? opt.UnitPrice
+                : ((opt.unitPrice !== undefined && opt.unitPrice > 0) ? opt.unitPrice : undefined);
+            const poText = opt.poText || opt.description || '';
+
             setItems((prev) =>
                 prev.map((item, idx) => {
                     if (idx !== targetIdx) return item;
                     return {
                         ...item,
-                        material_code: opt.code,
-                        description: opt.name,
-                        material_type: mat?.materialType || item.material_type || 'ROH - Raw Materials',
-                        material_group: mat?.materialGroup || item.material_group || 'L002',
-                        unit_of_measure: mat?.uom || item.unit_of_measure || 'KG',
-                        unit_price: mat?.unitPrice !== undefined ? mat.unitPrice : item.unit_price,
-                        material_po_text: mat?.poText || item.material_po_text || '',
+                        material_code: productCode,
+                        description: productName,
+                        unit_of_measure: uom,
+                        material_group: matGroup,
+                        material_type: matType,
+                        unit_price: unitPrice !== undefined ? unitPrice : item.unit_price,
+                        material_po_text: poText || item.material_po_text || '',
                     };
                 })
             );
@@ -372,6 +473,7 @@ export default function PurchaseRequisitionForm({
             {
                 description: description.trim() || currentItem.description,
                 header_note: headerNote,
+                header_option_id: headerOptionId || null,
                 pr_type: prType,
                 auto_source_determination: autoSourceDetermination,
                 company_code: companyCode,
@@ -532,12 +634,11 @@ export default function PurchaseRequisitionForm({
                 <div className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Purchase Requisition Description */}
-                        <div className="md:col-span-2">
+                        <div>
                             <div className="flex items-center justify-between mb-1.5">
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
                                     Purchase Requisition Description
                                 </label>
-                        
                             </div>
                             <input
                                 type="text"
@@ -568,11 +669,66 @@ export default function PurchaseRequisitionForm({
                                     </option>
                                 ))}
                             </select>
+                            {(() => {
+                                const activeDocType = dataCatalog.documentTypes.find((dt) => dt.code === prType);
+                                return activeDocType?.extra ? (
+                                    <span className="mt-1 block text-[10px] text-[#0070f2] font-medium line-clamp-1">
+                                        {activeDocType.extra}
+                                    </span>
+                                ) : (
+                                    <span className="mt-1 block text-[10px] text-[#556b82]">
+                                        Have to select the appropriate dropdown
+                                    </span>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Header Option */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Header Option
+                                </label>
+                                <span className="text-[10px] text-[#0070f2] font-semibold">
+                                    Master Data
+                                </span>
+                            </div>
+                            <select
+                                value={headerOptionId}
+                                onChange={(e) => setHeaderOptionId(e.target.value)}
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none bg-white transition-colors"
+                            >
+                                <option value="">-- Select Header Option --</option>
+                                {availableHeaderOptions.map((opt: any) => (
+                                    <option key={opt.id} value={opt.id}>
+                                        {opt.name} {opt.code ? `(${opt.code})` : ''}
+                                    </option>
+                                ))}
+                            </select>
                             <span className="mt-1 block text-[10px] text-[#556b82]">
-                                Have to select the appropriate dropdown
+                                Configured by Superadmin
                             </span>
                         </div>
                     </div>
+
+                    {selectedHeaderOption && (
+                        <div className="mt-3 rounded-lg border border-blue-100 bg-gradient-to-r from-blue-50/70 to-slate-50 p-2.5 text-xs text-[#1c2d42] flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-2">
+                                <span className="rounded bg-[#0070f2] text-white px-1.5 py-0.5 text-[10px] font-bold">
+                                    {selectedHeaderOption.code || 'OPTION'}
+                                </span>
+                                <span className="font-semibold text-xs text-[#1c2d42]">{selectedHeaderOption.name}</span>
+                                {selectedHeaderOption.description && (
+                                    <span className="text-[11px] text-[#556b82] hidden sm:inline">
+                                        — {selectedHeaderOption.description}
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-[10px] text-[#0070f2] font-medium whitespace-nowrap bg-white px-2 py-0.5 rounded border border-blue-200">
+                                Active Header Option
+                            </span>
+                        </div>
+                    )}
 
                     {/* Automatic Source Determination Checkbox */}
                     <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
@@ -777,37 +933,26 @@ export default function PurchaseRequisitionForm({
                                                     type="text"
                                                     value={it.material_code || ''}
                                                     onFocus={() => setActiveItemIndex(idx)}
+                                                    onClick={() => handleOpenMaterialSearchHelp(idx, it.material_code)}
                                                     onChange={(e) => updateItemById(it.id, { material_code: e.target.value })}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'F4') {
                                                             e.preventDefault();
-                                                            openSearchHelp(
-                                                                'material_code',
-                                                                'Select Material (Search Help)',
-                                                                dataCatalog.materials,
-                                                                it.material_code,
-                                                                idx
-                                                            );
+                                                            handleOpenMaterialSearchHelp(idx, it.material_code);
                                                         }
                                                     }}
                                                     placeholder="Material # (F4)"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none cursor-pointer"
                                                 />
                                                 <button
                                                     type="button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setActiveItemIndex(idx);
-                                                        openSearchHelp(
-                                                            'material_code',
-                                                            'Select Material (Search Help)',
-                                                            dataCatalog.materials,
-                                                            it.material_code,
-                                                            idx
-                                                        );
+                                                        handleOpenMaterialSearchHelp(idx, it.material_code);
                                                     }}
                                                     className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Material Search Help (F4) - Auto-populates all Material details"
+                                                    title="Material Search Help (F4) - Hits SAP CDS View YY1_MATERIALS_CDS"
                                                 >
                                                     <Search className="h-3 w-3" />
                                                 </button>
@@ -1277,35 +1422,22 @@ export default function PurchaseRequisitionForm({
                                         <input
                                             type="text"
                                             value={currentItem?.material_code || ''}
+                                            onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code)}
                                             onChange={(e) => updateCurrentItem({ material_code: e.target.value })}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'material_code',
-                                                        'Select Material (Search Help)',
-                                                        dataCatalog.materials,
-                                                        currentItem?.material_code,
-                                                        activeItemIndex
-                                                    );
+                                                    handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code);
                                                 }
                                             }}
-                                            placeholder="10000001"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            placeholder="10000001 (Click or press F4 for Search Help)"
+                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none cursor-pointer"
                                         />
                                         <button
                                             type="button"
-                                            onClick={() =>
-                                                openSearchHelp(
-                                                    'material_code',
-                                                    'Select Material (Search Help)',
-                                                    dataCatalog.materials,
-                                                    currentItem?.material_code,
-                                                    activeItemIndex
-                                                )
-                                            }
+                                            onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code)}
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Select Material - F4 Search Help (auto-fills Type, Group, Description, UoM, Price)"
+                                            title="Select Material - F4 Search Help (Hits SAP CDS View YY1_MATERIALS_CDS)"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
@@ -2747,6 +2879,7 @@ export default function PurchaseRequisitionForm({
                 title={searchHelpState.title}
                 options={searchHelpState.options}
                 selectedCode={searchHelpState.selectedCode}
+                isLoading={searchHelpState.isLoading}
                 onClose={() => setSearchHelpState((prev) => ({ ...prev, isOpen: false }))}
                 onSelect={handleSelectSearchHelp}
             />

@@ -17,6 +17,7 @@ class PurchaseRequisition extends Model
         'user_id',
         'description',
         'header_note',
+        'header_option_id',
         'pr_type',
         'auto_source_determination',
         'company_code',
@@ -48,6 +49,11 @@ class PurchaseRequisition extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PurchaseRequisitionItem::class);
+    }
+
+    public function headerOption(): BelongsTo
+    {
+        return $this->belongsTo(HeaderOption::class, 'header_option_id');
     }
 
     /**

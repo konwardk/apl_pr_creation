@@ -13,6 +13,13 @@ import {
     Network,
     X,
     Users,
+    SlidersHorizontal,
+    Settings2,
+    ChevronDown,
+    FileText,
+    Building2,
+    ShieldCheck,
+    ArrowRight,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -20,7 +27,7 @@ interface SapAppLayoutProps {
     children: React.ReactNode;
     title?: string;
     activeTab?: string;
-    onTabChange?: (tab: string) => void;
+    onTabChange?: (tab: string, subTab?: string) => void;
     onOpenCreatePr?: () => void;
     onSearch?: (term: string) => void;
 }
@@ -34,11 +41,101 @@ export default function SapAppLayout({
     onSearch,
 }: SapAppLayoutProps) {
     const [isConfigOpen, setIsConfigOpen] = useState(false);
+    const [isPrConfigHovered, setIsPrConfigHovered] = useState(false);
+    const hoverTimeoutRef = React.useRef<any>(null);
+
     const { auth } = usePage().props as { auth?: { user?: User } };
     const user = auth?.user;
 
     const isSuperAdmin = user?.is_superadmin || user?.role?.name === 'superadmin';
     const isEmployee = user?.is_employee || user?.role?.name === 'employee';
+
+    // PR Configuration sub-tabs for hover dropdown
+    const prConfigSubTabs = [
+        {
+            id: 'header-options',
+            label: 'PR Header Options',
+            description: 'Custom header classification options for requisitions',
+            icon: SlidersHorizontal,
+            badge: 'Active',
+            badgeColor: 'bg-blue-100 text-[#0070f2] border-blue-200',
+        },
+        {
+            id: 'document-types',
+            label: 'Document Types',
+            description: 'SAP PR Types (ZCOM, NB, NBS, RV, etc.)',
+            icon: FileText,
+            badge: '9 Types',
+            badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+        },
+        {
+            id: 'plants-sourcing',
+            label: 'Plants & Purchasing Groups',
+            description: 'Plants 1200, 1000, 1010 and Buyer Groups',
+            icon: Building2,
+            badge: '3 Plants',
+            badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+        },
+        {
+            id: 'account-assignment',
+            label: 'Account Assignment',
+            description: 'Cost Centers, GL Accounts & WBS Elements',
+            icon: Layers,
+            badge: '5 Categories',
+            badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+        },
+        {
+            id: 'workflows',
+            label: 'Approval & Thresholds',
+            description: 'Financial approval matrix & routing rules',
+            icon: ShieldCheck,
+            badge: 'Multi-Tier',
+            badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
+        },
+        {
+            id: 'sap-settings',
+            label: 'SAP Cloud Integration',
+            description: 'OData V4 Scenario SAP_COM_0053 specs',
+            icon: Server,
+            badge: 'Connected',
+            badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        },
+    ];
+
+    const handlePrConfigMouseEnter = () => {
+        if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+        }
+        setIsPrConfigHovered(true);
+    };
+
+    const handlePrConfigMouseLeave = () => {
+        hoverTimeoutRef.current = setTimeout(() => {
+            setIsPrConfigHovered(false);
+        }, 180);
+    };
+
+    const handleSubTabClick = (tabId: string, subTabId: string) => {
+        setIsPrConfigHovered(false);
+
+        const isDashboard =
+            typeof window !== 'undefined' &&
+            window.location.pathname.startsWith('/dashboard');
+
+        if (!isDashboard) {
+            router.visit(`/dashboard?tab=${tabId}&subtab=${subTabId}`);
+            return;
+        }
+
+        if (onTabChange) {
+            onTabChange(tabId, subTabId);
+        } else {
+            router.visit(`/dashboard?tab=${tabId}&subtab=${subTabId}`, {
+                preserveScroll: true,
+            });
+        }
+    };
 
     // Role-dependent spaces / tabs
     const tabs = isEmployee
@@ -54,11 +151,14 @@ export default function SapAppLayout({
               ...(isSuperAdmin
                   ? [
                         { id: 'users', label: 'User Management', icon: Users, href: '/users' },
+                        { id: 'pr-configuration', label: 'PR Configuration', icon: Settings2, href: '/dashboard' },
                     ]
                   : []),
           ];
 
     const handleTabClick = (tab: { id: string; href?: string }) => {
+        setIsPrConfigHovered(false);
+
         if (tab.id === 'users') {
             router.visit('/users');
             return;
@@ -66,7 +166,11 @@ export default function SapAppLayout({
 
         // If currently on another page (e.g. /users or /purchase-requisitions/create), visit /dashboard
         if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/dashboard')) {
-            router.visit('/dashboard');
+            if (tab.id === 'pr-configuration') {
+                router.visit('/dashboard?tab=pr-configuration');
+            } else {
+                router.visit('/dashboard');
+            }
             return;
         }
 
@@ -90,10 +194,103 @@ export default function SapAppLayout({
             <div className="sticky top-13 z-30 border-b border-[#d9e2ec] bg-white px-4 sm:px-6 shadow-xs">
                 <div className="flex items-center justify-between">
                     {/* Navigation Tabs */}
-                    <nav className="flex space-x-1 sm:space-x-4 overflow-x-auto no-scrollbar py-1">
+                    <nav className="flex space-x-1 sm:space-x-4 overflow-x-auto sm:overflow-visible no-scrollbar py-1">
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
                             const isActive = activeTab === tab.id;
+                            const isPrConfig = tab.id === 'pr-configuration';
+
+                            if (isPrConfig) {
+                                return (
+                                    <div
+                                        key={tab.id}
+                                        className="relative"
+                                        onMouseEnter={handlePrConfigMouseEnter}
+                                        onMouseLeave={handlePrConfigMouseLeave}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => handleTabClick(tab)}
+                                            className={`group flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap transition-all ${
+                                                isActive
+                                                    ? 'border-[#0070f2] text-[#0070f2]'
+                                                    : 'border-transparent text-[#556b82] hover:border-slate-300 hover:text-[#1c2d42]'
+                                            }`}
+                                        >
+                                            <Icon className={`h-4 w-4 transition-colors ${isActive ? 'text-[#0070f2]' : 'text-[#8c9ba5] group-hover:text-[#1c2d42]'}`} />
+                                            <span>{tab.label}</span>
+                                            <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${isPrConfigHovered ? 'rotate-180 text-[#0070f2]' : 'text-slate-400 group-hover:text-[#1c2d42]'}`} />
+                                        </button>
+
+                                        {/* Hover Dropdown Menu */}
+                                        {isPrConfigHovered && (
+                                            <div className="absolute left-0 sm:left-auto sm:right-0 md:left-0 top-full pt-1.5 z-50 w-80 sm:w-88 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                <div className="rounded-xl border border-[#d9e2ec] bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+                                                    {/* Dropdown Header */}
+                                                    <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-4 py-2.5 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Settings2 className="h-3.5 w-3.5 text-[#0070f2]" />
+                                                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#556b82]">
+                                                                PR Configuration Modules
+                                                            </span>
+                                                        </div>
+                                                        <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[10px] font-semibold text-[#0070f2]">
+                                                            {prConfigSubTabs.length} Modules
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Sub-Tabs List */}
+                                                    <div className="p-1.5 space-y-0.5 max-h-[75vh] overflow-y-auto">
+                                                        {prConfigSubTabs.map((subTab) => {
+                                                            const SubIcon = subTab.icon;
+                                                            return (
+                                                                <button
+                                                                    key={subTab.id}
+                                                                    type="button"
+                                                                    onClick={() => handleSubTabClick('pr-configuration', subTab.id)}
+                                                                    className="group/item flex w-full items-start gap-2.5 rounded-lg p-2 text-left hover:bg-blue-50/70 transition-colors"
+                                                                >
+                                                                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600 group-hover/item:bg-[#0070f2] group-hover/item:text-white transition-colors">
+                                                                        <SubIcon className="h-3.5 w-3.5" />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between gap-1">
+                                                                            <span className="text-xs font-semibold text-[#1c2d42] group-hover/item:text-[#0070f2] transition-colors">
+                                                                                {subTab.label}
+                                                                            </span>
+                                                                            {subTab.badge && (
+                                                                                <span className={`shrink-0 rounded px-1.5 py-0.2 text-[9px] font-bold border ${subTab.badgeColor}`}>
+                                                                                    {subTab.badge}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[10px] text-[#556b82] line-clamp-1 mt-0.5">
+                                                                            {subTab.description}
+                                                                        </p>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {/* Dropdown Footer */}
+                                                    <div className="border-t border-[#d9e2ec] bg-[#f8fafc] px-4 py-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSubTabClick('pr-configuration', 'header-options')}
+                                                            className="flex w-full items-center justify-between text-[11px] font-semibold text-[#0070f2] hover:text-[#0057c2]"
+                                                        >
+                                                            <span>Open Configuration Dashboard</span>
+                                                            <ArrowRight className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }
+
                             return (
                                 <button
                                     key={tab.id}

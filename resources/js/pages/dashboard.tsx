@@ -23,8 +23,11 @@ import {
     ShieldCheck,
     Layers,
     Package,
+    SlidersHorizontal,
+    Settings2,
 } from 'lucide-react';
-import type { User } from '@/types';
+import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
+import type { User, HeaderOption, PrDocumentType } from '@/types';
 
 interface PrItem {
     id: number;
@@ -47,6 +50,8 @@ interface PurchaseRequisition {
     pr_number: string;
     sap_pr_number?: string | null;
     user_id?: number | null;
+    header_option_id?: number | null;
+    header_option?: HeaderOption | null;
     description: string;
     pr_type: string;
     company_code: string;
@@ -66,6 +71,8 @@ interface PurchaseRequisition {
 
 interface DashboardProps {
     purchaseRequisitions?: PurchaseRequisition[];
+    headerOptions?: HeaderOption[];
+    prDocumentTypes?: PrDocumentType[];
     stats?: {
         total_count: number;
         total_amount: number;
@@ -89,6 +96,8 @@ interface DashboardProps {
 
 export default function Dashboard({
     purchaseRequisitions = [],
+    headerOptions = [],
+    prDocumentTypes = [],
     stats = {
         total_count: 0,
         total_amount: 0,
@@ -114,7 +123,40 @@ export default function Dashboard({
     const isSuperAdmin = user?.is_superadmin || user?.role?.name === 'superadmin';
     const isEmployee = user?.is_employee || user?.role?.name === 'employee';
 
-    const [activeTab, setActiveTab] = useState('overview');
+    const [activeTab, setActiveTab] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const tabParam = params.get('tab');
+            if (tabParam) return tabParam;
+        }
+        return 'overview';
+    });
+    const [activeSubTab, setActiveSubTab] = useState<string>(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const subtabParam = params.get('subtab');
+            if (subtabParam) return subtabParam;
+        }
+        return 'header-options';
+    });
+
+    const handleTabChange = (tab: string, subTab?: string) => {
+        setActiveTab(tab);
+        if (subTab) {
+            setActiveSubTab(subTab);
+        }
+        if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tab);
+            if (subTab) {
+                url.searchParams.set('subtab', subTab);
+            } else if (tab !== 'pr-configuration') {
+                url.searchParams.delete('subtab');
+            }
+            window.history.replaceState({}, '', url.toString());
+        }
+    };
+
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'synced' | 'pending' | 'failed'>('all');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -170,7 +212,7 @@ export default function Dashboard({
         <SapAppLayout
             title="Dashboard - Assam Petro-Chemicals Ltd."
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={handleTabChange}
             onOpenCreatePr={() => router.visit('/purchase-requisitions/create')}
             onSearch={setSearchQuery}
         >
@@ -213,6 +255,16 @@ export default function Dashboard({
                                     <Plus className="h-4 w-4" />
                                     <span>Create Requisition</span>
                                 </button>
+                                {isSuperAdmin && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('pr-configuration')}
+                                        className="flex items-center gap-1.5 rounded-md border border-[#d9e2ec] bg-white px-3.5 py-2 text-xs font-semibold text-[#1c2d42] shadow-xs hover:bg-slate-50 transition-colors"
+                                    >
+                                        <Settings2 className="h-4 w-4 text-[#0070f2]" />
+                                        <span>PR Configuration</span>
+                                    </button>
+                                )}
                                 {!isEmployee && stats.pending_sync_count > 0 && (
                                     <button
                                         type="button"
@@ -453,6 +505,11 @@ export default function Dashboard({
                                                             </span>
                                                         ) : (
                                                             <span>Standard PR (Type {pr.pr_type})</span>
+                                                        )}
+                                                        {pr.header_option && (
+                                                            <span className="ml-1.5 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-[#0057c2] border border-blue-200">
+                                                                {pr.header_option.name}
+                                                            </span>
                                                         )}
                                                         {pr.user && (
                                                             <span className="text-slate-400 ml-1.5 font-normal">
@@ -716,10 +773,23 @@ export default function Dashboard({
                 </div>
             )}
 
+            {/* TAB: PR CONFIGURATION (SUPERADMIN) */}
+            {(activeTab === 'pr-configuration' || activeTab === 'header-options') && (
+                <PrConfigurationDashboard
+                    headerOptions={headerOptions}
+                    prDocumentTypes={prDocumentTypes}
+                    isSuperAdmin={isSuperAdmin}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={setActiveSubTab}
+                />
+            )}
+
             {/* Modal: Create Purchase Requisition */}
             <CreatePurchaseRequisitionModal
                 isOpen={isCreateOpen}
                 onClose={() => setIsCreateOpen(false)}
+                headerOptions={headerOptions}
+                prDocumentTypes={prDocumentTypes}
             />
 
             {/* Modal: Inspect SAP OData V4 Payload */}

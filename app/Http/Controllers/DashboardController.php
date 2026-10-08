@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HeaderOption;
+use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,7 +18,7 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        $query = PurchaseRequisition::with(['items', 'user'])->latest();
+        $query = PurchaseRequisition::with(['items', 'user', 'headerOption'])->latest();
 
         // If employee, only show their own created PRs
         if ($user && $user->isEmployee()) {
@@ -35,6 +37,15 @@ class DashboardController extends Controller
             'approved_count' => $prs->where('approval_status', 'approved')->count(),
         ];
 
+        $headerOptions = HeaderOption::with('creator:id,name,email')
+            ->orderBy('is_active', 'desc')
+            ->orderBy('name')
+            ->get();
+
+        $prDocumentTypes = PrDocumentType::with('creator:id,name,email')
+            ->orderBy('code')
+            ->get();
+
         $sapConfig = [
             'system_name' => 'SAP S/4HANA Cloud (Public Edition)',
             'edition' => '2408.3 Enterprise Cloud',
@@ -42,13 +53,15 @@ class DashboardController extends Controller
             'odata_version' => 'OData V4 (JSON format)',
             'entity_set' => 'PurchaseRequisition',
             'status' => 'Configured & Active',
-            'tenant_url' => env('SAP_ODATA_URL', 'https://my300123-api.s4hana.cloud.sap'),
+            'tenant_url' => env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap'),
             'communication_scenario' => 'SAP_COM_0053 (Purchase Requisition Integration)',
         ];
 
         return Inertia::render('dashboard', [
             'purchaseRequisitions' => $prs,
             'stats' => $stats,
+            'headerOptions' => $headerOptions,
+            'prDocumentTypes' => $prDocumentTypes,
             'sapConfig' => $sapConfig,
         ]);
     }

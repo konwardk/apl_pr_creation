@@ -210,4 +210,12 @@ class HeaderOptionTest extends TestCase
         $response = $this->actingAs($superadmin)->get(route('pr-configuration.index'));
         $response->assertRedirect(route('dashboard', ['tab' => 'pr-configuration']));
     }
+
+    public function test_superadmin_can_access_pr_configuration_with_subtab(): void
+    {
+        $superadmin = User::where('email', 'superadmin@example.com')->first();
+
+        $response = $this->actingAs($superadmin)->get(route('pr-configuration.index', ['subtab' => 'plants-sourcing']));
+        $response->assertRedirect(route('dashboard', ['tab' => 'pr-configuration', 'subtab' => 'plants-sourcing']));
+    }
 }

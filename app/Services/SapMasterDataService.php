@@ -3,6 +3,9 @@
 namespace App\Services;
 
 use App\Models\PrDocumentType;
+use App\Models\PurchaseRequisition;
+use GuzzleHttp\Client;
+use GuzzleHttp\Cookie\CookieJar;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -12,88 +15,7 @@ class SapMasterDataService
      * Default realistic fallback document types representing SAP S/4HANA Cloud
      * I_PurchaseRequisitionType CDS view release data for Assam Petro-Chemicals Ltd.
      */
-    protected array $fallbackDocumentTypes = [
-        [
-            'code' => 'ZCOM',
-            'name' => 'Domestic Cmpste PR (ZCOM)',
-            'category' => 'Domestic Composite',
-            'description' => 'Standard Assam Petro-Chemicals composite requisition for plant materials and maintenance services.',
-            'PurchasingDocumentSubtype' => 'C',
-            'IsDefault' => true,
-        ],
-        [
-            'code' => 'NB',
-            'name' => 'Pur. Requisition (NB)',
-            'category' => 'Standard SAP',
-            'description' => 'Standard Purchase Requisition conforming to baseline SAP S/4HANA Cloud schemas.',
-            'PurchasingDocumentSubtype' => 'S',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'NBS',
-            'name' => 'Pur. Requisition NBS (NBS)',
-            'category' => 'Special Item',
-            'description' => 'Purchase requisition requiring specialized supplier routing or consignment terms.',
-            'PurchasingDocumentSubtype' => 'X',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'RV',
-            'name' => 'Outline Agrmt. Reqn. (RV)',
-            'category' => 'Outline Agreement',
-            'description' => 'Requisition linked to existing Corporate Blanket Contract or Long-Term Sourcing Agreement.',
-            'PurchasingDocumentSubtype' => 'O',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'ZICP',
-            'name' => 'Import Cmpste PR (ZICP)',
-            'category' => 'Import Procurement',
-            'description' => 'International composite procurement requiring customs clearance, forex, and import duties.',
-            'PurchasingDocumentSubtype' => 'I',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'ZIMT',
-            'name' => 'Import Material PR (ZIMT)',
-            'category' => 'Import Materials',
-            'description' => 'Direct international raw chemical and synthesis catalyst material order.',
-            'PurchasingDocumentSubtype' => 'M',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'ZISR',
-            'name' => 'Import Service PR (ZISR)',
-            'category' => 'Import Services',
-            'description' => 'Overseas OEM technical consultant servicing, license renewals, and expert engineering.',
-            'PurchasingDocumentSubtype' => 'E',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'ZMAT',
-            'name' => 'Domestic Material PR (ZMAT)',
-            'category' => 'Domestic Materials',
-            'description' => 'Direct plant inventory materials, feedstocks, drums, and packaging.',
-            'PurchasingDocumentSubtype' => 'D',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'ZSER',
-            'name' => 'Domestic Service PR (ZSER)',
-            'category' => 'Domestic Services',
-            'description' => 'Local industrial overhaul, plant electrical instrumentation, and civil contractor jobs.',
-            'PurchasingDocumentSubtype' => 'V',
-            'IsDefault' => false,
-        ],
-        [
-            'code' => 'FO',
-            'name' => 'Framework Requisition (FO)',
-            'category' => 'Framework',
-            'description' => 'Long-term standing framework requisition for recurring plant consumables and utilities.',
-            'PurchasingDocumentSubtype' => 'F',
-            'IsDefault' => false,
-        ],
-    ];
+    protected array $fallbackDocumentTypes = [];
 
     /**
      * Fetch PR Document Types from the SAP S/4HANA Cloud CDS View endpoint:
@@ -121,14 +43,19 @@ class SapMasterDataService
         if (!empty($authUser) && !empty($authPass)) {
             try {
                 $startTime = microtime(true);
-
-                $response = Http::withBasicAuth($authUser, $authPass)
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
                     ->withHeaders([
                         'Accept' => 'application/json',
                         'Content-Type' => 'application/json',
-                    ])
-                    ->timeout(12)
-                    ->get($endpoint);
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request->get($endpoint);
 
                 $durationMs = round((microtime(true) - $startTime) * 1000);
 
@@ -149,7 +76,7 @@ class SapMasterDataService
                     ];
                 }
 
-                // If authentication failed or endpoint error, log and return informative error
+                // If authentication failed or endpoint error, log and return error
                 $errorBody = $response->body();
                 Log::warning('SAP CDS View fetch returned non-200: ' . $response->status(), [
                     'body' => substr($errorBody, 0, 500),
@@ -163,7 +90,7 @@ class SapMasterDataService
                     'endpoint' => $endpoint,
                     'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
                         ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
-                    'items' => $this->getFormattedFallbackItems(),
+                    'items' => [],
                     'error_details' => substr($errorBody, 0, 300),
                 ];
             } catch (\Exception $e) {
@@ -176,21 +103,20 @@ class SapMasterDataService
                     'source' => 'SAP S/4HANA Cloud (Connection Error)',
                     'endpoint' => $endpoint,
                     'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
-                    'items' => $this->getFormattedFallbackItems(),
+                    'items' => [],
                 ];
             }
         }
 
-        // Sandbox / Simulation Mode (Credentials not yet configured in .env)
         return [
-            'success' => true,
+            'success' => false,
             'is_live' => false,
-            'status' => 200,
-            'source' => 'SAP S/4HANA Cloud CDS View (I_PurchaseRequisitionType / Sandbox Staging)',
+            'status' => 400,
+            'source' => 'SAP S/4HANA Cloud CDS View (Credentials Not Configured)',
             'endpoint' => $endpoint,
-            'count' => count($this->fallbackDocumentTypes),
-            'items' => $this->getFormattedFallbackItems(),
-            'message' => 'Retrieved 10 PR Document Types conforming to SAP S/4HANA Cloud CDS View schema (I_PurchaseRequisitionType). Enter SAP Communication User credentials to fetch directly from your live tenant.',
+            'count' => 0,
+            'items' => [],
+            'message' => 'SAP Communication User credentials not configured in .env.',
         ];
     }
 
@@ -230,9 +156,10 @@ class SapMasterDataService
                 continue;
             }
 
-            $name = $rec['PurchaseRequisitionTypeName']
-                ?? $rec['Description']
+            $name = $rec['PurchasingDocumentTypeName_1']
                 ?? $rec['PurchasingDocumentTypeName']
+                ?? $rec['PurchaseRequisitionTypeName']
+                ?? $rec['Description']
                 ?? $rec['name']
                 ?? $code;
 
@@ -251,8 +178,7 @@ class SapMasterDataService
             ];
         }
 
-        // If no records matched known keys, fallback to formatted records
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackItems();
+        return $parsed;
     }
 
     /**
@@ -260,21 +186,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackItems(): array
     {
-        return array_map(function ($item) {
-            return [
-                'code' => $item['code'],
-                'name' => $item['name'],
-                'category' => $item['category'],
-                'description' => $item['description'],
-                'sap_source' => 'YY1_PURCHASEREQTYPE_CDS / I_PurchaseRequisitionType',
-                'raw_data' => [
-                    'PurchaseRequisitionType' => $item['code'],
-                    'PurchaseRequisitionTypeName' => $item['name'],
-                    'PurchasingDocumentSubtype' => $item['PurchasingDocumentSubtype'] ?? '',
-                    'IsDefaultPurchaseRequisitionType' => $item['IsDefault'] ?? false,
-                ],
-            ];
-        }, $this->fallbackDocumentTypes);
+        return [];
     }
 
     /**
@@ -373,98 +285,7 @@ class SapMasterDataService
     /**
      * Fallback materials list matching SAP YY1_MATERIALS_CDS / I_Product schema.
      */
-    protected array $fallbackMaterials = [
-        [
-            'Product' => '10000001',
-            'ProductName' => 'HCL Acid 30-33% Conc.',
-            'BaseUnit' => 'KG',
-            'ProductGroup' => 'L002',
-            'ProductType' => 'ROH',
-            'UnitPrice' => 26.94,
-            'poText' => 'Technical Grade Hydrochloric Acid 30-33% concentration for industrial chemical processing.',
-        ],
-        [
-            'Product' => 'TG11',
-            'ProductName' => 'High Pressure Hydraulic Seal 120mm',
-            'BaseUnit' => 'PC',
-            'ProductGroup' => 'L001',
-            'ProductType' => 'ERSA',
-            'UnitPrice' => 320.00,
-            'poText' => 'Viton elastomer high pressure hydraulic cylinder seal rated for 350 bar.',
-        ],
-        [
-            'Product' => 'RM-049',
-            'ProductName' => 'Industrial Solvent Degreaser 50L',
-            'BaseUnit' => 'L',
-            'ProductGroup' => 'L002',
-            'ProductType' => 'ROH',
-            'UnitPrice' => 84.50,
-            'poText' => 'Non-corrosive heavy duty solvent degreaser drum.',
-        ],
-        [
-            'Product' => 'SP-882',
-            'ProductName' => 'Stainless Steel Flange 4-inch ANSI',
-            'BaseUnit' => 'EA',
-            'ProductGroup' => 'L001',
-            'ProductType' => 'ERSA',
-            'UnitPrice' => 145.00,
-            'poText' => 'Class 150 ANSI 316L SS Flange blind weld neck.',
-        ],
-        [
-            'Product' => 'CH-012',
-            'ProductName' => 'Methanol Synthesis Catalyst Grade 2',
-            'BaseUnit' => 'KG',
-            'ProductGroup' => 'L002',
-            'ProductType' => 'ROH',
-            'UnitPrice' => 512.00,
-            'poText' => 'High purity synthesis catalyst for methanol generation line.',
-        ],
-        [
-            'Product' => 'EL-404',
-            'ProductName' => 'Industrial Flow Transmitter 4-20mA',
-            'BaseUnit' => 'PC',
-            'ProductGroup' => 'L003',
-            'ProductType' => 'ERSA',
-            'UnitPrice' => 1850.00,
-            'poText' => 'Electromagnetic flow sensor with 4-20mA HART transmitter.',
-        ],
-        [
-            'Product' => 'PK-102',
-            'ProductName' => 'High Density Polyethylene Drum 200L',
-            'BaseUnit' => 'PC',
-            'ProductGroup' => 'P001',
-            'ProductType' => 'VERP',
-            'UnitPrice' => 1250.00,
-            'poText' => 'Blue chemical storage UN-rated HDPE tight-head drum.',
-        ],
-        [
-            'Product' => 'SRV-01',
-            'ProductName' => 'Annual Machine Line Preventive Overhaul',
-            'BaseUnit' => 'AU',
-            'ProductGroup' => 'S001',
-            'ProductType' => 'DIEN',
-            'UnitPrice' => 4500.00,
-            'poText' => 'Comprehensive annual certified mechanical servicing and calibration.',
-        ],
-        [
-            'Product' => 'VLV-301',
-            'ProductName' => 'Control Valve Pneumatic Actuator 2-inch',
-            'BaseUnit' => 'PC',
-            'ProductGroup' => 'L001',
-            'ProductType' => 'ERSA',
-            'UnitPrice' => 2150.00,
-            'poText' => 'Pneumatic globe control valve with smart positioner.',
-        ],
-        [
-            'Product' => 'LUB-90',
-            'ProductName' => 'Turbine Lubricating Oil ISO VG 46 (210L Drum)',
-            'BaseUnit' => 'L',
-            'ProductGroup' => 'L002',
-            'ProductType' => 'HIBE',
-            'UnitPrice' => 195.00,
-            'poText' => 'High-grade anti-wear turbine and compressor lubricating oil.',
-        ],
-    ];
+    protected array $fallbackMaterials = [];
 
     /**
      * Fetch Materials / Products from SAP S/4HANA Cloud CDS View:
@@ -488,13 +309,19 @@ class SapMasterDataService
             try {
                 $startTime = microtime(true);
 
-                $response = Http::withBasicAuth($authUser, $authPass)
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
                     ->withHeaders([
                         'Accept' => 'application/json',
                         'Content-Type' => 'application/json',
-                    ])
-                    ->timeout(12)
-                    ->get($endpoint);
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request->get($endpoint);
 
                 $durationMs = round((microtime(true) - $startTime) * 1000);
 
@@ -523,31 +350,46 @@ class SapMasterDataService
                     ];
                 }
 
-                Log::warning('SAP Materials CDS View fetch non-200: ' . $response->status());
+                $errorBody = $response->body();
+                Log::warning('SAP Materials CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => [],
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
             } catch (\Exception $e) {
                 Log::error('Exception connecting to SAP Materials CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => [],
+                ];
             }
         }
 
-        // Fallback / Sandbox dataset conforming to YY1_MATERIALS_CDS
-        $items = $this->getFormattedFallbackMaterials();
-        if (!empty($search)) {
-            $term = strtolower(trim($search));
-            $items = array_values(array_filter($items, function ($it) use ($term) {
-                return str_contains(strtolower($it['Product']), $term)
-                    || str_contains(strtolower($it['ProductName']), $term);
-            }));
-        }
-
         return [
-            'success' => true,
+            'success' => false,
             'is_live' => false,
-            'status' => 200,
-            'source' => 'SAP S/4HANA Cloud CDS View (YY1_MATERIALS_CDS / Master Catalog)',
+            'status' => 400,
+            'source' => 'SAP S/4HANA Cloud CDS View (Credentials Not Configured)',
             'endpoint' => $endpoint,
-            'count' => count($items),
-            'items' => $items,
-            'message' => 'Loaded ' . count($items) . ' materials conforming to SAP YY1_MATERIALS_CDS schema.',
+            'count' => 0,
+            'items' => [],
+            'message' => 'SAP Communication User credentials not configured in .env.',
         ];
     }
 
@@ -580,31 +422,59 @@ class SapMasterDataService
                 continue;
             }
 
-            $productName = $rec['ProductName']
-                ?? $rec['ProductDescription']
-                ?? $rec['Description']
-                ?? $rec['name']
-                ?? (string)$product;
+            $productName = '';
+            foreach (['ProductName', 'ProductDescription', 'Description', 'name'] as $nameKey) {
+                if (!empty($rec[$nameKey]) && trim((string)$rec[$nameKey]) !== '') {
+                    $productName = trim((string)$rec[$nameKey]);
+                    break;
+                }
+            }
+            if ($productName === '') {
+                $productName = (string)$product;
+            }
 
-            $baseUnit = $rec['BaseUnit']
-                ?? $rec['UnitOfMeasure']
-                ?? $rec['BaseUnitOfMeasure']
-                ?? $rec['UoM']
-                ?? $rec['Unit']
-                ?? $rec['uom']
-                ?? 'PC';
+            $baseUnit = '';
+            foreach (['BaseUnit', 'UnitOfMeasure', 'BaseUnitOfMeasure', 'UoM', 'Unit', 'uom'] as $uomKey) {
+                if (!empty($rec[$uomKey]) && trim((string)$rec[$uomKey]) !== '') {
+                    $baseUnit = trim((string)$rec[$uomKey]);
+                    break;
+                }
+            }
+            if ($baseUnit === '') {
+                $baseUnit = 'PC';
+            }
 
-            $productGroup = $rec['ProductGroup']
-                ?? $rec['MaterialGroup']
-                ?? $rec['materialGroup']
-                ?? 'L001';
+            $productGroup = '';
+            foreach (['ProductGroup', 'MaterialGroup', 'materialGroup'] as $groupKey) {
+                if (!empty($rec[$groupKey]) && trim((string)$rec[$groupKey]) !== '') {
+                    $productGroup = trim((string)$rec[$groupKey]);
+                    break;
+                }
+            }
+            if ($productGroup === '') {
+                $productGroup = 'L001';
+            }
 
-            $productType = $rec['ProductType']
-                ?? $rec['MaterialType']
-                ?? $rec['materialType']
-                ?? 'ROH';
+            $productType = '';
+            foreach (['ProductType', 'MaterialType', 'materialType'] as $typeKey) {
+                if (!empty($rec[$typeKey]) && trim((string)$rec[$typeKey]) !== '') {
+                    $productType = trim((string)$rec[$typeKey]);
+                    break;
+                }
+            }
+            if ($productType === '') {
+                $productType = 'ROH';
+            }
 
             $unitPrice = isset($rec['UnitPrice']) ? (float)$rec['UnitPrice'] : (isset($rec['Price']) ? (float)$rec['Price'] : 0.0);
+
+            $poText = '';
+            foreach (['poText', 'LongText', 'ProductDescription', 'ProductDescription_1', 'ProductName'] as $descKey) {
+                if (!empty($rec[$descKey]) && trim((string)$rec[$descKey]) !== '') {
+                    $poText = trim((string)$rec[$descKey]);
+                    break;
+                }
+            }
 
             $parsed[] = [
                 'Product' => trim((string)$product),
@@ -619,12 +489,12 @@ class SapMasterDataService
                 'materialGroup' => trim((string)$productGroup),
                 'materialType' => trim((string)$productType),
                 'unitPrice' => $unitPrice,
-                'poText' => $rec['poText'] ?? $rec['LongText'] ?? $rec['ProductDescription'] ?? '',
+                'poText' => $poText,
                 'raw_data' => $rec,
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackMaterials();
+        return $parsed;
     }
 
     /**
@@ -632,23 +502,532 @@ class SapMasterDataService
      */
     public function getFormattedFallbackMaterials(): array
     {
-        return array_map(function ($item) {
-            return [
-                'Product' => $item['Product'],
-                'ProductName' => $item['ProductName'],
-                'BaseUnit' => $item['BaseUnit'],
-                'ProductGroup' => $item['ProductGroup'],
-                'ProductType' => $item['ProductType'],
-                'UnitPrice' => $item['UnitPrice'],
-                'code' => $item['Product'],
-                'name' => $item['ProductName'],
-                'uom' => $item['BaseUnit'],
-                'materialGroup' => $item['ProductGroup'],
-                'materialType' => $item['ProductType'],
-                'unitPrice' => $item['UnitPrice'],
-                'poText' => $item['poText'] ?? '',
-                'raw_data' => $item,
+        return [];
+    }
+
+    protected array $fallbackAccountAssignmentCategories = [];
+
+    /**
+     * Fetch Account Assignment Categories from SAP S/4HANA Cloud CDS View:
+     * YY1_ACCOUNTASSIGNMENTCAT_CDS / YY1_AccountAssignmentCat
+     */
+    public function fetchAccountAssignmentCategoriesFromCdsView(
+        ?string $search = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.account_assignment_categories',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_ACCOUNTASSIGNMENTCAT_CDS/YY1_AccountAssignmentCat?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request->get($endpoint);
+
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parseAccountAssignmentCategoryODataItems($json);
+
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['name']), $term)
+                                || str_contains(strtolower($it['extra'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_ACCOUNTASSIGNMENTCAT_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " account assignment categories live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Account Assignment Category CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => [],
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Account Assignment Category CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => [],
+                ];
+            }
+        }
+
+        return [
+            'success' => false,
+            'is_live' => false,
+            'status' => 400,
+            'source' => 'SAP S/4HANA Cloud CDS View (Credentials Not Configured)',
+            'endpoint' => $endpoint,
+            'count' => 0,
+            'items' => [],
+            'message' => 'SAP Communication User credentials not configured in .env.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized account assignment category items.
+     */
+    protected function parseAccountAssignmentCategoryODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $code = $rec['AccountAssignmentCategory']
+                ?? $rec['AccountAssignmentCategory_1']
+                ?? $rec['YY1_AccountAssignmentCat']
+                ?? $rec['code']
+                ?? null;
+
+            if ($code === null) {
+                continue;
+            }
+
+            $code = trim((string)$code);
+            if ($code === '') {
+                continue;
+            }
+
+            $name = '';
+            foreach (['AcctAssignmentCategoryName', 'AccountAssignmentCategoryName', 'Description', 'name'] as $nameKey) {
+                if (!empty($rec[$nameKey]) && trim((string)$rec[$nameKey]) !== '') {
+                    $name = trim((string)$rec[$nameKey]);
+                    break;
+                }
+            }
+            if ($name === '') {
+                $name = "Category {$code}";
+            }
+
+            $extra = match (strtoupper($code)) {
+                'K' => 'Posting to Cost Center (Standard Operating Expense)',
+                'P' => 'Work Breakdown Structure (WBS Project Element)',
+                'A' => 'Capitalized Fixed Asset',
+                'F' => 'Internal / Production Order',
+                'U' => 'Unassigned / Unknown Account Assignment',
+                'C' => 'Sales Order Line Item',
+                'N' => 'Network / Project Activity',
+                'Q' => 'Project Make-to-Order',
+                'S' => 'Third-Party Procurement Project',
+                'R' => 'Customer / Plant Service Order',
+                'M' => 'Individual Customer without KD-CO',
+                'J' => 'Transportation Management Cost Distribution',
+                'H' => 'Non-Stock Sales Order',
+                'Y' => 'Third Party without Serial Number',
+                'W' => 'Third Party with Serial Number',
+                'I' => 'Returns Process',
+                'T' => 'Auxiliary Account Assignment',
+                'X' => 'All Auxiliary Account Assignments',
+                default => "SAP Account Assignment Category ({$code})",
+            };
+
+            $parsed[] = [
+                'code' => $code,
+                'name' => $name,
+                'extra' => $extra,
+                'AccountAssignmentCategory' => $code,
+                'AcctAssignmentCategoryName' => $name,
+                'language' => $rec['Language'] ?? 'EN',
+                'raw_data' => $rec,
             ];
-        }, $this->fallbackMaterials);
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Get formatted fallback account assignment categories.
+     */
+    public function getFormattedFallbackAccountAssignmentCategories(): array
+    {
+        return [];
+    }
+
+    /**
+     * Fetch Plants from SAP S/4HANA Cloud Value Help Service:
+     * ZUI_TMS_DESPATCH_04 / PlantVH
+     */
+    public function fetchPlantsFromSap(
+        ?string $search = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.plants',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request->get($endpoint);
+
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parsePlantODataItems($json);
+
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['name']), $term)
+                                || str_contains(strtolower($it['plantName'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live Service: ZUI_TMS_DESPATCH_04 / PlantVH)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " plants live from SAP in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP PlantVH fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}",
+                    'items' => $this->getFormattedFallbackPlants(),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP PlantVH: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackPlants(),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (PlantVH)',
+            'endpoint' => $endpoint,
+            'count' => 4,
+            'items' => $this->getFormattedFallbackPlants(),
+            'message' => 'Returning fallback plant data.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized plant items.
+     */
+    protected function parsePlantODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $code = $rec['Plant'] ?? $rec['code'] ?? null;
+            if ($code === null || trim((string)$code) === '') {
+                continue;
+            }
+
+            $code = trim((string)$code);
+            $plantName = trim((string)($rec['PlantName'] ?? $rec['name'] ?? ''));
+            if ($plantName === '') {
+                $plantName = "Plant {$code}";
+            }
+
+            $parsed[] = [
+                'code' => $code,
+                'name' => "{$code} - {$plantName}",
+                'plantName' => $plantName,
+                'extra' => "Plant {$code} • {$plantName}",
+                'Plant' => $code,
+                'PlantName' => $plantName,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackPlants();
+    }
+
+    /**
+     * Get fallback plants matching live SAP PlantVH service data.
+     */
+    public function getFormattedFallbackPlants(): array
+    {
+        return [
+            [
+                'code' => '1100',
+                'name' => '1100 - Corporate Office',
+                'plantName' => 'Corporate Office',
+                'extra' => 'Plant 1100 • Corporate Office',
+                'Plant' => '1100',
+                'PlantName' => 'Corporate Office',
+            ],
+            [
+                'code' => '1200',
+                'name' => '1200 - Namrup',
+                'plantName' => 'Namrup',
+                'extra' => 'Plant 1200 • Namrup',
+                'Plant' => '1200',
+                'PlantName' => 'Namrup',
+            ],
+            [
+                'code' => '1300',
+                'name' => '1300 - Boitamari',
+                'plantName' => 'Boitamari',
+                'extra' => 'Plant 1300 • Boitamari',
+                'Plant' => '1300',
+                'PlantName' => 'Boitamari',
+            ],
+            [
+                'code' => '1400',
+                'name' => '1400 - Rani Nagar',
+                'plantName' => 'Rani Nagar',
+                'extra' => 'Plant 1400 • Rani Nagar',
+                'Plant' => '1400',
+                'PlantName' => 'Rani Nagar',
+            ],
+        ];
+    }
+
+    /**
+     * Post/Sync Purchase Requisition to SAP S/4HANA Public Cloud via OData V4 API.
+     *
+     * @param PurchaseRequisition $purchaseRequisition
+     * @param bool $doOnlyValidation
+     * @return array
+     */
+    public function postPurchaseRequisition(PurchaseRequisition $purchaseRequisition, bool $doOnlyValidation = false): array
+    {
+        $username = config('sap.auth.username', env('SAP_ODATA_USER'));
+        $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        $endpoint = config(
+            'sap.endpoints.purchase_requisition_process',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/PurchaseReqn'
+        );
+        $serviceRoot = config(
+            'sap.endpoints.service_root',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/'
+        );
+
+        if (empty($username) || empty($password)) {
+            return [
+                'success' => false,
+                'sap_pr_number' => null,
+                'status' => 400,
+                'message' => 'SAP Communication User credentials not configured in .env',
+                'response' => [],
+                'payload' => $purchaseRequisition->toSapODataV4Payload($doOnlyValidation),
+            ];
+        }
+
+        $payload = $purchaseRequisition->toSapODataV4Payload($doOnlyValidation);
+
+        try {
+            $client = new Client([
+                'verify' => config('sap.verify_ssl', false),
+                'timeout' => 30,
+                'http_errors' => false,
+            ]);
+            $cookieJar = new CookieJar();
+
+            // 1. Fetch CSRF Token
+            $tokenRes = $client->request('GET', $serviceRoot, [
+                'auth' => [$username, $password],
+                'headers' => [
+                    'x-csrf-token' => 'Fetch',
+                    'Accept' => 'application/json',
+                ],
+                'cookies' => $cookieJar,
+            ]);
+
+            $csrfToken = $tokenRes->getHeaderLine('x-csrf-token');
+            if (empty($csrfToken)) {
+                Log::error('SAP CSRF Token fetch failed: HTTP ' . $tokenRes->getStatusCode());
+                return [
+                    'success' => false,
+                    'sap_pr_number' => null,
+                    'status' => $tokenRes->getStatusCode(),
+                    'message' => 'Failed to obtain CSRF token from SAP S/4HANA Cloud (HTTP ' . $tokenRes->getStatusCode() . ')',
+                    'response' => [],
+                    'payload' => $payload,
+                ];
+            }
+
+            // 2. Post to PurchaseReqn
+            $startTime = microtime(true);
+            $postRes = $client->request('POST', $endpoint, [
+                'auth' => [$username, $password],
+                'headers' => [
+                    'x-csrf-token' => $csrfToken,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                ],
+                'cookies' => $cookieJar,
+                'json' => $payload,
+            ]);
+
+            $durationMs = round((microtime(true) - $startTime) * 1000);
+            $statusCode = $postRes->getStatusCode();
+            $body = (string) $postRes->getBody();
+            $resJson = json_decode($body, true) ?: [];
+
+            if ($statusCode === 201 || $statusCode === 200) {
+                $sapPrNum = $resJson['PurchaseRequisition']
+                    ?? ($resJson['d']['PurchaseRequisition']
+                    ?? ($resJson['_PurchaseRequisitionItem'][0]['PurchaseRequisition'] ?? null));
+
+                return [
+                    'success' => true,
+                    'sap_pr_number' => $sapPrNum,
+                    'status' => $statusCode,
+                    'latency_ms' => $durationMs,
+                    'message' => "Successfully posted to SAP S/4HANA Cloud. Assigned SAP PR #{$sapPrNum} in {$durationMs}ms.",
+                    'response' => $resJson,
+                    'payload' => $payload,
+                ];
+            }
+
+            // Parse SAP error message
+            $errorMessage = $resJson['error']['message'] ?? ("HTTP {$statusCode}: " . substr($body, 0, 300));
+            if (!empty($resJson['error']['details']) && is_array($resJson['error']['details'])) {
+                $detailMsgs = array_filter(array_column($resJson['error']['details'], 'message'));
+                if (!empty($detailMsgs)) {
+                    $errorMessage .= ' - ' . implode('; ', $detailMsgs);
+                }
+            } elseif (isset($resJson['error']['details'][0]['message'])) {
+                $errorMessage .= ' - ' . $resJson['error']['details'][0]['message'];
+            }
+
+            Log::warning("SAP PR POST failed with HTTP {$statusCode}: {$errorMessage}", [
+                'payload' => $payload,
+                'response' => $body,
+            ]);
+
+            return [
+                'success' => false,
+                'sap_pr_number' => null,
+                'status' => $statusCode,
+                'latency_ms' => $durationMs,
+                'message' => $errorMessage,
+                'response' => $resJson,
+                'payload' => $payload,
+            ];
+        } catch (\Exception $e) {
+            Log::error('Exception posting PR to SAP: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'sap_pr_number' => null,
+                'status' => 500,
+                'message' => 'Connection error: ' . $e->getMessage(),
+                'response' => [],
+                'payload' => $payload,
+            ];
+        }
     }
 }

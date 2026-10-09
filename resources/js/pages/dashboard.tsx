@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
 import type { User, HeaderOption, PrDocumentType } from '@/types';
+import { formatCurrency } from '@/lib/utils';
 
 interface PrItem {
     id: number;
@@ -188,7 +189,21 @@ export default function Dashboard({
         });
     }, [purchaseRequisitions, statusFilter, searchQuery]);
 
+    // Aggregate currency totals dynamically based on currencies used in PRs
+    const currencyTotals = useMemo(() => {
+        const totals: Record<string, number> = {};
+        if (purchaseRequisitions && purchaseRequisitions.length > 0) {
+            purchaseRequisitions.forEach((pr) => {
+                const curr = (pr.currency || 'INR').toUpperCase();
+                const amt = Number(pr.total_amount) || 0;
+                totals[curr] = (totals[curr] || 0) + amt;
+            });
+        }
+        return totals;
+    }, [purchaseRequisitions]);
+
     // Single PR Sync
+
     const handleSyncPr = (pr: PurchaseRequisition) => {
         setSyncingId(pr.id);
         router.post(
@@ -295,12 +310,25 @@ export default function Dashboard({
                             <div className="mt-2 text-2xl font-bold tracking-tight text-[#1c2d42]">
                                 {stats.total_count}
                             </div>
-                            <div className="mt-1 flex items-center justify-between text-xs text-[#556b82]">
-                                <span>Total Value:</span>
-                                <span className="font-semibold text-[#1c2d42]">
-                                    ${Number(stats.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                                </span>
+                            <div className="mt-1 flex items-start justify-between text-xs text-[#556b82]">
+                                <span className="pt-0.5">Total Value:</span>
+                                <div className="text-right space-y-0.5">
+                                    {Object.keys(currencyTotals).length > 0 ? (
+                                        Object.entries(currencyTotals).map(([curr, total]) => (
+                                            <div key={curr} className="font-semibold text-[#1c2d42]">
+                                                {formatCurrency(total, curr)}{' '}
+                                                <span className="text-[10px] font-normal text-[#556b82]">{curr}</span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="font-semibold text-[#1c2d42]">
+                                            {formatCurrency(stats.total_amount || 0, 'INR')}{' '}
+                                            <span className="text-[10px] font-normal text-[#556b82]">INR</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+
                             <div className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-[#556b82]">
                                 Recorded in MySQL <strong className="text-[#1c2d42]">apl_pr_db</strong>
                             </div>
@@ -532,7 +560,7 @@ export default function Dashboard({
                                                 {/* Total Amount */}
                                                 <td className="py-3 px-3 text-right">
                                                     <div className="font-semibold text-xs text-[#1c2d42]">
-                                                        ${Number(pr.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        {formatCurrency(pr.total_amount, pr.currency)}
                                                     </div>
                                                     <div className="text-[10px] text-[#556b82]">
                                                         {pr.currency}
@@ -780,7 +808,7 @@ export default function Dashboard({
                     prDocumentTypes={prDocumentTypes}
                     isSuperAdmin={isSuperAdmin}
                     activeSubTab={activeSubTab}
-                    onSubTabChange={setActiveSubTab}
+                    onSubTabChange={(sub) => handleTabChange('pr-configuration', sub)}
                 />
             )}
 

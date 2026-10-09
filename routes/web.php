@@ -17,6 +17,8 @@ Route::middleware(['auth', 'verified', 'role'])->group(function () {
     Route::post('purchase-requisitions', [PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
     Route::post('purchase-requisitions/{purchaseRequisition}/sync', [PurchaseRequisitionController::class, 'sync'])->name('purchase-requisitions.sync');
     Route::get('sap-materials', [PurchaseRequisitionController::class, 'getMaterials'])->name('sap-materials.index');
+    Route::get('sap-account-assignment-categories', [PurchaseRequisitionController::class, 'getAccountAssignmentCategories'])->name('sap-account-assignment-categories.index');
+    Route::get('sap-plants', [PurchaseRequisitionController::class, 'getPlants'])->name('sap-plants.index');
 
     // Super Administrator only: User Management & Header Options Configuration
     Route::middleware(['role:superadmin'])->group(function () {
@@ -27,8 +29,12 @@ Route::middleware(['auth', 'verified', 'role'])->group(function () {
         Route::post('users/{user}/toggle-status', [UserManagementController::class, 'toggleStatus'])->name('users.toggle-status');
 
         // PR Configuration Hub
-        Route::get('pr-configuration', function () {
-            return redirect()->route('dashboard', ['tab' => 'pr-configuration']);
+        Route::get('pr-configuration', function (\Illuminate\Http\Request $request) {
+            $params = ['tab' => 'pr-configuration'];
+            if ($request->filled('subtab')) {
+                $params['subtab'] = $request->query('subtab');
+            }
+            return redirect()->route('dashboard', $params);
         })->name('pr-configuration.index');
 
         // Header Options Management

@@ -26,6 +26,7 @@ import {
 import type { HeaderOption, PrDocumentType } from '@/types';
 import HeaderOptionsManager from './HeaderOptionsManager';
 import DocumentTypesManager from './DocumentTypesManager';
+import PlantsManager from './PlantsManager';
 
 export interface PrConfigSubTab {
     id: string;
@@ -99,11 +100,11 @@ export default function PrConfigurationDashboard({
             },
             {
                 id: 'plants-sourcing',
-                label: 'Plants & Purchasing Groups',
-                description: 'Assam Petro-Chemicals manufacturing plants and buyer groups',
+                label: 'Plants & Purchasing Organizations',
+                description: 'SAP S/4HANA Cloud Plants (ZUI_TMS_DESPATCH_04 / PlantVH) and buyer orgs',
                 icon: Building2,
-                badge: '3 Plants',
-                badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+                badge: '4 Plants',
+                badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
                 category: 'Master Data',
                 isReady: true,
             },
@@ -321,74 +322,9 @@ export default function PrConfigurationDashboard({
                         />
                     )}
 
-                    {/* SUB-TAB 3: PLANTS & PURCHASING GROUPS */}
-                    {activeSubTab === 'plants-sourcing' && (
-                        <div className="space-y-6">
-                            <div className="rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-xs">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0070f2] text-white">
-                                            <Building2 className="h-5 w-5" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-base font-bold text-[#1c2d42]">
-                                                Plants & Purchasing Organizations
-                                            </h2>
-                                            <p className="text-xs text-[#556b82]">
-                                                Operational plant codes, storage locations, and procurement buyer groups
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                                        SAP Organizational Hierarchy
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="rounded-xl border border-[#d9e2ec] bg-white p-4 shadow-xs">
-                                    <div className="flex items-center justify-between text-xs font-bold text-[#0070f2] mb-2">
-                                        <span>Plant 1200</span>
-                                        <span className="rounded bg-emerald-100 text-emerald-800 px-1.5 py-0.5 text-[10px]">Active Primary</span>
-                                    </div>
-                                    <h3 className="text-xs font-bold text-[#1c2d42]">Dibrugarh Manufacturing Plant</h3>
-                                    <p className="text-[11px] text-[#556b82] mt-1">
-                                        Parbatpur, Dibrugarh, Assam 786623 (India)
-                                    </p>
-                                    <div className="mt-3 border-t border-slate-100 pt-2 text-[10px] text-slate-500 font-mono">
-                                        Storage Bays: 101A (Raw), 101B (FG), 102A (Spares)
-                                    </div>
-                                </div>
-
-                                <div className="rounded-xl border border-[#d9e2ec] bg-white p-4 shadow-xs">
-                                    <div className="flex items-center justify-between text-xs font-bold text-[#0070f2] mb-2">
-                                        <span>Plant 1000</span>
-                                        <span className="rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px]">Methanol Unit</span>
-                                    </div>
-                                    <h3 className="text-xs font-bold text-[#1c2d42]">Namrup Main Synthesis Unit</h3>
-                                    <p className="text-[11px] text-[#556b82] mt-1">
-                                        Namrup Industrial Area, Dibrugarh District, Assam
-                                    </p>
-                                    <div className="mt-3 border-t border-slate-100 pt-2 text-[10px] text-slate-500 font-mono">
-                                        Storage Bays: 100A, 100B Bulk Tank Farms
-                                    </div>
-                                </div>
-
-                                <div className="rounded-xl border border-[#d9e2ec] bg-white p-4 shadow-xs">
-                                    <div className="flex items-center justify-between text-xs font-bold text-[#0070f2] mb-2">
-                                        <span>Plant 1010</span>
-                                        <span className="rounded bg-slate-100 text-slate-700 px-1.5 py-0.5 text-[10px]">Global Tech</span>
-                                    </div>
-                                    <h3 className="text-xs font-bold text-[#1c2d42]">Corporate Procurement Global</h3>
-                                    <p className="text-[11px] text-[#556b82] mt-1">
-                                        Dietmar-Hopp-Allee 16, Walldorf, Germany (DE)
-                                    </p>
-                                    <div className="mt-3 border-t border-slate-100 pt-2 text-[10px] text-slate-500 font-mono">
-                                        Storage Bays: Central Logistics Hub
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                    {/* SUB-TAB 3: PLANTS & PURCHASING ORGANIZATIONS */}
+                    {(activeSubTab === 'plants-sourcing' || activeSubTab === 'plants-organizations' || activeSubTab === 'plants') && (
+                        <PlantsManager isSuperAdmin={isSuperAdmin} />
                     )}
 
                     {/* SUB-TAB 4: ACCOUNT ASSIGNMENT */}

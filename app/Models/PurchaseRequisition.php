@@ -57,53 +57,131 @@ class PurchaseRequisition extends Model
     }
 
     /**
-     * Build SAP S/4HANA Cloud OData V4 POST Payload
+     * Map common SAP BaseUnit codes to their corresponding ISO codes required by OData V4.
      */
-    public function toSapODataV4Payload(): array
+    public static function mapUnitOfMeasureToIso(string $uom): string
+    {
+        $map = [
+            'EA' => 'EA',
+            'PC' => 'PCE',
+            'PCE' => 'PCE',
+            'KG' => 'KGM',
+            'KGM' => 'KGM',
+            'L' => 'LTR',
+            'LTR' => 'LTR',
+            'LE' => 'C62',
+            'C62' => 'C62',
+            'PAA' => 'PR',
+            'PR' => 'PR',
+            'M' => 'MTR',
+            'MTR' => 'MTR',
+            'TO' => 'TNE',
+            'TNE' => 'TNE',
+            'M3' => 'MTQ',
+            'MTQ' => 'MTQ',
+            'H' => 'HUR',
+            'HR' => 'HUR',
+            'HUR' => 'HUR',
+            'DAY' => 'DAY',
+            'MON' => 'MON',
+            'SET' => 'SET',
+            'BOX' => 'BX',
+            'BX' => 'BX',
+            'ROL' => 'RO',
+            'AU' => 'C62',
+        ];
+
+        $upper = strtoupper(trim($uom));
+        return $map[$upper] ?? $upper;
+    }
+
+    /**
+     * Build SAP S/4HANA Cloud OData V4 POST Payload matching api_purchaserequisition_2 / PurchaseReqn
+     */
+    public function toSapODataV4Payload(bool $doOnlyValidation = false): array
     {
         $payload = [
-            'PurchaseRequisitionType' => $this->pr_type ?: 'NB',
-            'PurReqnDescription' => $this->description,
-            '_PurchaseRequisitionItem' => $this->items->map(function ($item) {
+            'PurchaseRequisitionType' => $this->pr_type ?: 'ZMAT',
+            'PurReqnDescription' => mb_substr($this->description ?: 'Purchase Requisition', 0, 40),
+            'PurReqnHeaderNote' => (string) ($this->header_note ?? ''),
+            'SourceDetermination' => (bool) $this->auto_source_determination,
+            'PurReqnDoOnlyValidation' => $doOnlyValidation,
+            '_PurchaseRequisitionItem' => $this->items->map(function ($item, $index) {
+                $itemNum = (string) (intval($item->item_number) ?: (($index + 1) * 10));
+                $baseUnit = $item->unit_of_measure ?: 'EA';
+                $isoCode = static::mapUnitOfMeasureToIso($baseUnit);
+
                 $itemPayload = [
-                    'PurchaseRequisitionItem' => $item->item_number,
+                    'PurchaseRequisitionItem' => $itemNum,
+                    'PurchaseRequisitionItemText' => mb_substr($item->description, 0, 40),
                     'Material' => $item->material_code ?: '',
-                    'PurchaseRequisitionItemText' => $item->description,
-                    'MaterialGroup' => $item->material_group ?: 'L001',
+                    'MaterialGroup' => $item->material_group ?: 'YBPM01',
                     'RequestedQuantity' => (float) $item->quantity,
-                    'BaseUnit' => $item->unit_of_measure ?: 'PC',
+                    'BaseUnit' => $baseUnit,
+                    'BaseUnitISOCode' => $isoCode,
                     'PurchaseRequisitionPrice' => (float) $item->unit_price,
                     'PurReqnPriceQuantity' => (int) ($item->price_unit ?: 1),
-                    'Currency' => $item->currency ?: $this->currency ?: 'INR',
-                    'Plant' => $item->plant ?: $this->plant ?: '1010',
-                    'StorageLocation' => $item->storage_location ?: '101A',
-                    'AccountAssignmentCategory' => $item->account_assignment_category ?: 'K',
-                    'PurchasingGroup' => $item->purchasing_group ?: '101',
-                    'PurchasingOrganization' => $item->purchasing_organization ?: '',
-                    'Supplier' => $item->desired_supplier ?: '',
-                    'Batch' => $item->batch ?: '',
-                    'RequirementTracking' => $item->requirement_tracking_number ?: '',
+                    'PurchasingOrganization' => $item->purchasing_organization ?: '1100',
+                    'PurchasingGroup' => $item->purchasing_group ?: '103',
+                    'Plant' => $item->plant ?: '1200',
+                    'CompanyCode' => $this->company_code ?: '1000',
                     'DeliveryDate' => $item->delivery_date ? $item->delivery_date->format('Y-m-d') : now()->addDays(7)->format('Y-m-d'),
-                    '_PurchaseReqnAcctAssgmt' => [
-                        [
-                            'CostCenter' => $item->cost_center ?: '10101101',
-                            'GLAccount' => $item->gl_account ?: '51000000',
-                            'CompanyCode' => $this->company_code ?: '1010',
-                        ]
-                    ]
+                    'PurReqnItemCurrency' => $item->currency ?: ($this->currency ?: 'INR'),
                 ];
+
+                // Account Assignment is only sent when category is provided (e.g. 'K' for Cost Center)
+                if (!empty($item->account_assignment_category)) {
+                    $itemPayload['AccountAssignmentCategory'] = $item->account_assignment_category;
+                    $itemPayload['_PurchaseReqnAcctAssgmt'] = [
+                        [
+                            'PurchaseReqnAcctAssgmtNumber' => '1',
+                            'CostCenter' => $item->cost_center ?: '10101PCC01',
+                            'GLAccount' => $item->gl_account ?: '65301000',
+                        ]
+                    ];
+                } else {
+                    $itemPayload['AccountAssignmentCategory'] = '';
+                }
+
+                if (!empty($item->storage_location)) {
+                    $itemPayload['StorageLocation'] = $item->storage_location;
+                }
 
                 if (!empty($item->tax_code)) {
                     $itemPayload['TaxCode'] = $item->tax_code;
                 }
 
-                return $itemPayload;
-            })->toArray(),
-        ];
+                if (!empty($item->desired_supplier)) {
+                    $itemPayload['Supplier'] = $item->desired_supplier;
+                }
 
-        if (!empty($this->header_note)) {
-            $payload['PurReqnDescription'] = $this->description . ' - ' . substr($this->header_note, 0, 50);
-        }
+                if (!empty($item->supplier_material_number)) {
+                    $itemPayload['SupplierMaterialNumber'] = $item->supplier_material_number;
+                }
+
+                if (!empty($item->batch)) {
+                    $itemPayload['Batch'] = $item->batch;
+                }
+
+                if (!empty($item->requirement_tracking_number)) {
+                    $itemPayload['RequirementTracking'] = $item->requirement_tracking_number;
+                }
+
+                if ($item->item_type === 'service') {
+                    $itemPayload['ProductTypeCode'] = '2';
+                    if ($item->requisition_date) {
+                        $itemPayload['PerformancePeriodStartDate'] = $item->requisition_date->format('Y-m-d');
+                    }
+                    if ($item->delivery_date) {
+                        $itemPayload['PerformancePeriodEndDate'] = $item->delivery_date->format('Y-m-d');
+                    }
+                } else {
+                    $itemPayload['ProductTypeCode'] = '1';
+                }
+
+                return $itemPayload;
+            })->values()->toArray(),
+        ];
 
         return $payload;
     }

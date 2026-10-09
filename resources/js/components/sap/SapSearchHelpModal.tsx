@@ -35,10 +35,10 @@ export default function SapSearchHelpModal({
         const q = searchQuery.toLowerCase().trim();
         if (!q) return options;
         return options.filter((opt) => {
-            const product = (opt.Product || opt.code || '').toLowerCase();
-            const productName = (opt.ProductName || opt.name || '').toLowerCase();
+            const product = (opt.Plant || opt.Product || opt.AccountAssignmentCategory || opt.code || '').toLowerCase();
+            const productName = (opt.PlantName || opt.ProductName || opt.AcctAssignmentCategoryName || opt.name || '').toLowerCase();
             const extra = (opt.extra || '').toLowerCase();
-            const uom = (opt.BaseUnit || opt.uom || '').toLowerCase();
+            const uom = (opt.BaseUnit || opt.UnitOfMeasure || opt.uom || '').toLowerCase();
             const group = (opt.ProductGroup || opt.materialGroup || '').toLowerCase();
             const type = (opt.ProductType || opt.materialType || '').toLowerCase();
 
@@ -111,7 +111,7 @@ export default function SapSearchHelpModal({
                         <div className="py-16 text-center text-xs text-[#556b82]">
                             <div className="inline-flex h-8 w-8 animate-spin items-center justify-center rounded-full border-3 border-[#0070f2] border-t-transparent mb-3" />
                             <p className="font-bold text-slate-700">Connecting to SAP S/4HANA Cloud...</p>
-                            <p className="text-[11px] text-slate-400 mt-1">Retrieving Product & ProductName from CDS View <code className="font-mono text-[#0070f2]">YY1_MATERIALS_CDS</code></p>
+                            <p className="text-[11px] text-slate-400 mt-1">{subtitle || 'Retrieving master data from SAP S/4HANA Cloud...'}</p>
                         </div>
                     ) : filteredOptions.length === 0 ? (
                         <div className="p-8 text-center text-xs text-[#556b82]">
@@ -146,8 +146,8 @@ export default function SapSearchHelpModal({
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt) => {
-                                    const optCode = opt.Product || opt.code;
-                                    const optName = opt.ProductName || opt.name;
+                                    const optCode = opt.Product || opt.AccountAssignmentCategory || opt.code;
+                                    const optName = opt.ProductName || opt.AcctAssignmentCategoryName || opt.name;
                                     const isSelected = selectedCode === optCode;
 
                                     return (
@@ -195,10 +195,12 @@ export default function SapSearchHelpModal({
                                             ) : (
                                                 <>
                                                     <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
-                                                        {opt.code}
+                                                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs">
+                                                            {optCode}
+                                                        </span>
                                                     </td>
                                                     <td className="py-2.5 px-4 font-medium text-[#1c2d42]">
-                                                        {opt.name}
+                                                        {optName}
                                                     </td>
                                                     {filteredOptions.some((o) => o.extra) && (
                                                         <td className="py-2.5 px-4 text-[11px] text-[#556b82]">

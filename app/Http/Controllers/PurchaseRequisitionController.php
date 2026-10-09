@@ -6,6 +6,7 @@ use App\Models\HeaderOption;
 use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
+use App\Models\User;
 use App\Services\SapMasterDataService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -38,35 +39,167 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Fetch Account Assignment Categories from SAP S/4HANA Cloud CDS View (YY1_ACCOUNTASSIGNMENTCAT_CDS)
+     */
+    public function getAccountAssignmentCategories(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchAccountAssignmentCategoriesFromCdsView($search);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch Plants from SAP S/4HANA Cloud Value Help Service (ZUI_TMS_DESPATCH_04 / PlantVH)
+     */
+    public function getPlants(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchPlantsFromSap($search);
+
+        return response()->json($result);
+    }
+
+    /**
      * Display the purchase requisition creation page.
      */
     public function create(Request $request): Response
     {
+        // 1. Header options from internal database (apl_pr_db)
         $headerOptions = HeaderOption::where('is_active', true)
             ->orderBy('name')
             ->get();
 
+        // 2. PR document types from internal database (synced from SAP CDS view YY1_PURCHASEREQTYPE_CDS)
         $prDocumentTypes = PrDocumentType::where('is_active', true)
             ->orderBy('code')
             ->get();
 
-        $docTypesData = $prDocumentTypes->isNotEmpty()
-            ? $prDocumentTypes->map(fn($dt) => [
-                'code' => $dt->code,
-                'name' => $dt->name,
-                'extra' => $dt->description ?: $dt->category,
-            ])->toArray()
-            : [
-                ['code' => 'ZCOM', 'name' => 'Domestic Cmpste PR (ZCOM)', 'extra' => 'Domestic Standard Requisition'],
-                ['code' => 'NB', 'name' => 'Pur. Requisition (NB)', 'extra' => 'Standard Purchase Requisition'],
-                ['code' => 'NBS', 'name' => 'Pur. Requisition NBS (NBS)', 'extra' => 'Special Item PR'],
-                ['code' => 'RV', 'name' => 'Outline Agrmt. Reqn. (RV)', 'extra' => 'Outline Agreement'],
-                ['code' => 'ZICP', 'name' => 'Import Cmpste PR (ZICP)', 'extra' => 'Import Composite'],
-                ['code' => 'ZIMT', 'name' => 'Import Material PR (ZIMT)', 'extra' => 'Import Materials'],
-                ['code' => 'ZISR', 'name' => 'Import Service PR (ZISR)', 'extra' => 'Import Services'],
-                ['code' => 'ZMAT', 'name' => 'Domestic Material PR (ZMAT)', 'extra' => 'Domestic Materials'],
-                ['code' => 'ZSER', 'name' => 'Domestic Service PR (ZSER)', 'extra' => 'Domestic Services'],
-            ];
+        // If not yet present in DB, attempt to sync live from SAP S/4HANA Cloud CDS View
+        if ($prDocumentTypes->isEmpty()) {
+            $sapDocTypes = $this->sapService->fetchPrDocumentTypesFromCdsView();
+            if (!empty($sapDocTypes['items']) && ($sapDocTypes['is_live'] ?? false)) {
+                $this->sapService->savePrDocumentTypes($sapDocTypes['items'], $request->user()?->id);
+                $prDocumentTypes = PrDocumentType::where('is_active', true)
+                    ->orderBy('code')
+                    ->get();
+            }
+        }
+
+        $docTypesData = $prDocumentTypes->map(fn($dt) => [
+            'code' => $dt->code,
+            'name' => $dt->name,
+            'extra' => $dt->description ?: $dt->category,
+        ])->toArray();
+
+        // 3. Account Assignment Categories from live SAP CDS view YY1_ACCOUNTASSIGNMENTCAT_CDS
+        $acctResult = $this->sapService->fetchAccountAssignmentCategoriesFromCdsView();
+        $accountAssignmentCategories = ($acctResult['success'] ?? false)
+            ? array_map(fn($item) => [
+                'code' => $item['code'],
+                'name' => $item['name'],
+                'extra' => $item['extra'] ?? '',
+            ], $acctResult['items'] ?? [])
+            : [];
+
+        // 4. Materials from live SAP CDS view YY1_MATERIALS_CDS
+        $materialsResult = $this->sapService->fetchMaterialsFromCdsView();
+        $materials = ($materialsResult['success'] ?? false)
+            ? array_map(fn($item) => [
+                'code' => $item['code'],
+                'name' => $item['name'],
+                'materialGroup' => $item['materialGroup'] ?? '',
+                'materialType' => $item['materialType'] ?? '',
+                'uom' => $item['uom'] ?? 'PC',
+                'unitPrice' => (float)($item['unitPrice'] ?? 0),
+                'poText' => $item['poText'] ?? '',
+                'extra' => trim(($item['materialGroup'] ?? '') . ' • ' . ($item['uom'] ?? '')),
+            ], $materialsResult['items'] ?? [])
+            : [];
+
+        // 5. Extract real Material Groups dynamically from SAP master materials
+        $materialGroups = collect($materials)
+            ->pluck('materialGroup')
+            ->filter()
+            ->unique()
+            ->values()
+            ->map(fn($group) => [
+                'code' => $group,
+                'name' => "Material Group {$group}",
+                'extra' => 'SAP Material Group',
+            ])->toArray();
+
+        // 6. Extract real Units of Measure dynamically from SAP master materials
+        $unitsOfMeasure = collect($materials)
+            ->pluck('uom')
+            ->filter()
+            ->unique()
+            ->values()
+            ->map(fn($uom) => [
+                'code' => $uom,
+                'name' => $uom,
+                'extra' => 'SAP Unit of Measure',
+            ])->toArray();
+
+        // 7. Extract real Material Types dynamically from SAP master materials
+        $materialTypes = collect($materials)
+            ->pluck('materialType')
+            ->filter()
+            ->unique()
+            ->values()
+            ->map(fn($mtype) => [
+                'code' => $mtype,
+                'name' => $mtype,
+                'extra' => 'SAP Material Type',
+            ])->toArray();
+
+        // 8. Plants from live SAP S/4HANA Cloud service (ZUI_TMS_DESPATCH_04 / PlantVH)
+        $plantsResult = $this->sapService->fetchPlantsFromSap();
+        $plants = ($plantsResult['success'] ?? false && !empty($plantsResult['items']))
+            ? array_map(fn($item) => [
+                'code' => $item['code'],
+                'name' => $item['name'],
+                'plantName' => $item['plantName'] ?? $item['name'],
+                'extra' => $item['extra'] ?? '',
+                'Plant' => $item['code'],
+                'PlantName' => $item['plantName'] ?? $item['name'],
+            ], $plantsResult['items'])
+            : $this->sapService->getFormattedFallbackPlants();
+
+        // Purchasing organizations and groups for APL
+        $purchasingOrganizations = [
+            ['code' => '1100', 'name' => '1100 - Purchasing Org 1100'],
+            ['code' => '1200', 'name' => '1200 - APL Domestic Sourcing Org'],
+        ];
+
+        $purchasingGroups = [
+            ['code' => '103', 'name' => '103 - Purchasing Group 103'],
+            ['code' => '001', 'name' => '001 - Purchasing Group 001'],
+            ['code' => '101', 'name' => '101 - Central Purchasing'],
+            ['code' => '102', 'name' => '102 - Technical Purchasing'],
+            ['code' => '104', 'name' => '104 - Projects Purchasing'],
+            ['code' => '112', 'name' => '112 - Chemicals Purchasing'],
+            ['code' => '114', 'name' => '114 - Reagents Purchasing'],
+            ['code' => '119', 'name' => '119 - Services Purchasing'],
+        ];
+
+        $storageLocations = [
+            ['code' => 'M100', 'name' => 'M100 - Main Raw Material Store'],
+            ['code' => 'SSM2', 'name' => 'SSM2 - Safety & Spares Store 2'],
+            ['code' => 'SSM3', 'name' => 'SSM3 - Spares Store 3'],
+            ['code' => 'SL01', 'name' => 'SL01 - General Warehouse 1'],
+        ];
+
+        $costCenters = [
+            ['code' => '10101PCC01', 'name' => '10101PCC01 - Plant Cost Center 01'],
+            ['code' => '12001101', 'name' => '12001101 - Chemical Processing Plant 1200'],
+        ];
+
+        $glAccounts = [
+            ['code' => '65301000', 'name' => '65301000 - Consumed Materials'],
+            ['code' => '410100001', 'name' => '410100001 - Raw Material Consumption'],
+            ['code' => '410100006', 'name' => '410100006 - Operating Supplies Expense'],
+        ];
 
         return Inertia::render('purchase-requisitions/create', [
             'headerOptions' => $headerOptions,
@@ -78,49 +211,20 @@ class PurchaseRequisitionController extends Controller
                     'extra' => $opt->code ?: '',
                 ])->toArray(),
                 'documentTypes' => $docTypesData,
-                'plants' => [
-                    ['code' => '1200', 'name' => '1200 - Dibrugarh Manufacturing Plant', 'city' => 'Dibrugarh', 'street' => 'Parbatpur', 'country' => 'India (IN)', 'region' => 'Assam (AS)', 'postal' => '786623'],
-                    ['code' => '1010', 'name' => '1010 - Plant Walldorf / US', 'city' => 'Walldorf', 'street' => 'Dietmar-Hopp-Allee 16', 'country' => 'Germany (DE)', 'region' => 'BW', 'postal' => '69190'],
-                    ['code' => '1020', 'name' => '1020 - Plant Texas Tech Center', 'city' => 'Austin', 'street' => 'Silicon Hills Expressway', 'country' => 'United States (US)', 'region' => 'TX', 'postal' => '78701'],
-                ],
-                'accountAssignmentCategories' => [
-                    ['code' => 'K', 'name' => 'K - Cost Center'],
-                    ['code' => 'P', 'name' => 'P - Project (WBS)'],
-                    ['code' => 'A', 'name' => 'A - Asset'],
-                    ['code' => 'F', 'name' => 'F - Production Order'],
-                    ['code' => 'U', 'name' => 'U - Unknown'],
-                ],
-                'materialGroups' => [
-                    ['code' => 'L002', 'name' => 'Raw Materials (L002)'],
-                    ['code' => 'L001', 'name' => 'Mechanical Components & Spares (L001)'],
-                    ['code' => 'L003', 'name' => 'Electrical & Electronics (L003)'],
-                    ['code' => 'P001', 'name' => 'Packaging Materials (P001)'],
-                    ['code' => 'S001', 'name' => 'Maintenance & Plant Services (S001)'],
-                ],
-                'materials' => [
-                    ['code' => '10000001', 'name' => 'HCL Acid 30-33% Conc.', 'materialGroup' => 'L002', 'uom' => 'KG', 'unitPrice' => 26.94, 'poText' => 'Technical Grade Hydrochloric Acid 30-33% concentration for industrial chemical processing.'],
-                    ['code' => 'TG11', 'name' => 'High Pressure Hydraulic Seal 120mm', 'materialGroup' => 'L001', 'uom' => 'PC', 'unitPrice' => 320.00, 'poText' => 'Viton elastomer high pressure hydraulic cylinder seal rated for 350 bar.'],
-                    ['code' => 'RM-049', 'name' => 'Industrial Solvent Degreaser 50L', 'materialGroup' => 'L002', 'uom' => 'L', 'unitPrice' => 84.50, 'poText' => 'Non-corrosive heavy duty solvent degreaser drum.'],
-                    ['code' => 'SP-882', 'name' => 'Stainless Steel Flange 4-inch ANSI', 'materialGroup' => 'L001', 'uom' => 'EA', 'unitPrice' => 145.00, 'poText' => 'Class 150 ANSI 316L SS Flange blind weld neck.'],
-                    ['code' => 'SRV-01', 'name' => 'Annual Machine Line Preventive Overhaul', 'materialGroup' => 'S001', 'uom' => 'AU', 'unitPrice' => 4500.00, 'poText' => 'Comprehensive annual certified mechanical servicing and calibration.'],
-                ],
-                'unitsOfMeasure' => [
-                    ['code' => 'KG', 'name' => 'Kilogram (KG)'],
-                    ['code' => 'PC', 'name' => 'Piece (PC)'],
-                    ['code' => 'EA', 'name' => 'Each (EA)'],
-                    ['code' => 'L', 'name' => 'Liter (L)'],
-                    ['code' => 'M', 'name' => 'Meter (M)'],
-                    ['code' => 'TO', 'name' => 'Ton (TO)'],
-                    ['code' => 'AU', 'name' => 'Activity Unit (AU)'],
-                    ['code' => 'HR', 'name' => 'Hour (HR)'],
-                ],
+                'plants' => $plants,
+                'accountAssignmentCategories' => $accountAssignmentCategories,
+                'materialGroups' => $materialGroups,
+                'materials' => $materials,
+                'unitsOfMeasure' => $unitsOfMeasure,
+                'materialTypes' => $materialTypes,
                 'currencies' => [
                     ['code' => 'INR', 'name' => 'INR - Indian Rupee'],
                     ['code' => 'USD', 'name' => 'USD - US Dollar'],
                     ['code' => 'EUR', 'name' => 'EUR - Euro'],
-                    ['code' => 'GBP', 'name' => 'GBP - British Pound'],
                 ],
                 'taxCodes' => [
+                    ['code' => 'G3', 'name' => 'G3 - 18% Input GST'],
+                    ['code' => 'G4', 'name' => 'G4 - 12% Input GST'],
                     ['code' => 'V1', 'name' => 'V1 - 18% Input GST Standard'],
                     ['code' => 'V0', 'name' => 'V0 - 0% Tax Exempt'],
                     ['code' => 'I1', 'name' => 'I1 - 12% IGST Interstate'],
@@ -131,31 +235,14 @@ class PurchaseRequisitionController extends Controller
                     ['code' => 'As gross price', 'name' => 'As gross price'],
                     ['code' => 'As net price', 'name' => 'As net price'],
                 ],
-                'purchasingOrganizations' => [
-                    ['code' => '1200', 'name' => '1200 - APL Domestic Sourcing Org'],
-                    ['code' => '1010', 'name' => '1010 - Corporate Procurement Global'],
-                ],
-                'purchasingGroups' => [
-                    ['code' => '103', 'name' => 'Purchase (103)'],
-                    ['code' => '101', 'name' => 'Central Purchasing (101)'],
-                    ['code' => '001', 'name' => 'Raw Materials Sourcing (001)'],
-                    ['code' => '002', 'name' => 'MRO & Spare Parts (002)'],
-                ],
-                'storageLocations' => [
-                    ['code' => '101A', 'name' => '101A - Raw Materials Warehouse'],
-                    ['code' => '101B', 'name' => '101B - Finished Goods Store'],
-                    ['code' => '102A', 'name' => '102A - Engineering & Spares'],
-                ],
-                'costCenters' => [
-                    ['code' => '12001101', 'name' => '12001101 - Chemical Processing Plant 1200'],
-                    ['code' => '10101101', 'name' => '10101101 - Plant Maintenance Walldorf'],
-                    ['code' => '10201101', 'name' => '10201101 - Texas Operations Lab'],
-                ],
-                'glAccounts' => [
-                    ['code' => '40000000', 'name' => '40000000 - Raw Materials Consumption'],
-                    ['code' => '51000000', 'name' => '51000000 - Factory Maintenance & Spares'],
-                    ['code' => '52000000', 'name' => '52000000 - Outside Processing Services'],
-                ],
+                'purchasingOrganizations' => $purchasingOrganizations,
+                'purchasingGroups' => $purchasingGroups,
+                'storageLocations' => $storageLocations,
+                'costCenters' => $costCenters,
+                'glAccounts' => $glAccounts,
+                'batches' => [],
+                'revisionLevels' => [],
+                'desiredSuppliers' => [],
                 'attachmentDocTypes' => [
                     ['code' => 'SL1', 'name' => 'For External Use (SL1)'],
                     ['code' => 'SL9', 'name' => 'For Internal Use (SL9)'],
@@ -168,7 +255,7 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
-     * Store a newly created purchase requisition in local DB and prepare SAP OData V4 payload.
+     * Store a newly created purchase requisition in local DB and sync directly with SAP S/4HANA Cloud.
      */
     public function store(Request $request): RedirectResponse
     {
@@ -221,9 +308,11 @@ class PurchaseRequisitionController extends Controller
             'items.*.attachment_name' => 'nullable|string|max:255',
         ]);
 
+        /** @var PurchaseRequisition|null $pr */
+        $pr = null;
         $prNumber = '';
 
-        DB::transaction(function () use ($validated, $request, &$prNumber) {
+        DB::transaction(function () use ($validated, $request, &$pr, &$prNumber) {
             $nextSeq = (PurchaseRequisition::max('id') ?? 0) + 1;
             $prNumber = 'PR-' . date('Y') . '-' . str_pad($nextSeq, 5, '0', STR_PAD_LEFT);
 
@@ -242,9 +331,9 @@ class PurchaseRequisitionController extends Controller
                 'description' => $primaryDesc,
                 'header_note' => $validated['header_note'] ?? null,
                 'header_option_id' => $validated['header_option_id'] ?? null,
-                'pr_type' => $validated['pr_type'] ?? 'ZCOM',
+                'pr_type' => $validated['pr_type'] ?? 'ZMAT',
                 'auto_source_determination' => !empty($validated['auto_source_determination']),
-                'company_code' => $validated['company_code'] ?? '1010',
+                'company_code' => $validated['company_code'] ?? '1000',
                 'plant' => $primaryPlant,
                 'total_amount' => $totalAmount,
                 'currency' => $validated['currency'] ?? 'INR',
@@ -268,10 +357,10 @@ class PurchaseRequisitionController extends Controller
                     'batch' => $itemData['batch'] ?? null,
                     'revision_level' => $itemData['revision_level'] ?? null,
                     'description' => $itemData['description'],
-                    'material_group' => $itemData['material_group'] ?? 'L001',
+                    'material_group' => $itemData['material_group'] ?? 'YBPM01',
                     'desired_supplier' => $itemData['desired_supplier'] ?? null,
                     'quantity' => $itemData['quantity'],
-                    'unit_of_measure' => $itemData['unit_of_measure'] ?? 'PC',
+                    'unit_of_measure' => $itemData['unit_of_measure'] ?? 'EA',
                     'unit_price' => $itemData['unit_price'],
                     'price_unit' => $pu,
                     'total_price' => $itemTotal,
@@ -279,12 +368,12 @@ class PurchaseRequisitionController extends Controller
                     'tax_code' => $itemData['tax_code'] ?? null,
                     'po_price_type' => $itemData['po_price_type'] ?? 'Do not adopt',
                     'plant' => $itemData['plant'] ?? $pr->plant,
-                    'storage_location' => $itemData['storage_location'] ?? '101A',
-                    'account_assignment_category' => $itemData['account_assignment_category'] ?? 'K',
+                    'storage_location' => $itemData['storage_location'] ?? null,
+                    'account_assignment_category' => $itemData['account_assignment_category'] ?? '',
                     'requirement_tracking_number' => $itemData['requirement_tracking_number'] ?? null,
-                    'cost_center' => $itemData['cost_center'] ?? '12001101',
-                    'gl_account' => $itemData['gl_account'] ?? '40000000',
-                    'purchasing_organization' => $itemData['purchasing_organization'] ?? '1200',
+                    'cost_center' => !empty($itemData['account_assignment_category']) ? ($itemData['cost_center'] ?? '10101PCC01') : null,
+                    'gl_account' => !empty($itemData['account_assignment_category']) ? ($itemData['gl_account'] ?? '65301000') : null,
+                    'purchasing_organization' => $itemData['purchasing_organization'] ?? '1100',
                     'purchasing_group' => $itemData['purchasing_group'] ?? '103',
                     'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
                     'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
@@ -301,12 +390,44 @@ class PurchaseRequisitionController extends Controller
                 ]);
             }
 
+            $pr->load('items');
             $pr->update([
                 'sap_payload' => $pr->toSapODataV4Payload(),
             ]);
         });
 
-        return redirect()->route('dashboard')->with('success', "Purchase Requisition {$prNumber} successfully created in local database.");
+        // Sync newly created PR to SAP S/4HANA Cloud server
+        $pr->load('items');
+        $syncResult = $this->sapService->postPurchaseRequisition($pr);
+
+        if ($syncResult['success']) {
+            $sapPrNum = $syncResult['sap_pr_number'];
+            $pr->update([
+                'sap_pr_number' => $sapPrNum,
+                'sap_sync_status' => 'synced',
+                'sap_synced_at' => now(),
+                'sap_sync_message' => $syncResult['message'],
+                'sap_payload' => $syncResult['payload'],
+                'sap_response' => $syncResult['response'],
+            ]);
+
+            return redirect()->route('dashboard')->with(
+                'success',
+                "Purchase Requisition {$prNumber} successfully created in local database and synced to SAP S/4HANA Cloud (SAP PR #{$sapPrNum})!"
+            );
+        } else {
+            $pr->update([
+                'sap_sync_status' => 'failed',
+                'sap_sync_message' => $syncResult['message'] ?? 'Failed to sync with SAP',
+                'sap_payload' => $syncResult['payload'] ?? $pr->sap_payload,
+                'sap_response' => $syncResult['response'] ?? null,
+            ]);
+
+            return redirect()->route('dashboard')->with(
+                'warning',
+                "Purchase Requisition {$prNumber} created in local database, but SAP S/4HANA Cloud sync failed: {$syncResult['message']}. You can re-sync it from the dashboard."
+            );
+        }
     }
 
     /**
@@ -318,86 +439,30 @@ class PurchaseRequisitionController extends Controller
             return back()->with('error', 'Employees are not authorized to trigger direct SAP Cloud dispatch.');
         }
 
-        $payload = $purchaseRequisition->toSapODataV4Payload();
+        $purchaseRequisition->load('items');
+        $syncResult = $this->sapService->postPurchaseRequisition($purchaseRequisition);
 
-        $sapHost = env('SAP_ODATA_URL');
-        $sapUser = env('SAP_ODATA_USER');
-        $sapPass = env('SAP_ODATA_PASSWORD');
-
-        if (!empty($sapHost) && !empty($sapUser) && !empty($sapPass)) {
-            // Live SAP Public Cloud OData V4 Request
-            try {
-                $endpoint = rtrim($sapHost, '/') . '/sap/opu/odata4/sap/api_purchaserequisition_process_srv/srvd_a2x/sap/purchaserequisition/0001/PurchaseRequisition';
-
-                // Fetch CSRF Token first if required by SAP Gateway
-                $tokenResponse = Http::withBasicAuth($sapUser, $sapPass)
-                    ->withHeaders(['x-csrf-token' => 'Fetch'])
-                    ->head($endpoint);
-
-                $csrfToken = $tokenResponse->header('x-csrf-token');
-                $cookies = $tokenResponse->cookies();
-
-                $response = Http::withBasicAuth($sapUser, $sapPass)
-                    ->withHeaders([
-                        'x-csrf-token' => $csrfToken,
-                        'Content-Type' => 'application/json',
-                        'Accept' => 'application/json',
-                    ])
-                    ->withCookies($cookies->toArray(), parse_url($sapHost, PHP_URL_HOST))
-                    ->post($endpoint, $payload);
-
-                if ($response->successful() || $response->status() === 201) {
-                    $resJson = $response->json();
-                    $sapPrNum = $resJson['PurchaseRequisition'] ?? ('100' . rand(10000, 99999));
-
-                    $purchaseRequisition->update([
-                        'sap_pr_number' => $sapPrNum,
-                        'sap_sync_status' => 'synced',
-                        'sap_synced_at' => now(),
-                        'sap_sync_message' => "HTTP {$response->status()} Created: Posted to SAP S/4HANA Cloud (PR #{$sapPrNum})",
-                        'sap_response' => $resJson,
-                    ]);
-
-                    return back()->with('success', "PR posted to SAP Public Cloud successfully (SAP #{$sapPrNum})");
-                } else {
-                    $purchaseRequisition->update([
-                        'sap_sync_status' => 'failed',
-                        'sap_sync_message' => "SAP Error HTTP {$response->status()}: " . substr($response->body(), 0, 300),
-                    ]);
-
-                    return back()->with('error', "SAP OData V4 returned error: " . $response->status());
-                }
-            } catch (\Exception $e) {
-                $purchaseRequisition->update([
-                    'sap_sync_status' => 'failed',
-                    'sap_sync_message' => "Connection Error: " . $e->getMessage(),
-                ]);
-
-                return back()->with('error', "Failed to connect to SAP Cloud endpoint: " . $e->getMessage());
-            }
-        } else {
-            // Simulated SAP Public Cloud OData V4 Success for local sandbox/staging demo
-            $mockSapPrNumber = '100' . rand(10000, 99999);
-            $mockSapResponse = [
-                '@odata.context' => '$metadata#PurchaseRequisition/$entity',
-                'PurchaseRequisition' => $mockSapPrNumber,
-                'PurchaseRequisitionType' => $purchaseRequisition->pr_type,
-                'PurReqnDescription' => $purchaseRequisition->description,
-                'PurReqnCreationDate' => now()->toDateString(),
-                'CreatedByUser' => 'SAP_PUBLIC_CLOUD_INTEGRATION',
-                'Status' => '201 Created (OData V4 Simulated Dispatch)',
-            ];
-
+        if ($syncResult['success']) {
+            $sapPrNum = $syncResult['sap_pr_number'];
             $purchaseRequisition->update([
-                'sap_pr_number' => $mockSapPrNumber,
+                'sap_pr_number' => $sapPrNum,
                 'sap_sync_status' => 'synced',
                 'sap_synced_at' => now(),
-                'sap_sync_message' => "HTTP 201 Created: Dispatched to SAP Public Cloud OData V4 (SAP PR #{$mockSapPrNumber})",
-                'sap_payload' => $payload,
-                'sap_response' => $mockSapResponse,
+                'sap_sync_message' => $syncResult['message'],
+                'sap_payload' => $syncResult['payload'],
+                'sap_response' => $syncResult['response'],
             ]);
 
-            return back()->with('success', "Simulated SAP Cloud OData V4 POST: PR #{$mockSapPrNumber} created in SAP S/4HANA Cloud!");
+            return back()->with('success', "PR posted to SAP Public Cloud successfully (SAP #{$sapPrNum})");
+        } else {
+            $purchaseRequisition->update([
+                'sap_sync_status' => 'failed',
+                'sap_sync_message' => $syncResult['message'] ?? 'Failed to sync with SAP',
+                'sap_payload' => $syncResult['payload'] ?? $purchaseRequisition->sap_payload,
+                'sap_response' => $syncResult['response'] ?? null,
+            ]);
+
+            return back()->with('error', "SAP Cloud sync failed: " . ($syncResult['message'] ?? 'Unknown error'));
         }
     }
 }

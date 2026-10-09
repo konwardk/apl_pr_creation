@@ -1,5 +1,5 @@
 import React, { useState, useId } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import {
     Save,
     Send,
@@ -87,6 +87,11 @@ export default function PurchaseRequisitionForm({
     isModal = false,
     onCloseModal,
 }: PurchaseRequisitionFormProps) {
+    const { auth } = usePage<any>().props;
+    const defaultRequisitioner = auth?.user?.name
+        ? (auth.user.employee_id ? `${auth.user.name} (${auth.user.employee_id})` : auth.user.name)
+        : '';
+
     const activePrDocTypes = prDocumentTypes && prDocumentTypes.length > 0
         ? prDocumentTypes.filter((dt) => dt.is_active).map((dt) => ({
             code: dt.code,
@@ -101,6 +106,10 @@ export default function PurchaseRequisitionForm({
         ...(activePrDocTypes ? { documentTypes: activePrDocTypes } : {}),
     };
 
+    const defaultPlant = dataCatalog.plants && dataCatalog.plants.length > 0 ? dataCatalog.plants[0].code : '1200';
+    const defaultDocType = dataCatalog.documentTypes?.find((dt) => dt.code === 'ZMAT')?.code
+        || (dataCatalog.documentTypes && dataCatalog.documentTypes.length > 0 ? dataCatalog.documentTypes[0].code : 'ZMAT');
+
     const getTodayString = (addDays = 0) => {
         const d = new Date();
         d.setDate(d.getDate() + addDays);
@@ -108,14 +117,14 @@ export default function PurchaseRequisitionForm({
     };
 
     // Header State
-    const [description, setDescription] = useState('AMC material and Service Request');
-    const [prType, setPrType] = useState('ZCOM');
+    const [description, setDescription] = useState('');
+    const [prType, setPrType] = useState(defaultDocType);
     const [headerOptionId, setHeaderOptionId] = useState<string>('');
     const [autoSourceDetermination, setAutoSourceDetermination] = useState(false);
     const [headerNote, setHeaderNote] = useState('');
-    const [companyCode, setCompanyCode] = useState('1010');
+    const [companyCode, setCompanyCode] = useState('1000');
     const [currency, setCurrency] = useState('INR');
-    const [requisitioner, setRequisitioner] = useState('Ashish Borgohain (CB9980000006)');
+    const [requisitioner, setRequisitioner] = useState(defaultRequisitioner);
 
     // Combined header options from props or masterData
     const availableHeaderOptions = (
@@ -166,19 +175,19 @@ export default function PurchaseRequisitionForm({
         material_group: '',
         desired_supplier: '',
         quantity: '',
-        unit_of_measure: '',
+        unit_of_measure: type === 'service' ? 'LE' : 'EA',
         unit_price: '',
         price_unit: 1,
         currency: currency,
-        tax_code: 'V1',
+        tax_code: '',
         po_price_type: 'Do not adopt',
-        plant: '',
+        plant: defaultPlant,
         storage_location: '',
-        account_assignment_category: 'K',
+        account_assignment_category: type === 'service' ? 'K' : '',
         requirement_tracking_number: '',
-        cost_center: '12001101',
-        gl_account: type === 'material' ? '40000000' : '52000000',
-        purchasing_organization: '1200',
+        cost_center: '10101PCC01',
+        gl_account: '65301000',
+        purchasing_organization: '1100',
         purchasing_group: '103',
         delivery_date: getTodayString(14),
         requisition_date: getTodayString(0),
@@ -209,6 +218,7 @@ export default function PurchaseRequisitionForm({
     const [searchHelpState, setSearchHelpState] = useState<{
         isOpen: boolean;
         title: string;
+        subtitle?: string;
         options: SearchHelpOption[];
         selectedCode?: string;
         field: keyof PrItemData | 'documentType';
@@ -217,6 +227,7 @@ export default function PurchaseRequisitionForm({
     }>({
         isOpen: false,
         title: '',
+        subtitle: undefined,
         options: [],
         field: 'plant',
         targetIndex: 0,
@@ -224,6 +235,8 @@ export default function PurchaseRequisitionForm({
     });
 
     const [sapMaterialsCache, setSapMaterialsCache] = useState<SearchHelpOption[]>([]);
+    const [sapAccountAssignmentCategoriesCache, setSapAccountAssignmentCategoriesCache] = useState<SearchHelpOption[]>([]);
+    const [sapPlantsCache, setSapPlantsCache] = useState<SearchHelpOption[]>([]);
 
     const currentItem = items[activeItemIndex] || items[0];
 
@@ -237,6 +250,7 @@ export default function PurchaseRequisitionForm({
         setSearchHelpState({
             isOpen: true,
             title,
+            subtitle: undefined,
             options,
             selectedCode: currentCode || '',
             field,
@@ -256,6 +270,7 @@ export default function PurchaseRequisitionForm({
             setSearchHelpState({
                 isOpen: true,
                 title: 'Select Material - SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)',
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • ${sapMaterialsCache.length} items)`,
                 options: sapMaterialsCache,
                 selectedCode: currentCode || '',
                 field: 'material_code',
@@ -269,6 +284,7 @@ export default function PurchaseRequisitionForm({
         setSearchHelpState({
             isOpen: true,
             title: 'Select Material - SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)...',
             options: dataCatalog.materials || [],
             selectedCode: currentCode || '',
             field: 'material_code',
@@ -277,18 +293,25 @@ export default function PurchaseRequisitionForm({
         });
 
         try {
-            const res = await fetch('/sap-materials');
+            const res = await fetch('/sap-materials', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
             const data = await res.json();
             if (data.items && data.items.length > 0) {
                 setSapMaterialsCache(data.items);
                 setSearchHelpState((prev) => ({
                     ...prev,
                     options: data.items,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • ${data.items.length} items)`,
                     isLoading: false,
                 }));
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
+                    subtitle: 'No materials returned from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -296,6 +319,139 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch materials from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
+                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_ACCOUNTASSIGNMENTCAT_CDS) API for Account Assignment Category F4 Search Help.
+     * Shows AccountAssignmentCategory (Code) and AcctAssignmentCategoryName (Description).
+     */
+    const handleOpenAccountAssignmentCategorySearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+
+        if (sapAccountAssignmentCategoriesCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Account Assignment Category - SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat)',
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat • ${sapAccountAssignmentCategoriesCache.length} categories)`,
+                options: sapAccountAssignmentCategoriesCache,
+                selectedCode: currentCode || '',
+                field: 'account_assignment_category',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Account Assignment Category - SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat)...',
+            options: dataCatalog.accountAssignmentCategories || [],
+            selectedCode: currentCode || '',
+            field: 'account_assignment_category',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-account-assignment-categories', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapAccountAssignmentCategoriesCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat • ${data.items.length} categories)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No categories returned from SAP CDS View',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch account assignment categories from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
+    /**
+     * Hit SAP S/4HANA Cloud Service (ZUI_TMS_DESPATCH_04 / PlantVH) API for Plant F4 Search Help.
+     * Shows Plant (code) and PlantName (description).
+     */
+    const handleOpenPlantSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+
+        if (sapPlantsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Plant - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH)',
+                subtitle: `SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH • ${sapPlantsCache.length} plants)`,
+                options: sapPlantsCache,
+                selectedCode: currentCode || '',
+                field: 'plant',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Plant - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH)...',
+            options: dataCatalog.plants || [],
+            selectedCode: currentCode || '',
+            field: 'plant',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-plants', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapPlantsCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH • ${data.items.length} plants)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No plants returned from SAP PlantVH',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch plants from SAP PlantVH service:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud PlantVH Service',
                 isLoading: false,
             }));
         }
@@ -307,6 +463,36 @@ export default function PurchaseRequisitionForm({
 
         if (field === 'documentType') {
             setPrType(opt.code);
+            return;
+        }
+
+        // Special handling when selecting Plant:
+        if (field === 'plant') {
+            const plantCode = opt.Plant || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        plant: plantCode,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting Account Assignment Category:
+        if (field === 'account_assignment_category') {
+            const catCode = opt.AccountAssignmentCategory || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        account_assignment_category: catCode,
+                    };
+                })
+            );
             return;
         }
 
@@ -562,7 +748,7 @@ export default function PurchaseRequisitionForm({
                             </span>
                         </div>
                         <p className="mt-1 text-xs text-[#556b82]">
-                            {description || 'AMC material and Service Request'}
+                            {description || 'New Requisition'}
                         </p>
                     </div>
 
@@ -605,7 +791,7 @@ export default function PurchaseRequisitionForm({
                             className="flex items-center gap-2 rounded-md bg-[#0070f2] px-5 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50"
                         >
                             <Send className={`h-3.5 w-3.5 ${submitting ? 'animate-spin' : ''}`} />
-                            <span>{submitting ? 'Creating Requisition...' : 'Create Purchase Requisition'}</span>
+                            <span>{submitting ? 'Creating & Syncing with SAP Cloud...' : 'Create & Sync with SAP'}</span>
                         </button>
                     </div>
                 </div>
@@ -644,7 +830,7 @@ export default function PurchaseRequisitionForm({
                                 type="text"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                placeholder="e.g. AMC material and Service Request"
+                                placeholder="Enter purchase requisition description..."
                                 className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                             />
                         </div>
@@ -854,19 +1040,6 @@ export default function PurchaseRequisitionForm({
                         <thead className="sticky top-0 z-10 bg-[#f8fafc] text-[11px] font-semibold text-[#556b82] border-b border-slate-200 shadow-[0_1px_0_0_#e2e8f0]">
                             <tr>
                                 <th className="py-2.5 px-3 w-20 bg-[#f8fafc]">Item</th>
-                                <th className="py-2.5 px-2.5 w-36 bg-[#f8fafc]">
-                                    <span className="flex items-center gap-1">
-                                        Material No.
-                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
-                                    </span>
-                                </th>
-                                <th className="py-2.5 px-2.5 min-w-[160px] bg-[#f8fafc]">Description</th>
-                                <th className="py-2.5 px-2.5 w-28 bg-[#f8fafc]">
-                                    <span className="flex items-center gap-1">
-                                        Plant
-                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
-                                    </span>
-                                </th>
                                 <th className="py-2.5 px-2.5 w-28 bg-[#f8fafc]">
                                     <span className="flex items-center gap-1">
                                         Item Cat.
@@ -879,6 +1052,26 @@ export default function PurchaseRequisitionForm({
                                         <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
                                     </span>
                                 </th>
+                                <th className="py-2.5 px-2.5 w-36 bg-[#f8fafc]">
+                                    <span className="flex items-center gap-1">
+                                        Material No.
+                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
+                                    </span>
+                                </th>
+                                <th className="py-2.5 px-2.5 min-w-[160px] bg-[#f8fafc]">Description</th>
+                                 <th className="py-2.5 px-2.5 w-32 text-right bg-[#f8fafc]">
+                                    <span className="flex items-center justify-end gap-1">
+                                        Quantity & UoM
+                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
+                                    </span>
+                                </th>
+                                <th className="py-2.5 px-2.5 w-28 bg-[#f8fafc]">
+                                    <span className="flex items-center gap-1">
+                                        Plant
+                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
+                                    </span>
+                                </th>
+                                
                                 <th className="py-2.5 px-2.5 w-28 bg-[#f8fafc]">
                                     <span className="flex items-center gap-1">
                                         Mat. Type
@@ -891,12 +1084,7 @@ export default function PurchaseRequisitionForm({
                                         <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
                                     </span>
                                 </th>
-                                <th className="py-2.5 px-2.5 w-32 text-right bg-[#f8fafc]">
-                                    <span className="flex items-center justify-end gap-1">
-                                        Quantity & UoM
-                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
-                                    </span>
-                                </th>
+                               
                                 <th className="py-2.5 px-2.5 w-28 text-right bg-[#f8fafc]">Valuation Price</th>
                                 <th className="py-2.5 px-2.5 w-28 text-right bg-[#f8fafc]">Total Value</th>
                                 <th className="py-2.5 px-2 w-12 text-center bg-[#f8fafc]">Action</th>
@@ -926,93 +1114,7 @@ export default function PurchaseRequisitionForm({
                                                 <span>{it.item_number}</span>
                                             </div>
                                         </td>
-                                        {/* Material Number with F4 Search Help */}
-                                        <td className="py-2 px-2.5">
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={it.material_code || ''}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onClick={() => handleOpenMaterialSearchHelp(idx, it.material_code)}
-                                                    onChange={(e) => updateItemById(it.id, { material_code: e.target.value })}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'F4') {
-                                                            e.preventDefault();
-                                                            handleOpenMaterialSearchHelp(idx, it.material_code);
-                                                        }
-                                                    }}
-                                                    placeholder="Material # (F4)"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none cursor-pointer"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        handleOpenMaterialSearchHelp(idx, it.material_code);
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Material Search Help (F4) - Hits SAP CDS View YY1_MATERIALS_CDS"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                        {/* Description */}
-                                        <td className="py-2 px-2.5">
-                                            <input
-                                                type="text"
-                                                value={it.description || ''}
-                                                onFocus={() => setActiveItemIndex(idx)}
-                                                onChange={(e) => updateItemById(it.id, { description: e.target.value })}
-                                                placeholder="Material or Service Description"
-                                                className="h-8 w-full rounded border border-[#d9e2ec] bg-white px-2 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                        </td>
-                                        {/* Plant with F4 */}
-                                        <td className="py-2 px-2.5">
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={it.plant || ''}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { plant: e.target.value })}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'F4') {
-                                                            e.preventDefault();
-                                                            openSearchHelp(
-                                                                'plant',
-                                                                'Select Plant (Search Help)',
-                                                                dataCatalog.plants,
-                                                                it.plant,
-                                                                idx
-                                                            );
-                                                        }
-                                                    }}
-                                                    placeholder="Plant"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        openSearchHelp(
-                                                            'plant',
-                                                            'Select Plant (Search Help)',
-                                                            dataCatalog.plants,
-                                                            it.plant,
-                                                            idx
-                                                        );
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Plant Search Help (F4)"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                        {/* Item Category with F4 */}
+                                         {/* Item Category with F4 */}
                                         <td className="py-2 px-2.5">
                                             <div className="relative flex items-center">
                                                 <input
@@ -1062,17 +1164,12 @@ export default function PurchaseRequisitionForm({
                                                     type="text"
                                                     value={it.account_assignment_category || ''}
                                                     onFocus={() => setActiveItemIndex(idx)}
+                                                    onClick={() => handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category)}
                                                     onChange={(e) => updateItemById(it.id, { account_assignment_category: e.target.value })}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'F4') {
                                                             e.preventDefault();
-                                                            openSearchHelp(
-                                                                'account_assignment_category',
-                                                                'Select Account Assignment Category',
-                                                                dataCatalog.accountAssignmentCategories,
-                                                                it.account_assignment_category,
-                                                                idx
-                                                            );
+                                                            handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                         }
                                                     }}
                                                     placeholder="K"
@@ -1083,21 +1180,143 @@ export default function PurchaseRequisitionForm({
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         setActiveItemIndex(idx);
-                                                        openSearchHelp(
-                                                            'account_assignment_category',
-                                                            'Select Account Assignment Category',
-                                                            dataCatalog.accountAssignmentCategories,
-                                                            it.account_assignment_category,
-                                                            idx
-                                                        );
+                                                        handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                     }}
                                                     className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Account Assignment Search Help (F4)"
+                                                    title="Account Assignment Search Help (F4) - Hits SAP CDS View YY1_AccountAssignmentCat"
                                                 >
                                                     <Search className="h-3 w-3" />
                                                 </button>
                                             </div>
                                         </td>
+                                        {/* Material Number with F4 Search Help */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex items-center">
+                                                <input
+                                                    type="text"
+                                                    value={it.material_code || ''}
+                                                    onFocus={() => setActiveItemIndex(idx)}
+                                                    onClick={() => handleOpenMaterialSearchHelp(idx, it.material_code)}
+                                                    onChange={(e) => updateItemById(it.id, { material_code: e.target.value })}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'F4') {
+                                                            e.preventDefault();
+                                                            handleOpenMaterialSearchHelp(idx, it.material_code);
+                                                        }
+                                                    }}
+                                                    placeholder="Material # (F4)"
+                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none cursor-pointer"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveItemIndex(idx);
+                                                        handleOpenMaterialSearchHelp(idx, it.material_code);
+                                                    }}
+                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                    title="Material Search Help (F4) - Hits SAP CDS View YY1_MATERIALS_CDS"
+                                                >
+                                                    <Search className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                        {/* Description */}
+                                        <td className="py-2 px-2.5">
+                                            <input
+                                                type="text"
+                                                value={it.description || ''}
+                                                onFocus={() => setActiveItemIndex(idx)}
+                                                onChange={(e) => updateItemById(it.id, { description: e.target.value })}
+                                                placeholder="Material or Service Description"
+                                                className="h-8 w-full rounded border border-[#d9e2ec] bg-white px-2 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                        </td>
+                                         {/* Quantity & Unit of Measure with F4 */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="flex items-center gap-1 justify-end">
+                                                <input
+                                                    type="number"
+                                                    value={it.quantity}
+                                                    onFocus={() => setActiveItemIndex(idx)}
+                                                    onChange={(e) => updateItemById(it.id, { quantity: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                                                    placeholder="Qty"
+                                                    className="h-8 w-14 rounded border border-[#d9e2ec] bg-white px-1.5 text-xs text-right font-mono text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                />
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="text"
+                                                        value={it.unit_of_measure || ''}
+                                                        onFocus={() => setActiveItemIndex(idx)}
+                                                        onChange={(e) => updateItemById(it.id, { unit_of_measure: e.target.value })}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'F4') {
+                                                                e.preventDefault();
+                                                                openSearchHelp(
+                                                                    'unit_of_measure',
+                                                                    'Select Unit of Measure',
+                                                                    dataCatalog.unitsOfMeasure,
+                                                                    it.unit_of_measure,
+                                                                    idx
+                                                                );
+                                                            }
+                                                        }}
+                                                        placeholder="UoM"
+                                                        className="h-8 w-16 rounded border border-[#d9e2ec] bg-white pr-5 pl-1.5 text-xs font-mono uppercase text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveItemIndex(idx);
+                                                            openSearchHelp(
+                                                                'unit_of_measure',
+                                                                'Select Unit of Measure',
+                                                                dataCatalog.unitsOfMeasure,
+                                                                it.unit_of_measure,
+                                                                idx
+                                                            );
+                                                        }}
+                                                        className="absolute right-0.5 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                        title="UoM Search Help (F4)"
+                                                    >
+                                                        <Search className="h-2.5 w-2.5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        {/* Plant with F4 */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex items-center">
+                                                <input
+                                                    type="text"
+                                                    value={it.plant || ''}
+                                                    onFocus={() => setActiveItemIndex(idx)}
+                                                    onChange={(e) => updateItemById(it.id, { plant: e.target.value })}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'F4') {
+                                                            e.preventDefault();
+                                                            handleOpenPlantSearchHelp(idx, it.plant);
+                                                        }
+                                                    }}
+                                                    placeholder="Plant"
+                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveItemIndex(idx);
+                                                        handleOpenPlantSearchHelp(idx, it.plant);
+                                                    }}
+                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                    title="Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH"
+                                                >
+                                                    <Search className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                       
                                         {/* Material Type with F4 */}
                                         <td className="py-2 px-2.5">
                                             <div className="relative flex items-center">
@@ -1184,59 +1403,7 @@ export default function PurchaseRequisitionForm({
                                                 </button>
                                             </div>
                                         </td>
-                                        {/* Quantity & Unit of Measure with F4 */}
-                                        <td className="py-2 px-2.5">
-                                            <div className="flex items-center gap-1 justify-end">
-                                                <input
-                                                    type="number"
-                                                    value={it.quantity}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { quantity: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
-                                                    placeholder="Qty"
-                                                    className="h-8 w-14 rounded border border-[#d9e2ec] bg-white px-1.5 text-xs text-right font-mono text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="text"
-                                                        value={it.unit_of_measure || ''}
-                                                        onFocus={() => setActiveItemIndex(idx)}
-                                                        onChange={(e) => updateItemById(it.id, { unit_of_measure: e.target.value })}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'F4') {
-                                                                e.preventDefault();
-                                                                openSearchHelp(
-                                                                    'unit_of_measure',
-                                                                    'Select Unit of Measure',
-                                                                    dataCatalog.unitsOfMeasure,
-                                                                    it.unit_of_measure,
-                                                                    idx
-                                                                );
-                                                            }
-                                                        }}
-                                                        placeholder="UoM"
-                                                        className="h-8 w-16 rounded border border-[#d9e2ec] bg-white pr-5 pl-1.5 text-xs font-mono uppercase text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setActiveItemIndex(idx);
-                                                            openSearchHelp(
-                                                                'unit_of_measure',
-                                                                'Select Unit of Measure',
-                                                                dataCatalog.unitsOfMeasure,
-                                                                it.unit_of_measure,
-                                                                idx
-                                                            );
-                                                        }}
-                                                        className="absolute right-0.5 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                        title="UoM Search Help (F4)"
-                                                    >
-                                                        <Search className="h-2.5 w-2.5" />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </td>
+                                       
                                         {/* Valuation Price */}
                                         <td className="py-2 px-2.5">
                                             <div className="flex items-center gap-1 justify-end">
@@ -1513,13 +1680,7 @@ export default function PurchaseRequisitionForm({
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'plant',
-                                                        'Select Plant (Search Help)',
-                                                        dataCatalog.plants,
-                                                        currentItem?.plant,
-                                                        activeItemIndex
-                                                    );
+                                                    handleOpenPlantSearchHelp(activeItemIndex, currentItem?.plant);
                                                 }
                                             }}
                                             placeholder="1200"
@@ -1528,23 +1689,15 @@ export default function PurchaseRequisitionForm({
                                         />
                                         <button
                                             type="button"
-                                            onClick={() =>
-                                                openSearchHelp(
-                                                    'plant',
-                                                    'Select Plant (Search Help)',
-                                                    dataCatalog.plants,
-                                                    currentItem?.plant,
-                                                    activeItemIndex
-                                                )
-                                            }
+                                            onClick={() => handleOpenPlantSearchHelp(activeItemIndex, currentItem?.plant)}
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Plant information (Search Help - F4)"
+                                            title="Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Receiving manufacturing or warehouse plant
+                                        Receiving manufacturing or warehouse plant (SAP PlantVH)
                                     </span>
                                 </div>
 
@@ -1610,18 +1763,21 @@ export default function PurchaseRequisitionForm({
                                         <input
                                             type="text"
                                             value={currentItem?.account_assignment_category || ''}
+                                            onClick={() =>
+                                                handleOpenAccountAssignmentCategorySearchHelp(
+                                                    activeItemIndex,
+                                                    currentItem?.account_assignment_category
+                                                )
+                                            }
                                             onChange={(e) =>
                                                 updateCurrentItem({ account_assignment_category: e.target.value })
                                             }
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'account_assignment_category',
-                                                        'Select Account Assignment Category',
-                                                        dataCatalog.accountAssignmentCategories,
-                                                        currentItem?.account_assignment_category,
-                                                        activeItemIndex
+                                                    handleOpenAccountAssignmentCategorySearchHelp(
+                                                        activeItemIndex,
+                                                        currentItem?.account_assignment_category
                                                     );
                                                 }
                                             }}
@@ -1631,16 +1787,13 @@ export default function PurchaseRequisitionForm({
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openSearchHelp(
-                                                    'account_assignment_category',
-                                                    'Select Account Assignment Category',
-                                                    dataCatalog.accountAssignmentCategories,
-                                                    currentItem?.account_assignment_category,
-                                                    activeItemIndex
+                                                handleOpenAccountAssignmentCategorySearchHelp(
+                                                    activeItemIndex,
+                                                    currentItem?.account_assignment_category
                                                 )
                                             }
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Account Assignment Category (Search Help - F4)"
+                                            title="Account Assignment Category (Search Help - F4) - Hits SAP CDS View YY1_AccountAssignmentCat"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
@@ -2305,18 +2458,21 @@ export default function PurchaseRequisitionForm({
                                         <input
                                             type="text"
                                             value={currentItem?.account_assignment_category || ''}
+                                            onClick={() =>
+                                                handleOpenAccountAssignmentCategorySearchHelp(
+                                                    activeItemIndex,
+                                                    currentItem?.account_assignment_category
+                                                )
+                                            }
                                             onChange={(e) =>
                                                 updateCurrentItem({ account_assignment_category: e.target.value })
                                             }
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'account_assignment_category',
-                                                        'Select Account Assignment Category',
-                                                        dataCatalog.accountAssignmentCategories,
-                                                        currentItem?.account_assignment_category,
-                                                        activeItemIndex
+                                                    handleOpenAccountAssignmentCategorySearchHelp(
+                                                        activeItemIndex,
+                                                        currentItem?.account_assignment_category
                                                     );
                                                 }
                                             }}
@@ -2326,16 +2482,13 @@ export default function PurchaseRequisitionForm({
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openSearchHelp(
-                                                    'account_assignment_category',
-                                                    'Select Account Assignment Category',
-                                                    dataCatalog.accountAssignmentCategories,
-                                                    currentItem?.account_assignment_category,
-                                                    activeItemIndex
+                                                handleOpenAccountAssignmentCategorySearchHelp(
+                                                    activeItemIndex,
+                                                    currentItem?.account_assignment_category
                                                 )
                                             }
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Account Assignment Category (Search Help - F4)"
+                                            title="Account Assignment Category (Search Help - F4) - Hits SAP CDS View YY1_AccountAssignmentCat"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
@@ -2520,7 +2673,7 @@ export default function PurchaseRequisitionForm({
                                         type="text"
                                         value={requisitioner}
                                         onChange={(e) => setRequisitioner(e.target.value)}
-                                        placeholder="e.g. Ashish Borgohain (CB9980000006)"
+                                        placeholder="e.g. Requester Name / Employee ID"
                                         className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                     />
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
@@ -2868,7 +3021,7 @@ export default function PurchaseRequisitionForm({
                         className="flex items-center gap-2 rounded-md bg-[#0070f2] px-6 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50"
                     >
                         <Send className={`h-3.5 w-3.5 ${submitting ? 'animate-spin' : ''}`} />
-                        <span>{submitting ? 'Saving to Database...' : 'Save & Create PR'}</span>
+                        <span>{submitting ? 'Creating & Syncing with SAP Cloud...' : 'Save & Sync with SAP'}</span>
                     </button>
                 </div>
             </div>
@@ -2877,6 +3030,7 @@ export default function PurchaseRequisitionForm({
             <SapSearchHelpModal
                 isOpen={searchHelpState.isOpen}
                 title={searchHelpState.title}
+                subtitle={searchHelpState.subtitle}
                 options={searchHelpState.options}
                 selectedCode={searchHelpState.selectedCode}
                 isLoading={searchHelpState.isLoading}

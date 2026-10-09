@@ -70,11 +70,11 @@ export default function SapAppLayout({
         },
         {
             id: 'plants-sourcing',
-            label: 'Plants & Purchasing Groups',
-            description: 'Plants 1200, 1000, 1010 and Buyer Groups',
+            label: 'Plants & Purchasing Organizations',
+            description: 'SAP Plants (ZUI_TMS_DESPATCH_04 / PlantVH) and Buyer Orgs',
             icon: Building2,
-            badge: '3 Plants',
-            badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+            badge: '4 Plants',
+            badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         },
         {
             id: 'account-assignment',

@@ -11,6 +11,8 @@ import {
     Clock,
     AlertTriangle,
 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
+
 
 interface PrItem {
     id: number;
@@ -248,10 +250,10 @@ export default function SapPayloadModal({
                                                     {Number(item.quantity)} {item.unit_of_measure}
                                                 </td>
                                                 <td className="py-2.5 px-3">
-                                                    ${Number(item.unit_price).toFixed(2)}
+                                                    {formatCurrency(item.unit_price, item.currency || pr.currency)}
                                                 </td>
                                                 <td className="py-2.5 px-3 font-semibold">
-                                                    ${Number(item.total_price).toFixed(2)}
+                                                    {formatCurrency(item.total_price, item.currency || pr.currency)}
                                                 </td>
                                                 <td className="py-2.5 px-3 font-mono text-[11px]">
                                                     {item.plant}
@@ -268,7 +270,7 @@ export default function SapPayloadModal({
                             <div className="flex justify-between items-center rounded-lg bg-slate-50 p-3 text-xs border border-slate-200">
                                 <span className="text-[#556b82]">Requisition Currency: <strong>{pr.currency}</strong></span>
                                 <span className="font-bold text-sm text-[#1c2d42]">
-                                    Header Total: {pr.currency} ${Number(pr.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    Header Total: {formatCurrency(pr.total_amount, pr.currency)} ({pr.currency})
                                 </span>
                             </div>
                         </div>

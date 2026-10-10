@@ -91,6 +91,7 @@ interface DashboardProps {
         entity_set: string;
         status: string;
         tenant_url: string;
+        endpoint_url?: string;
         communication_scenario: string;
     };
 }
@@ -111,11 +112,12 @@ export default function Dashboard({
     sapConfig = {
         system_name: 'SAP S/4HANA Cloud (Public Edition)',
         edition: '2408.3 Enterprise Cloud',
-        api_service: 'API_PURCHASEREQUISITION_PROCESS_SRV',
+        api_service: 'api_purchaserequisition_2',
         odata_version: 'OData V4 (JSON format)',
-        entity_set: 'PurchaseRequisition',
+        entity_set: 'PurchaseReqn',
         status: 'Active & Connected',
-        tenant_url: 'https://my300123-api.s4hana.cloud.sap',
+        tenant_url: 'https://my443544-api.s4hana.cloud.sap',
+        endpoint_url: 'https://my443544-api.s4hana.cloud.sap/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/',
         communication_scenario: 'SAP_COM_0053 (Purchase Requisition Integration)',
     },
 }: DashboardProps) {
@@ -645,12 +647,12 @@ export default function Dashboard({
                             <div>
                                 <h2 className="text-lg font-bold text-[#1c2d42]">SAP Public Cloud OData V4 Monitor</h2>
                                 <p className="text-xs text-[#556b82]">
-                                    Service: <code className="font-mono text-[#0070f2]">API_PURCHASEREQUISITION_PROCESS_SRV</code>
+                                    Service: <code className="font-mono text-[#0070f2]">{sapConfig?.api_service || 'api_purchaserequisition_2'}</code>
                                 </p>
                             </div>
                             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 flex items-center gap-1.5">
                                 <CheckCircle2 className="h-3.5 w-3.5" />
-                                Service Online & Available
+                                {sapConfig?.status || 'Service Online & Available'}
                             </span>
                         </div>
 
@@ -658,13 +660,13 @@ export default function Dashboard({
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                                 <div className="text-xs font-semibold text-[#556b82]">Endpoint URL</div>
                                 <div className="mt-1 font-mono text-xs text-[#1c2d42] break-all">
-                                    {sapConfig.tenant_url}/sap/opu/odata4/sap/api_purchaserequisition_process_srv/srvd_a2x/sap/purchaserequisition/0001/
+                                    {sapConfig?.endpoint_url || `${sapConfig?.tenant_url || 'https://my443544-api.s4hana.cloud.sap'}/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/`}
                                 </div>
                             </div>
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                                 <div className="text-xs font-semibold text-[#556b82]">Protocol & Method</div>
                                 <div className="mt-1 text-xs font-semibold text-[#1c2d42]">
-                                    OData V4 • HTTP POST (Entity: /PurchaseRequisition)
+                                    OData V4 • HTTP POST (Entity: /{sapConfig?.entity_set || 'PurchaseReqn'})
                                 </div>
                             </div>
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -771,7 +773,7 @@ export default function Dashboard({
                                 </div>
                                 <h3 className="text-xs font-bold text-[#1c2d42]">OData V4 Payload Generator</h3>
                                 <p className="mt-1 text-[11px] text-[#556b82]">
-                                    Transforms relational database items into standard SAP S/4HANA Cloud JSON schema (<code className="font-mono text-[10px]">API_PURCHASEREQUISITION_PROCESS_SRV</code>).
+                                    Transforms relational database items into standard SAP S/4HANA Cloud JSON schema (<code className="font-mono text-[10px]">api_purchaserequisition_2 / PurchaseReqn</code>).
                                 </p>
                             </div>
 

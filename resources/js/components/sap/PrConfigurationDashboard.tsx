@@ -7,7 +7,6 @@ import {
     Building2,
     Layers,
     ShieldCheck,
-    Server,
     CheckCircle2,
     Search,
     ChevronRight,
@@ -128,18 +127,8 @@ export default function PrConfigurationDashboard({
                 category: 'Governance & Integration',
                 isReady: true,
             },
-            {
-                id: 'sap-settings',
-                label: 'SAP Cloud Integration',
-                description: 'OData V4 endpoint mapping and communication scenario',
-                icon: Server,
-                badge: 'SAP_COM_0053',
-                badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-                category: 'Governance & Integration',
-                isReady: true,
-            },
         ],
-        [headerOptions.length]
+        [headerOptions.length, prDocumentTypes.length]
     );
 
     // Filter sub-tabs based on sidebar search
@@ -431,55 +420,6 @@ export default function PrConfigurationDashboard({
                                     <span className="font-mono font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                                         Board / MD Release
                                     </span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* SUB-TAB 6: SAP CLOUD INTEGRATION */}
-                    {activeSubTab === 'sap-settings' && (
-                        <div className="space-y-6">
-                            <div className="rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-xs">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0070f2] text-white">
-                                            <Server className="h-5 w-5" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-base font-bold text-[#1c2d42]">
-                                                SAP S/4HANA Cloud OData V4 Integration
-                                            </h2>
-                                            <p className="text-xs text-[#556b82]">
-                                                Communication Scenario SAP_COM_0053 and Dual-Posting configuration
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                                        Connected & Active
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-xs text-xs space-y-3 font-mono">
-                                <div className="flex justify-between border-b border-slate-100 pb-2">
-                                    <span className="text-[#556b82]">API Service Name:</span>
-                                    <span className="font-bold text-[#1c2d42]">API_PURCHASEREQUISITION_PROCESS_SRV</span>
-                                </div>
-                                <div className="flex justify-between border-b border-slate-100 pb-2">
-                                    <span className="text-[#556b82]">Communication Scenario:</span>
-                                    <span className="font-bold text-[#0070f2]">SAP_COM_0053</span>
-                                </div>
-                                <div className="flex justify-between border-b border-slate-100 pb-2">
-                                    <span className="text-[#556b82]">Payload Protocol:</span>
-                                    <span className="font-bold text-[#1c2d42]">OData V4 (JSON Payload)</span>
-                                </div>
-                                <div className="flex justify-between border-b border-slate-100 pb-2">
-                                    <span className="text-[#556b82]">Local Database:</span>
-                                    <span className="font-bold text-emerald-700">MySQL (apl_pr_db)</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-[#556b82]">Cloud Tenant:</span>
-                                    <span className="font-bold text-[#1c2d42]">https://my300123-api.s4hana.cloud.sap</span>
                                 </div>
                             </div>
                         </div>

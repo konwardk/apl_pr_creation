@@ -206,14 +206,14 @@ export default function SapPayloadModal({
                     {activeTab === 'payload' && (
                         <div className="space-y-3">
                             <div className="flex items-center justify-between text-[11px] text-[#556b82]">
-                                <span>Target Entity: <code className="font-mono text-[#0070f2]">/PurchaseRequisition</code></span>
+                                <span>Target Entity: <code className="font-mono text-[#0070f2]">/PurchaseReqn</code></span>
                                 <span>Method: <strong className="text-emerald-600">POST</strong> • Format: JSON</span>
                             </div>
                             <div className="relative rounded-lg bg-[#0d1522] p-4 text-[#e2e8f0] font-mono text-xs overflow-x-auto max-h-[420px] leading-relaxed border border-slate-800">
                                 <pre>{payloadString}</pre>
                             </div>
                             <p className="text-[11px] text-[#556b82]">
-                                Standard schema conformant with SAP S/4HANA Cloud OData V4 service <code>API_PURCHASEREQUISITION_PROCESS_SRV</code>.
+                                Standard schema conformant with SAP S/4HANA Cloud OData V4 service <code>api_purchaserequisition_2</code>.
                             </p>
                         </div>
                     )}

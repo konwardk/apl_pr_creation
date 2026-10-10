@@ -88,9 +88,9 @@ export default function SapShellBar({
                     {/* System / Environment Badge */}
                     <button
                         type="button"
-                        onClick={!isEmployee ? onOpenSapConfig : undefined}
-                        className={`hidden items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/70 px-2.5 py-0.5 text-[11px] font-medium text-[#0057c2] transition-colors lg:flex ${!isEmployee ? 'hover:bg-blue-100/70 cursor-pointer' : 'cursor-default'}`}
-                        title={!isEmployee ? 'Click to view SAP Public Cloud Integration details' : 'Connected to SAP Cloud'}
+                        onClick={isSuperAdmin ? onOpenSapConfig : undefined}
+                        className={`hidden items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/70 px-2.5 py-0.5 text-[11px] font-medium text-[#0057c2] transition-colors lg:flex ${isSuperAdmin ? 'hover:bg-blue-100/70 cursor-pointer' : 'cursor-default'}`}
+                        title={isSuperAdmin ? 'Click to view SAP Public Cloud Integration details' : 'Connected to SAP Cloud'}
                     >
                         <span className="relative flex h-2 w-2">
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -101,7 +101,7 @@ export default function SapShellBar({
                 </div>
 
                 {/* Center: SAP Global Search Bar */}
-                <div className="mx-4 hidden max-w-md flex-1 md:flex">
+                {/* <div className="mx-4 hidden max-w-md flex-1 md:flex">
                     <div className="relative w-full">
                         <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[#556b82]" />
                         <input
@@ -115,7 +115,7 @@ export default function SapShellBar({
                             /
                         </kbd>
                     </div>
-                </div>
+                </div> */}
 
                 {/* Right: Actions, System tools, User Profile */}
                 <div className="flex items-center gap-2">
@@ -142,8 +142,8 @@ export default function SapShellBar({
                         </button>
                     )}
 
-                    {/* SAP Cloud Settings / Config (Hidden for Employee) */}
-                    {!isEmployee && onOpenSapConfig && (
+                    {/* SAP Cloud Settings / Config (Visible only to Superadmin) */}
+                    {isSuperAdmin && onOpenSapConfig && (
                         <button
                             type="button"
                             onClick={onOpenSapConfig}
@@ -154,8 +154,8 @@ export default function SapShellBar({
                         </button>
                     )}
 
-                    {/* Notification Icon */}
-                    <div className="relative">
+                    {/* Notification Icon (Hidden for now - reserved for future use) */}
+                    {/* <div className="relative">
                         <button
                             type="button"
                             className="flex h-9 w-9 items-center justify-center rounded-md text-[#556b82] transition-colors hover:bg-[#f1f5f9] hover:text-[#1c2d42]"
@@ -167,7 +167,7 @@ export default function SapShellBar({
                                 <span className="relative inline-flex h-2 w-2 rounded-full bg-[#0070f2]" />
                             </span>
                         </button>
-                    </div>
+                    </div> */}
 
                     {/* User Profile Dropdown */}
                     <DropdownMenu>

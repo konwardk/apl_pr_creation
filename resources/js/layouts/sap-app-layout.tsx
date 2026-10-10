@@ -92,14 +92,6 @@ export default function SapAppLayout({
             badge: 'Multi-Tier',
             badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
         },
-        {
-            id: 'sap-settings',
-            label: 'SAP Cloud Integration',
-            description: 'OData V4 Scenario SAP_COM_0053 specs',
-            icon: Server,
-            badge: 'Connected',
-            badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-        },
     ];
 
     const handlePrConfigMouseEnter = () => {
@@ -347,7 +339,7 @@ export default function SapAppLayout({
                         <span>•</span>
                         <span className="text-slate-500">Connected to SAP S/4HANA Cloud</span>
                     </div>
-                    {!isEmployee && (
+                    {isSuperAdmin && (
                         <div className="flex items-center gap-4 text-[11px]">
                             <button
                                 type="button"
@@ -362,7 +354,7 @@ export default function SapAppLayout({
             </footer>
 
             {/* SAP Cloud Configuration Drawer / Modal */}
-            {isConfigOpen && (
+            {isSuperAdmin && isConfigOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
                     <div className="relative w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
                         {/* Header */}
@@ -395,8 +387,8 @@ export default function SapAppLayout({
                                 </div>
                                 <div className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
                                     <div className="text-[11px] font-semibold text-[#556b82]">OData V4 Standard Service</div>
-                                    <div className="mt-1 font-semibold text-[#0070f2]">API_PURCHASEREQUISITION_PROCESS_SRV</div>
-                                    <div className="text-[11px] text-slate-500">Root Entity: PurchaseRequisition</div>
+                                    <div className="mt-1 font-semibold text-[#0070f2]">api_purchaserequisition_2</div>
+                                    <div className="text-[11px] text-slate-500">Root Entity: PurchaseReqn</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-100 bg-slate-50/70 p-3">
                                     <div className="text-[11px] font-semibold text-[#556b82]">Communication Arrangement</div>

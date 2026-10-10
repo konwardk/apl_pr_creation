@@ -46,14 +46,18 @@ class DashboardController extends Controller
             ->orderBy('code')
             ->get();
 
+        $tenantUrl = config('sap.tenant_url', env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap'));
+        $serviceRoot = config('sap.endpoints.service_root', rtrim($tenantUrl, '/') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/');
+
         $sapConfig = [
-            'system_name' => 'SAP S/4HANA Cloud (Public Edition)',
-            'edition' => '2408.3 Enterprise Cloud',
-            'api_service' => 'API_PURCHASEREQUISITION_PROCESS_SRV',
+            'system_name' => config('sap.system_name', 'SAP S/4HANA Cloud (Public Edition)'),
+            'edition' => config('sap.edition', '2408.3 Enterprise Cloud'),
+            'api_service' => 'api_purchaserequisition_2',
             'odata_version' => 'OData V4 (JSON format)',
-            'entity_set' => 'PurchaseRequisition',
+            'entity_set' => 'PurchaseReqn',
             'status' => 'Configured & Active',
-            'tenant_url' => env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap'),
+            'tenant_url' => $tenantUrl,
+            'endpoint_url' => $serviceRoot,
             'communication_scenario' => 'SAP_COM_0053 (Purchase Requisition Integration)',
         ];
 

@@ -24,6 +24,8 @@ import {
     UploadCloud,
     FileUp,
     Sparkles,
+    Loader2,
+    RotateCcw,
 } from 'lucide-react';
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
@@ -42,6 +44,13 @@ export interface PrItemData {
     description: string;
     material_group: string;
     desired_supplier: string;
+    fixed_vendor?: string;
+    supplier_name?: string;
+    info_record?: string;
+    agreement_number?: string;
+    agreement_item?: string;
+    supplying_plant?: string;
+    issuing_storage_location?: string;
     quantity: number | string;
     unit_of_measure: string;
     unit_price: number | string;
@@ -69,7 +78,14 @@ export interface PrItemData {
     closure_comment: string;
     attachment_doc_type: string;
     attachment_name: string;
+    attachment_file?: File | null;
     source_assigned: boolean;
+    moving_average_price?: string | number;
+    standard_price?: string | number;
+    inventory_valuation_procedure?: string;
+    price_control?: string;
+    valuation_area?: string;
+    valuation_price_source?: string;
 }
 
 interface PurchaseRequisitionFormProps {
@@ -174,6 +190,13 @@ export default function PurchaseRequisitionForm({
         description: '',
         material_group: '',
         desired_supplier: '',
+        fixed_vendor: '',
+        supplier_name: '',
+        info_record: '',
+        agreement_number: '',
+        agreement_item: '',
+        supplying_plant: '',
+        issuing_storage_location: '',
         quantity: '',
         unit_of_measure: type === 'service' ? 'LE' : 'EA',
         unit_price: '',
@@ -201,7 +224,14 @@ export default function PurchaseRequisitionForm({
         closure_comment: '',
         attachment_doc_type: 'SL1',
         attachment_name: '',
+        attachment_file: null,
         source_assigned: false,
+        moving_average_price: '0.00',
+        standard_price: '0.00',
+        inventory_valuation_procedure: '',
+        price_control: '',
+        valuation_area: defaultPlant,
+        valuation_price_source: '',
     });
 
     // Items List - Initialized with an empty material item
@@ -211,6 +241,7 @@ export default function PurchaseRequisitionForm({
 
     // Submission and UI Feedback
     const [submitting, setSubmitting] = useState(false);
+    const [isDrafting, setIsDrafting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -238,6 +269,234 @@ export default function PurchaseRequisitionForm({
     const [sapAccountAssignmentCategoriesCache, setSapAccountAssignmentCategoriesCache] = useState<SearchHelpOption[]>([]);
     const [sapPlantsCache, setSapPlantsCache] = useState<SearchHelpOption[]>([]);
 
+    // Valuation lookup tracking & debouncing
+    const [fetchingValuation, setFetchingValuation] = useState<Record<string, boolean>>({});
+    const lookupTimeoutRef = React.useRef<Record<string, any>>({});
+
+    /**
+     * Calculates valuation price from SAP material response based on Price Control rule:
+     * - Pass material number and Plant (as valuation Area)
+     * - Check priceControl (InventoryValuationProcedure in response):
+     *   * If InventoryValuationProcedure = 'V' -> pick MovingAveragePrice
+     *   * If InventoryValuationProcedure = 'S' -> pick StandardPrice
+     *   * Else fallback to MovingAveragePrice > 0 ? MovingAveragePrice : (StandardPrice > 0 ? StandardPrice : unitPrice)
+     */
+    const calculateValuationPriceFromItem = (matData: any): {
+        valuationPrice: number | string;
+        procedure: string;
+        movingAveragePrice: number;
+        standardPrice: number;
+        currency?: string;
+        priceControlLabel: string;
+    } => {
+        if (!matData) {
+            return {
+                valuationPrice: '0.00',
+                procedure: '',
+                movingAveragePrice: 0,
+                standardPrice: 0,
+                priceControlLabel: '',
+            };
+        }
+
+        const raw = matData.raw_data || {};
+        const procedure = String(
+            matData.InventoryValuationProcedure ??
+            raw.InventoryValuationProcedure ??
+            matData.priceControl ??
+            raw.priceControl ??
+            ''
+        ).trim().toUpperCase();
+
+        const movingAvgStr = matData.MovingAveragePrice ?? raw.MovingAveragePrice ?? '0.00';
+        const standardStr = matData.StandardPrice ?? raw.StandardPrice ?? '0.00';
+        const movingAvg = parseFloat(String(movingAvgStr)) || 0;
+        const standard = parseFloat(String(standardStr)) || 0;
+        const fallbackUnitPrice = parseFloat(String(matData.valuationPrice ?? matData.unitPrice ?? matData.UnitPrice ?? raw.UnitPrice ?? 0)) || 0;
+        const currency = matData.Currency || raw.Currency || '';
+
+        let price: number | string = '0.00';
+        let label = '';
+
+        if (procedure === 'V') {
+            // Price Control V -> Pick MovingAveragePrice
+            price = movingAvg > 0 ? movingAvg : (movingAvgStr !== undefined && movingAvgStr !== '' ? movingAvgStr : '0.00');
+            label = `V (Moving Avg: ${Number(movingAvg).toFixed(2)})`;
+        } else if (procedure === 'S') {
+            // Price Control S -> Pick StandardPrice
+            price = standard > 0 ? standard : (standardStr !== undefined && standardStr !== '' ? standardStr : '0.00');
+            label = `S (Standard Price: ${Number(standard).toFixed(2)})`;
+        } else {
+            // Procedure blank or other: pick MovingAveragePrice if > 0, else StandardPrice if > 0, else fallback unitPrice
+            if (movingAvg > 0) {
+                price = movingAvg;
+                label = `Moving Avg: ${Number(movingAvg).toFixed(2)}`;
+            } else if (standard > 0) {
+                price = standard;
+                label = `Standard Price: ${Number(standard).toFixed(2)}`;
+            } else if (fallbackUnitPrice > 0) {
+                price = fallbackUnitPrice;
+                label = `Unit Price: ${Number(fallbackUnitPrice).toFixed(2)}`;
+            } else {
+                price = '0.00';
+                label = '';
+            }
+        }
+
+        return {
+            valuationPrice: price,
+            procedure,
+            movingAveragePrice: movingAvg,
+            standardPrice: standard,
+            currency: currency || undefined,
+            priceControlLabel: label,
+        };
+    };
+
+    /**
+     * Applies material master data and calculated valuation price to a PR line item
+     */
+    const applyMaterialToItem = (
+        targetIdx: number,
+        matData: any,
+        targetPlant?: string
+    ) => {
+        if (!matData) return;
+
+        const valCalc = calculateValuationPriceFromItem(matData);
+        const productCode = matData.Product || matData.ProductExternalID || matData.code || '';
+        const productName = matData.ProductName || matData.name || matData.ProductDescription || '';
+        const uom = matData.UnitOfMeasure || matData.BaseUnit || matData.uom || 'EA';
+        const matGroup = matData.ProductGroup || matData.materialGroup || 'L001';
+        const matType = matData.ProductType || matData.materialType || 'ROH';
+        const poText = matData.poText || matData.ProductDescription || productName || '';
+        const movingAvg = matData.MovingAveragePrice ?? valCalc.movingAveragePrice;
+        const standard = matData.StandardPrice ?? valCalc.standardPrice;
+        const procedure = valCalc.procedure || matData.InventoryValuationProcedure || matData.priceControl || '';
+        const valuationArea = matData.ValuationArea || targetPlant || '';
+
+        setItems((prev) =>
+            prev.map((item, idx) => {
+                if (idx !== targetIdx) return item;
+                return {
+                    ...item,
+                    material_code: productCode || item.material_code,
+                    description: productName || item.description,
+                    unit_of_measure: uom || item.unit_of_measure,
+                    material_group: matGroup || item.material_group,
+                    material_type: matType || item.material_type,
+                    unit_price: valCalc.valuationPrice !== undefined && valCalc.valuationPrice !== '' ? valCalc.valuationPrice : item.unit_price,
+                    currency: valCalc.currency || matData.Currency || item.currency,
+                    material_po_text: poText || item.material_po_text || '',
+                    moving_average_price: movingAvg,
+                    standard_price: standard,
+                    inventory_valuation_procedure: procedure,
+                    price_control: procedure,
+                    valuation_area: valuationArea,
+                    valuation_price_source: valCalc.priceControlLabel,
+                };
+            })
+        );
+    };
+
+    /**
+     * Hit SAP CDS View API (/sap-materials) passing material number and plant (as valuation Area)
+     */
+    const fetchMaterialDetailsFromApi = async (
+        materialCode: string,
+        plantCode: string
+    ): Promise<any | null> => {
+        const trimmedMat = (materialCode || '').trim();
+        if (!trimmedMat) return null;
+        const targetPlant = (plantCode || defaultPlant).trim();
+
+        try {
+            const queryParams = new URLSearchParams({
+                material: trimmedMat,
+                valuationArea: targetPlant,
+            });
+            const res = await fetch(`/sap-materials?${queryParams.toString()}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                const plantMatch = data.items.find(
+                    (it: any) =>
+                        (it.ValuationArea && String(it.ValuationArea).trim() === targetPlant) ||
+                        (it.Plant && String(it.Plant).trim() === targetPlant)
+                );
+                return plantMatch || data.items[0];
+            }
+            return null;
+        } catch (err) {
+            console.error('Failed to fetch material valuation from API:', err);
+            return null;
+        }
+    };
+
+    /**
+     * Triggers valuation price lookup from API or cache passing selected material & plant
+     */
+    const triggerMaterialValuationLookup = async (
+        targetIdx: number,
+        materialCode: string,
+        plantCode?: string
+    ) => {
+        const trimmedMat = (materialCode || '').trim();
+        if (!trimmedMat) return;
+
+        const currentLine = items[targetIdx];
+        const targetPlant = (plantCode || currentLine?.plant || defaultPlant).trim();
+        const itemId = currentLine?.id || String(targetIdx);
+
+        // 1. Instant check in cached master data / options
+        const localMatch = (sapMaterialsCache.length > 0 ? sapMaterialsCache : (dataCatalog.materials || [])).find(
+            (m: any) =>
+                (m.Product && String(m.Product).trim().toLowerCase() === trimmedMat.toLowerCase()) ||
+                (m.code && String(m.code).trim().toLowerCase() === trimmedMat.toLowerCase())
+        );
+        if (localMatch) {
+            applyMaterialToItem(targetIdx, localMatch, targetPlant);
+        }
+
+        // 2. Fetch live from SAP API passing material number and plant (valuation Area)
+        setFetchingValuation((prev) => ({ ...prev, [itemId]: true }));
+        try {
+            const apiItem = await fetchMaterialDetailsFromApi(trimmedMat, targetPlant);
+            if (apiItem) {
+                applyMaterialToItem(targetIdx, apiItem, targetPlant);
+            }
+        } finally {
+            setFetchingValuation((prev) => ({ ...prev, [itemId]: false }));
+        }
+    };
+
+    /**
+     * Debounced lookup while user is typing material number into input
+     */
+    const handleMaterialCodeInputChange = (
+        targetIdx: number,
+        newMaterialCode: string,
+        plantCode?: string
+    ) => {
+        const currentLine = items[targetIdx];
+        const itemId = currentLine?.id || String(targetIdx);
+
+        if (lookupTimeoutRef.current[itemId]) {
+            clearTimeout(lookupTimeoutRef.current[itemId]);
+        }
+
+        if (newMaterialCode.trim().length >= 2) {
+            lookupTimeoutRef.current[itemId] = setTimeout(() => {
+                triggerMaterialValuationLookup(targetIdx, newMaterialCode, plantCode);
+            }, 600);
+        }
+    };
+
     const currentItem = items[activeItemIndex] || items[0];
 
     const openSearchHelp = (
@@ -263,14 +522,15 @@ export default function PurchaseRequisitionForm({
      * Hit SAP S/4HANA Cloud CDS View (YY1_MATERIALS_CDS) API for Materials F4 Search Help.
      * Shows Product (material number), ProductName (description), BaseUnit (UoM) and auto-fills fields.
      */
-    const handleOpenMaterialSearchHelp = async (targetIndex: number, currentCode?: string) => {
+    const handleOpenMaterialSearchHelp = async (targetIndex: number, currentCode?: string, plantCode?: string) => {
         setActiveItemIndex(targetIndex);
+        const targetPlant = (plantCode || items[targetIndex]?.plant || defaultPlant).trim();
 
         if (sapMaterialsCache.length > 0) {
             setSearchHelpState({
                 isOpen: true,
                 title: 'Select Material - SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)',
-                subtitle: `SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • ${sapMaterialsCache.length} items)`,
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • ${sapMaterialsCache.length} items • Plant: ${targetPlant})`,
                 options: sapMaterialsCache,
                 selectedCode: currentCode || '',
                 field: 'material_code',
@@ -284,7 +544,7 @@ export default function PurchaseRequisitionForm({
         setSearchHelpState({
             isOpen: true,
             title: 'Select Material - SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)',
-            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS)...',
+            subtitle: `Connecting to SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • Plant: ${targetPlant})...`,
             options: dataCatalog.materials || [],
             selectedCode: currentCode || '',
             field: 'material_code',
@@ -293,7 +553,8 @@ export default function PurchaseRequisitionForm({
         });
 
         try {
-            const res = await fetch('/sap-materials', {
+            const queryParam = targetPlant ? `?valuationArea=${encodeURIComponent(targetPlant)}` : '';
+            const res = await fetch(`/sap-materials${queryParam}`, {
                 headers: {
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
@@ -305,7 +566,7 @@ export default function PurchaseRequisitionForm({
                 setSearchHelpState((prev) => ({
                     ...prev,
                     options: data.items,
-                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • ${data.items.length} items)`,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_MATERIALS_CDS • ${data.items.length} items • Plant: ${targetPlant})`,
                     isLoading: false,
                 }));
             } else {
@@ -478,12 +739,17 @@ export default function PurchaseRequisitionForm({
                     };
                 })
             );
+            // If item already has a material number, re-query valuation price for new plant (valuation area)
+            const currentLine = items[targetIdx];
+            if (currentLine && currentLine.material_code) {
+                triggerMaterialValuationLookup(targetIdx, currentLine.material_code, plantCode);
+            }
             return;
         }
 
         // Special handling when selecting Account Assignment Category:
         if (field === 'account_assignment_category') {
-            const catCode = opt.AccountAssignmentCategory || opt.code;
+            const catCode = opt.code !== undefined ? opt.code : (opt.AccountAssignmentCategory ?? '');
             setItems((prev) =>
                 prev.map((item, idx) => {
                     if (idx !== targetIdx) return item;
@@ -496,30 +762,93 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Special handling when selecting Material: auto-populates Product, ProductName, and Unit of Measure (BaseUnit)!
+        // Special handling when selecting Material: auto-populates Product, Description, UoM, and Valuation Price based on Price Control!
         if (field === 'material_code') {
-            const productCode = opt.Product || opt.code;
-            const productName = opt.ProductName || opt.name;
-            const uom = opt.BaseUnit || opt.UnitOfMeasure || opt.uom || 'PC';
-            const matGroup = opt.ProductGroup || opt.materialGroup || opt.MaterialGroup || 'L001';
-            const matType = opt.ProductType || opt.materialType || opt.MaterialType || 'ROH - Raw Materials';
-            const unitPrice = (opt.UnitPrice !== undefined && opt.UnitPrice > 0)
-                ? opt.UnitPrice
-                : ((opt.unitPrice !== undefined && opt.unitPrice > 0) ? opt.unitPrice : undefined);
-            const poText = opt.poText || opt.description || '';
+            const productCode = opt.Product || opt.ProductExternalID || opt.code;
+            const targetPlant = items[targetIdx]?.plant || defaultPlant;
 
+            // Immediately apply material attributes and calculate valuation price based on V / S Price Control
+            applyMaterialToItem(targetIdx, opt, targetPlant);
+
+            // Also query API passing selected material number and plant (as valuation Area) to verify live SAP valuation
+            triggerMaterialValuationLookup(targetIdx, productCode, targetPlant);
+            return;
+        }
+
+        // Special handling when selecting Desired Supplier or Fixed Vendor:
+        if (field === 'desired_supplier' || field === 'fixed_vendor') {
+            const supplierCode = opt.Supplier || opt.code;
+            const supplierName = opt.SupplierName || opt.supplierName || opt.name || '';
             setItems((prev) =>
                 prev.map((item, idx) => {
                     if (idx !== targetIdx) return item;
                     return {
                         ...item,
-                        material_code: productCode,
-                        description: productName,
-                        unit_of_measure: uom,
-                        material_group: matGroup,
-                        material_type: matType,
-                        unit_price: unitPrice !== undefined ? unitPrice : item.unit_price,
-                        material_po_text: poText || item.material_po_text || '',
+                        [field]: supplierCode,
+                        ...(field === 'desired_supplier' && !item.fixed_vendor ? { fixed_vendor: supplierCode } : {}),
+                        ...(field === 'fixed_vendor' && !item.desired_supplier ? { desired_supplier: supplierCode } : {}),
+                        supplier_name: supplierName || item.supplier_name,
+                        source_assigned: true,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting Purchasing Info Record:
+        if (field === 'info_record') {
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        info_record: opt.code,
+                        source_assigned: true,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting Outline Agreement:
+        if (field === 'agreement_number') {
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        agreement_number: opt.code,
+                        agreement_item: item.agreement_item || '00010',
+                        source_assigned: true,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting Agreement Item:
+        if (field === 'agreement_item') {
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        agreement_item: opt.code,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting Supplying Plant:
+        if (field === 'supplying_plant') {
+            const plantCode = opt.Plant || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        supplying_plant: plantCode,
                     };
                 })
             );
@@ -595,104 +924,129 @@ export default function PurchaseRequisitionForm({
         return ((Number(currentItem.quantity) || 0) / pu) * (Number(currentItem.unit_price) || 0);
     };
 
-    // Form Submission
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
+    // Form Submission (Direct Sync or Draft)
+    const submitForm = (isDraft: boolean) => {
         setErrorMessage(null);
 
-        // Validation
+        // Validation: Document Type is mandatory
         if (!prType) {
             setErrorMessage('Document Type is mandatory. Please select an option.');
             return;
         }
 
-        for (let i = 0; i < items.length; i++) {
-            const it = items[i];
-            if (!it.description.trim()) {
-                setErrorMessage(`Item ${it.item_number}: Item Description is mandatory.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('general');
-                return;
+        // When saving as non-draft, validate all items strictly
+        if (!isDraft) {
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                const aac = it.account_assignment_category?.trim().toUpperCase();
+                if (aac === 'N') {
+                    setErrorMessage(`Item ${it.item_number}: Account Assignment Category 'N' (Network) is not supported for standard items in SAP S/4HANA Cloud (SAP error ME/066). Leave blank for Stock/Inventory materials or select 'K' for Cost Center.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('account-assignment');
+                    return;
+                }
+                if (!it.description.trim()) {
+                    setErrorMessage(`Item ${it.item_number}: Item Description is mandatory.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('general');
+                    return;
+                }
+                if (!it.plant) {
+                    setErrorMessage(`Item ${it.item_number}: Plant is mandatory.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('general');
+                    return;
+                }
+                if (!it.material_group) {
+                    setErrorMessage(`Item ${it.item_number}: Material Group is mandatory.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('general');
+                    return;
+                }
+                if (Number(it.quantity) <= 0) {
+                    setErrorMessage(`Item ${it.item_number}: Quantity must be greater than 0.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('quantity-date');
+                    return;
+                }
+                if (!it.unit_of_measure) {
+                    setErrorMessage(`Item ${it.item_number}: Unit of Measure is mandatory.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('valuation');
+                    return;
+                }
+                if (Number(it.unit_price) < 0) {
+                    setErrorMessage(`Item ${it.item_number}: Valuation Price cannot be negative.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('valuation');
+                    return;
+                }
+                if (!it.purchasing_group) {
+                    setErrorMessage(`Item ${it.item_number}: Purchasing Group is mandatory.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('contact-info');
+                    return;
+                }
             }
-            if (!it.plant) {
-                setErrorMessage(`Item ${it.item_number}: Plant is mandatory.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('general');
-                return;
-            }
-            if (!it.material_group) {
-                setErrorMessage(`Item ${it.item_number}: Material Group is mandatory.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('general');
-                return;
-            }
-            if (Number(it.quantity) <= 0) {
-                setErrorMessage(`Item ${it.item_number}: Quantity must be greater than 0.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('quantity-date');
-                return;
-            }
-            if (!it.unit_of_measure) {
-                setErrorMessage(`Item ${it.item_number}: Unit of Measure is mandatory.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('valuation');
-                return;
-            }
-            if (Number(it.unit_price) < 0) {
-                setErrorMessage(`Item ${it.item_number}: Valuation Price cannot be negative.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('valuation');
-                return;
-            }
-            if (!it.purchasing_group) {
-                setErrorMessage(`Item ${it.item_number}: Purchasing Group is mandatory.`);
-                setActiveItemIndex(i);
-                setActiveItemTab('contact-info');
-                return;
+        } else {
+            // For draft, only check item description if present
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                if (!it.description.trim()) {
+                    setErrorMessage(`Item ${it.item_number}: Item Description is mandatory to save draft.`);
+                    setActiveItemIndex(i);
+                    setActiveItemTab('general');
+                    return;
+                }
             }
         }
 
-        setSubmitting(true);
+        if (isDraft) {
+            setIsDrafting(true);
+        } else {
+            setSubmitting(true);
+        }
 
         router.post(
             '/purchase-requisitions',
             {
-                description: description.trim() || currentItem.description,
+                is_draft: isDraft ? 1 : 0,
+                description: description.trim() || currentItem.description || 'Draft Purchase Requisition',
                 header_note: headerNote,
                 header_option_id: headerOptionId || null,
                 pr_type: prType,
                 auto_source_determination: autoSourceDetermination,
-                company_code: companyCode,
-                plant: currentItem.plant,
+                company_code: companyCode || '1000',
+                plant: currentItem.plant || '1000',
                 currency: currency,
                 requisitioner: requisitioner,
                 items: items.map((it) => ({
                     item_number: it.item_number,
-                    item_type: it.item_type,
+                    item_type: it.item_type || 'material',
                     material_type: it.material_type,
                     item_category: it.item_category,
-                    description: it.description,
+                    description: it.description || 'Draft Item',
                     material_code: it.material_code,
                     supplier_material_number: it.supplier_material_number,
                     batch: it.batch,
                     revision_level: it.revision_level,
-                    material_group: it.material_group,
-                    desired_supplier: it.desired_supplier,
-                    quantity: it.quantity,
-                    unit_of_measure: it.unit_of_measure,
-                    unit_price: it.unit_price,
-                    price_unit: it.price_unit,
+                    material_group: it.material_group || 'YBPM01',
+                    desired_supplier: it.desired_supplier || it.fixed_vendor || '',
+                    quantity: Number(it.quantity) > 0 ? it.quantity : 1,
+                    unit_of_measure: it.unit_of_measure || 'PC',
+                    unit_price: Number(it.unit_price) >= 0 ? it.unit_price : 0,
+                    price_unit: it.price_unit || 1,
                     currency: it.currency || currency,
                     tax_code: it.tax_code,
                     po_price_type: it.po_price_type,
-                    plant: it.plant,
+                    plant: it.plant || currentItem.plant || '1000',
                     storage_location: it.storage_location,
                     account_assignment_category: it.account_assignment_category,
                     requirement_tracking_number: it.requirement_tracking_number,
                     cost_center: it.cost_center,
                     gl_account: it.gl_account,
-                    purchasing_organization: it.purchasing_organization,
-                    purchasing_group: it.purchasing_group,
+                    purchasing_organization: it.purchasing_organization || '1100',
+                    purchasing_group: it.purchasing_group || '103',
                     delivery_date: it.delivery_date,
                     requisition_date: it.requisition_date,
                     release_date: it.release_date,
@@ -705,22 +1059,36 @@ export default function PurchaseRequisitionForm({
                     closure_comment: it.closure_comment,
                     attachment_doc_type: it.attachment_doc_type,
                     attachment_name: it.attachment_name,
+                    attachment_file: it.attachment_file || null,
                 })),
             },
             {
+                forceFormData: true,
                 onSuccess: () => {
                     setSubmitting(false);
+                    setIsDrafting(false);
                     if (isModal && onCloseModal) {
                         onCloseModal();
                     }
                 },
                 onError: (errors) => {
                     setSubmitting(false);
+                    setIsDrafting(false);
                     const firstError = Object.values(errors)[0] as string;
-                    setErrorMessage(firstError || 'Failed to create Purchase Requisition.');
+                    setErrorMessage(firstError || 'Failed to save Purchase Requisition.');
                 },
             }
         );
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        submitForm(false);
+    };
+
+    const handleSaveDraft = (e: React.MouseEvent) => {
+        e.preventDefault();
+        submitForm(true);
     };
 
     return (
@@ -785,9 +1153,21 @@ export default function PurchaseRequisitionForm({
                             </button>
                         )}
 
+                        {/* Draft Button (Stores in local database only) */}
+                        <button
+                            type="button"
+                            onClick={handleSaveDraft}
+                            disabled={submitting || isDrafting}
+                            className="flex items-center gap-1.5 rounded-md border border-[#0070f2] bg-white px-4 py-2 text-xs font-semibold text-[#0070f2] shadow-2xs transition-colors hover:bg-blue-50 active:bg-blue-100 disabled:opacity-50"
+                            title="Save as Draft in local database (is_draft = 1) without syncing to SAP"
+                        >
+                            <Save className={`h-3.5 w-3.5 ${isDrafting ? 'animate-spin' : ''}`} />
+                            <span>{isDrafting ? 'Saving Draft...' : 'Save as Draft'}</span>
+                        </button>
+
                         <button
                             type="submit"
-                            disabled={submitting}
+                            disabled={submitting || isDrafting}
                             className="flex items-center gap-2 rounded-md bg-[#0070f2] px-5 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50"
                         >
                             <Send className={`h-3.5 w-3.5 ${submitting ? 'animate-spin' : ''}`} />
@@ -891,9 +1271,9 @@ export default function PurchaseRequisitionForm({
                                     </option>
                                 ))}
                             </select>
-                            <span className="mt-1 block text-[10px] text-[#556b82]">
+                            {/* <span className="mt-1 block text-[10px] text-[#556b82]">
                                 Configured by Superadmin
-                            </span>
+                            </span> */}
                         </div>
                     </div>
 
@@ -1172,7 +1552,8 @@ export default function PurchaseRequisitionForm({
                                                             handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                         }
                                                     }}
-                                                    placeholder="K"
+                                                    placeholder="Blank"
+                                                    title="Account Assignment Category: Blank for Stock/Inventory materials, K for Cost Center"
                                                     className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-center text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                                 />
                                                 <button
@@ -1196,29 +1577,44 @@ export default function PurchaseRequisitionForm({
                                                     type="text"
                                                     value={it.material_code || ''}
                                                     onFocus={() => setActiveItemIndex(idx)}
-                                                    onClick={() => handleOpenMaterialSearchHelp(idx, it.material_code)}
-                                                    onChange={(e) => updateItemById(it.id, { material_code: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        updateItemById(it.id, { material_code: val });
+                                                        handleMaterialCodeInputChange(idx, val, it.plant);
+                                                    }}
+                                                    onBlur={(e) => {
+                                                        triggerMaterialValuationLookup(idx, e.target.value, it.plant);
+                                                    }}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'F4') {
                                                             e.preventDefault();
-                                                            handleOpenMaterialSearchHelp(idx, it.material_code);
+                                                            handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
+                                                        } else if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            triggerMaterialValuationLookup(idx, it.material_code, it.plant);
                                                         }
                                                     }}
                                                     placeholder="Material # (F4)"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none cursor-pointer"
+                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                                 />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        handleOpenMaterialSearchHelp(idx, it.material_code);
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Material Search Help (F4) - Hits SAP CDS View YY1_MATERIALS_CDS"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
+                                                {fetchingValuation[it.id] ? (
+                                                    <div className="absolute right-1.5 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveItemIndex(idx);
+                                                            handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
+                                                        }}
+                                                        className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                        title="Material Search Help (F4) - Hits SAP CDS View YY1_MATERIALS_CDS"
+                                                    >
+                                                        <Search className="h-3 w-3" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                         {/* Description */}
@@ -1292,7 +1688,18 @@ export default function PurchaseRequisitionForm({
                                                     type="text"
                                                     value={it.plant || ''}
                                                     onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { plant: e.target.value })}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        updateItemById(it.id, { plant: val });
+                                                        if (it.material_code) {
+                                                            triggerMaterialValuationLookup(idx, it.material_code, val);
+                                                        }
+                                                    }}
+                                                    onBlur={(e) => {
+                                                        if (it.material_code) {
+                                                            triggerMaterialValuationLookup(idx, it.material_code, e.target.value);
+                                                        }
+                                                    }}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'F4') {
                                                             e.preventDefault();
@@ -1406,17 +1813,29 @@ export default function PurchaseRequisitionForm({
                                        
                                         {/* Valuation Price */}
                                         <td className="py-2 px-2.5">
-                                            <div className="flex items-center gap-1 justify-end">
-                                                <input
-                                                    type="number"
-                                                    step="any"
-                                                    value={it.unit_price}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { unit_price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
-                                                    placeholder="0.00"
-                                                    className="h-8 w-18 rounded border border-[#d9e2ec] bg-white px-1.5 text-xs text-right font-mono font-medium text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <span className="text-[10px] font-semibold text-[#556b82]">{it.currency || currency}</span>
+                                            <div className="flex flex-col items-end gap-0.5">
+                                                <div className="flex items-center gap-1 justify-end">
+                                                    <input
+                                                        type="number"
+                                                        step="any"
+                                                        value={it.unit_price}
+                                                        onFocus={() => setActiveItemIndex(idx)}
+                                                        onChange={(e) => updateItemById(it.id, { unit_price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                                                        placeholder="0.00"
+                                                        className="h-8 w-18 rounded border border-[#d9e2ec] bg-white px-1.5 text-xs text-right font-mono font-medium text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                    />
+                                                    <span className="text-[10px] font-semibold text-[#556b82]">{it.currency || currency}</span>
+                                                </div>
+                                                {it.inventory_valuation_procedure === 'V' && (
+                                                    <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200" title={`Moving Average Price: ${it.moving_average_price || it.unit_price}`}>
+                                                        V (MAP)
+                                                    </span>
+                                                )}
+                                                {it.inventory_valuation_procedure === 'S' && (
+                                                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200" title={`Standard Price: ${it.standard_price || it.unit_price}`}>
+                                                        S (Std)
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         {/* Total Value */}
@@ -1575,43 +1994,70 @@ export default function PurchaseRequisitionForm({
                                     </span>
                                 </div>
 
-                                {/* Material Number (Search help) - Auto-populates all Material info! */}
+                                {/* Material Number (Search help) - Auto-populates all Material info & Valuation Price! */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Material Number (F4)
                                         </label>
                                         <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                            Auto-populates fields
+                                            Auto-populates fields & Valuation Price
                                         </span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
                                             value={currentItem?.material_code || ''}
-                                            onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code)}
-                                            onChange={(e) => updateCurrentItem({ material_code: e.target.value })}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateCurrentItem({ material_code: val });
+                                                handleMaterialCodeInputChange(activeItemIndex, val, currentItem?.plant);
+                                            }}
+                                            onBlur={(e) => {
+                                                triggerMaterialValuationLookup(activeItemIndex, e.target.value, currentItem?.plant);
+                                            }}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code);
+                                                    handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant);
+                                                } else if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    triggerMaterialValuationLookup(activeItemIndex, currentItem?.material_code, currentItem?.plant);
                                                 }
                                             }}
-                                            placeholder="10000001 (Click or press F4 for Search Help)"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none cursor-pointer"
+                                            placeholder="1000000002 (Type or press F4 for Search Help)"
+                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code)}
-                                            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Select Material - F4 Search Help (Hits SAP CDS View YY1_MATERIALS_CDS)"
-                                        >
-                                            <Search className="h-3.5 w-3.5" />
-                                        </button>
+                                        {fetchingValuation[currentItem?.id || ''] ? (
+                                            <div className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant)}
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Select Material - F4 Search Help (Hits SAP CDS View YY1_MATERIALS_CDS)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
                                     </div>
-                                    <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Selecting a material auto-fills Type, Group, UoM & Price
-                                    </span>
+                                    <div className="mt-1 flex items-center justify-between text-[10px]">
+                                        <span className="text-[#556b82]">
+                                            Valuation Area: <span className="font-semibold text-slate-700">{currentItem?.plant || defaultPlant}</span>
+                                        </span>
+                                        {currentItem?.inventory_valuation_procedure === 'V' && (
+                                            <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title={`Moving Average Price: ${currentItem?.moving_average_price || currentItem?.unit_price}`}>
+                                                Price Control: V (Moving Avg: {currentItem?.currency || currency} {Number(currentItem?.moving_average_price || currentItem?.unit_price).toFixed(2)})
+                                            </span>
+                                        )}
+                                        {currentItem?.inventory_valuation_procedure === 'S' && (
+                                            <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" title={`Standard Price: ${currentItem?.standard_price || currentItem?.unit_price}`}>
+                                                Price Control: S (Standard Price: {currentItem?.currency || currency} {Number(currentItem?.standard_price || currentItem?.unit_price).toFixed(2)})
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Material Type (Search help) */}
@@ -1676,7 +2122,18 @@ export default function PurchaseRequisitionForm({
                                         <input
                                             type="text"
                                             value={currentItem?.plant || ''}
-                                            onChange={(e) => updateCurrentItem({ plant: e.target.value })}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateCurrentItem({ plant: val });
+                                                if (currentItem?.material_code) {
+                                                    triggerMaterialValuationLookup(activeItemIndex, currentItem.material_code, val);
+                                                }
+                                            }}
+                                            onBlur={(e) => {
+                                                if (currentItem?.material_code) {
+                                                    triggerMaterialValuationLookup(activeItemIndex, currentItem.material_code, e.target.value);
+                                                }
+                                            }}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
@@ -1757,7 +2214,21 @@ export default function PurchaseRequisitionForm({
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Account Assignment Category (F4)
                                         </label>
-                                        <span className="text-[10px] text-[#556b82]">Cost Center / Project</span>
+                                        <div className="flex items-center gap-1.5">
+                                            {currentItem?.account_assignment_category && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => updateCurrentItem({ account_assignment_category: '' })}
+                                                    className="text-[10px] text-blue-600 hover:underline"
+                                                    title="Clear to standard Stock / Inventory (blank)"
+                                                >
+                                                    Clear (Stock)
+                                                </button>
+                                            )}
+                                            <span className="text-[10px] text-[#556b82]">
+                                                {currentItem?.account_assignment_category ? `Category ${currentItem.account_assignment_category}` : 'Stock / Inventory'}
+                                            </span>
+                                        </div>
                                     </div>
                                     <div className="relative">
                                         <input
@@ -1781,7 +2252,7 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder="K"
+                                            placeholder="Leave blank for Stock/Inventory, or 'K' for Cost Center"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
@@ -1799,7 +2270,11 @@ export default function PurchaseRequisitionForm({
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Accounting control (K - Cost Center, P - Project WBS...)
+                                        {!currentItem?.account_assignment_category
+                                            ? 'Standard Stock / Inventory procurement (no cost center required)'
+                                            : currentItem.account_assignment_category === 'K'
+                                            ? 'Cost Center expense (K) • requires Cost Center & G/L Account'
+                                            : `Controlling assignment category ${currentItem.account_assignment_category}`}
                                     </span>
                                 </div>
 
@@ -2211,9 +2686,61 @@ export default function PurchaseRequisitionForm({
                     {/* TAB 3: Valuation */}
                     {activeItemTab === 'valuation' && (
                         <div className="space-y-6">
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-[#556b82]">
-                                Valuation (Item {currentItem?.item_number})
-                            </h3>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-[#556b82]">
+                                    Valuation (Item {currentItem?.item_number})
+                                </h3>
+                                <span className="text-[11px] text-[#0070f2] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
+                                    SAP Automatic Valuation
+                                </span>
+                            </div>
+
+                            {/* Valuation & Price Control Parameters Card */}
+                            <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <DollarSign className="h-4 w-4 text-[#0070f2]" />
+                                        <span className="text-xs font-bold text-slate-800">
+                                            SAP Inventory Valuation & Price Control
+                                        </span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500">
+                                        Valuation Area: <strong className="text-slate-800 font-mono">{currentItem?.plant || defaultPlant}</strong>
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                                    <div className="rounded bg-white p-2.5 border border-slate-200">
+                                        <span className="text-[10px] text-[#556b82] block mb-0.5">Price Control (Procedure):</span>
+                                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                                            <span className="font-mono text-xs">{currentItem?.inventory_valuation_procedure || currentItem?.price_control || '-'}</span>
+                                            {currentItem?.inventory_valuation_procedure === 'V' && (
+                                                <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">V (MAP)</span>
+                                            )}
+                                            {currentItem?.inventory_valuation_procedure === 'S' && (
+                                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">S (Standard)</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="rounded bg-white p-2.5 border border-slate-200">
+                                        <span className="text-[10px] text-[#556b82] block mb-0.5">Moving Average Price:</span>
+                                        <span className="font-bold font-mono text-slate-800">
+                                            {Number(currentItem?.moving_average_price || 0).toFixed(2)} {currentItem?.currency || currency}
+                                        </span>
+                                    </div>
+                                    <div className="rounded bg-white p-2.5 border border-slate-200">
+                                        <span className="text-[10px] text-[#556b82] block mb-0.5">Standard Price:</span>
+                                        <span className="font-bold font-mono text-slate-800">
+                                            {Number(currentItem?.standard_price || 0).toFixed(2)} {currentItem?.currency || currency}
+                                        </span>
+                                    </div>
+                                    <div className="rounded bg-white p-2.5 border border-slate-200">
+                                        <span className="text-[10px] text-[#556b82] block mb-0.5">Active Valuation Price:</span>
+                                        <span className="font-bold font-mono text-[#0070f2]">
+                                            {Number(currentItem?.unit_price || 0).toFixed(2)} {currentItem?.currency || currency}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                                 {/* Valuation Price * (Input) */}
@@ -2222,19 +2749,35 @@ export default function PurchaseRequisitionForm({
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Valuation Price <span className="text-rose-500">*</span>
                                         </label>
-                                        <span className="text-[10px] text-rose-600 font-medium"></span>
+                                        {currentItem?.inventory_valuation_procedure === 'V' && (
+                                            <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                                Picked from Moving Avg (V)
+                                            </span>
+                                        )}
+                                        {currentItem?.inventory_valuation_procedure === 'S' && (
+                                            <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                                Picked from Standard Price (S)
+                                            </span>
+                                        )}
                                     </div>
-                                    <input
-                                        type="number"
-                                        step="any"
-                                        min="0"
-                                        value={currentItem?.unit_price ?? ''}
-                                        onChange={(e) =>
-                                            updateCurrentItem({ unit_price: parseFloat(e.target.value) || 0 })
-                                        }
-                                        required
-                                        className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-semibold focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                    />
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            min="0"
+                                            value={currentItem?.unit_price ?? ''}
+                                            onChange={(e) =>
+                                                updateCurrentItem({ unit_price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })
+                                            }
+                                            required
+                                            className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-semibold focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                        />
+                                        {fetchingValuation[currentItem?.id || ''] && (
+                                            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[#0070f2]">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Currency (Search help) - Option beside Valuation Price */}
@@ -2451,9 +2994,21 @@ export default function PurchaseRequisitionForm({
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                                 {/* Account Assignment Category (Search help) */}
                                 <div>
-                                    <label className="block text-xs font-semibold text-[#1c2d42] mb-1">
-                                        Account Assignment Category (F4)
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-semibold text-[#1c2d42]">
+                                            Account Assignment Category (F4)
+                                        </label>
+                                        {currentItem?.account_assignment_category && (
+                                            <button
+                                                type="button"
+                                                onClick={() => updateCurrentItem({ account_assignment_category: '' })}
+                                                className="text-[10px] text-blue-600 hover:underline font-medium"
+                                                title="Clear to standard Stock / Inventory (blank)"
+                                            >
+                                                Clear (Set to Stock)
+                                            </button>
+                                        )}
+                                    </div>
                                     <div className="relative">
                                         <input
                                             type="text"
@@ -2476,7 +3031,7 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder="K"
+                                            placeholder="Leave blank for Stock, or 'K' for Cost Center"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
@@ -2494,7 +3049,11 @@ export default function PurchaseRequisitionForm({
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Controlling mechanism (K - Cost Center, P - WBS...)
+                                        {!currentItem?.account_assignment_category
+                                            ? 'Standard Stock / Inventory procurement (automatic inventory valuation)'
+                                            : currentItem.account_assignment_category === 'K'
+                                            ? 'Cost Center expense (K) • requires Cost Center & G/L Account'
+                                            : `Controlling assignment category ${currentItem.account_assignment_category}`}
                                     </span>
                                 </div>
 
@@ -2598,58 +3157,667 @@ export default function PurchaseRequisitionForm({
                     {/* TAB 5: Source of Supply */}
                     {activeItemTab === 'source-of-supply' && (
                         <div className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-[#556b82]">
-                                    Source of Supply (Item {currentItem?.item_number})
-                                </h3>
+                            {/* Section Header & Actions */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 pb-3">
+                                <div className="flex items-center gap-2.5">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#556b82]">
+                                        Source of Supply (Item {currentItem?.item_number})
+                                    </h3>
+                                    {currentItem?.source_assigned || currentItem?.desired_supplier || currentItem?.fixed_vendor || currentItem?.info_record ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                            <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                            Source Assigned
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                            <AlertCircle className="h-3 w-3 text-amber-600" />
+                                            Manual / Unassigned
+                                        </span>
+                                    )}
+                                </div>
 
-                                {/* Assign Source of Supply Button */}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        updateCurrentItem({
-                                            desired_supplier: currentItem.desired_supplier || 'V-10029',
-                                            source_assigned: true,
-                                        });
-                                        setSuccessMessage(
-                                            `Source of Supply determined: Vendor ${currentItem.desired_supplier || 'V-10029 (Tata Chemicals)'} assigned.`
-                                        );
-                                        setTimeout(() => setSuccessMessage(null), 4000);
-                                    }}
-                                    className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] transition-colors"
-                                >
-                                    <Sparkles className="h-3.5 w-3.5" />
-                                    <span>Assign Source of Supply</span>
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            updateCurrentItem({
+                                                desired_supplier: '',
+                                                fixed_vendor: '',
+                                                supplier_name: '',
+                                                info_record: '',
+                                                agreement_number: '',
+                                                agreement_item: '',
+                                                supplying_plant: '',
+                                                issuing_storage_location: '',
+                                                source_assigned: false,
+                                            });
+                                            setSuccessMessage(`Source of Supply cleared for Item ${currentItem?.item_number}.`);
+                                            setTimeout(() => setSuccessMessage(null), 3000);
+                                        }}
+                                        className="flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                                        title="Clear all source of supply fields for this item"
+                                    >
+                                        <RotateCcw className="h-3 w-3" />
+                                        <span>Clear Source</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const vendorCode = currentItem.fixed_vendor || currentItem.desired_supplier || 'V-10029';
+                                            const matched = (dataCatalog.desiredSuppliers || []).find((s) => s.code === vendorCode);
+                                            const vendorName = currentItem.supplier_name || (matched ? (matched.name || matched.supplierName) : 'Tata Chemicals Ltd');
+                                            updateCurrentItem({
+                                                desired_supplier: vendorCode,
+                                                fixed_vendor: vendorCode,
+                                                supplier_name: vendorName,
+                                                source_assigned: true,
+                                            });
+                                            setSuccessMessage(
+                                                `Source of Supply determined: Vendor ${vendorCode} (${vendorName}) assigned to Item ${currentItem?.item_number}.`
+                                            );
+                                            setTimeout(() => setSuccessMessage(null), 4500);
+                                        }}
+                                        className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] transition-colors"
+                                    >
+                                        <Sparkles className="h-3.5 w-3.5" />
+                                        <span>Assign / Confirm Source</span>
+                                    </button>
+                                </div>
                             </div>
 
                             {successMessage && (
-                                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 animate-in fade-in">
                                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                                     <span>{successMessage}</span>
                                 </div>
                             )}
 
-                            <div className="rounded-lg border border-slate-200 p-4 space-y-3 bg-slate-50/60">
-                                <div className="text-xs font-semibold text-[#1c2d42]">
-                                    Determined Supplier Information
+                            {/* Section 1: Vendor & Supplier Specification */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-[#1c2d42]">
+                                    <Building2 className="h-4 w-4 text-[#0070f2]" />
+                                    <span>Vendor & Supplier Determination</span>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {/* Desired Supplier (F4) */}
                                     <div>
-                                        <span className="text-[#556b82] block text-[11px]">Assigned Vendor</span>
-                                        <strong className="text-[#1c2d42]">
-                                            {currentItem?.desired_supplier || 'No supplier assigned yet'}
-                                        </strong>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Desired Supplier (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.desired_supplier || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.toUpperCase();
+                                                    const matched = (dataCatalog.desiredSuppliers || []).find((s) => s.code === val);
+                                                    updateCurrentItem({
+                                                        desired_supplier: val,
+                                                        ...(matched ? { supplier_name: matched.name || matched.supplierName } : {}),
+                                                        ...(!currentItem.fixed_vendor ? { fixed_vendor: val } : {}),
+                                                        source_assigned: Boolean(val),
+                                                    });
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'desired_supplier',
+                                                            'Select Desired Supplier (Search Help - F4)',
+                                                            dataCatalog.desiredSuppliers || [],
+                                                            currentItem?.desired_supplier,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. V-10029"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'desired_supplier',
+                                                        'Select Desired Supplier (Search Help - F4)',
+                                                        dataCatalog.desiredSuppliers || [],
+                                                        currentItem?.desired_supplier,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Desired Supplier (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Suggested vendor proposed by requesting department (LIFNR)
+                                        </span>
                                     </div>
+
+                                    {/* Fixed Vendor (F4) */}
                                     <div>
-                                        <span className="text-[#556b82] block text-[11px]">Plant Sourcing</span>
-                                        <strong className="text-[#1c2d42]">Plant {currentItem?.plant}</strong>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Fixed Vendor (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.fixed_vendor || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.toUpperCase();
+                                                    const matched = (dataCatalog.desiredSuppliers || []).find((s) => s.code === val);
+                                                    updateCurrentItem({
+                                                        fixed_vendor: val,
+                                                        ...(!currentItem.desired_supplier ? { desired_supplier: val } : {}),
+                                                        ...(matched ? { supplier_name: matched.name || matched.supplierName } : {}),
+                                                        source_assigned: Boolean(val),
+                                                    });
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'fixed_vendor',
+                                                            'Select Fixed Vendor (Search Help - F4)',
+                                                            dataCatalog.desiredSuppliers || [],
+                                                            currentItem?.fixed_vendor,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. V-10029"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'fixed_vendor',
+                                                        'Select Fixed Vendor (Search Help - F4)',
+                                                        dataCatalog.desiredSuppliers || [],
+                                                        currentItem?.fixed_vendor,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Fixed Vendor (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Fixed vendor locked for automated Purchase Order creation (FLIEF)
+                                        </span>
                                     </div>
+
+                                    {/* Supplier Name */}
                                     <div>
-                                        <span className="text-[#556b82] block text-[11px]">Purchasing Org</span>
-                                        <strong className="text-[#1c2d42]">
-                                            {currentItem?.purchasing_organization || '1200'}
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Supplier Name / Business Entity
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual</span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={currentItem?.supplier_name || ''}
+                                            onChange={(e) => updateCurrentItem({ supplier_name: e.target.value })}
+                                            placeholder="e.g. Tata Chemicals Ltd"
+                                            className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                        />
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Trading partner or legal corporate designation
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 2: Purchasing Info Records & Outline Agreements */}
+                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-[#1c2d42]">
+                                    <FileText className="h-4 w-4 text-[#0070f2]" />
+                                    <span>Purchasing Agreements & Info Records</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {/* Purchasing Info Record (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Purchasing Info Record (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.info_record || ''}
+                                                onChange={(e) =>
+                                                    updateCurrentItem({
+                                                        info_record: e.target.value,
+                                                        source_assigned: Boolean(
+                                                            e.target.value || currentItem.desired_supplier || currentItem.fixed_vendor
+                                                        ),
+                                                    })
+                                                }
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'info_record',
+                                                            'Select Purchasing Info Record (Search Help - F4)',
+                                                            (dataCatalog as any).infoRecords || [],
+                                                            currentItem?.info_record,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 5300001201"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'info_record',
+                                                        'Select Purchasing Info Record (Search Help - F4)',
+                                                        (dataCatalog as any).infoRecords || [],
+                                                        currentItem?.info_record,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Purchasing Info Record (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            SAP Purchasing Info Record linking vendor and material (INFNR)
+                                        </span>
+                                    </div>
+
+                                    {/* Outline Agreement / Contract (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Outline Agreement / Contract (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.agreement_number || ''}
+                                                onChange={(e) =>
+                                                    updateCurrentItem({
+                                                        agreement_number: e.target.value,
+                                                        source_assigned: Boolean(
+                                                            e.target.value || currentItem.desired_supplier || currentItem.fixed_vendor
+                                                        ),
+                                                    })
+                                                }
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'agreement_number',
+                                                            'Select Outline Agreement (Search Help - F4)',
+                                                            (dataCatalog as any).outlineAgreements || [],
+                                                            currentItem?.agreement_number,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 4600000110"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'agreement_number',
+                                                        'Select Outline Agreement (Search Help - F4)',
+                                                        (dataCatalog as any).outlineAgreements || [],
+                                                        currentItem?.agreement_number,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Outline Agreement / Contract (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Long-term framework agreement or rate contract (KONNR)
+                                        </span>
+                                    </div>
+
+                                    {/* Agreement Item (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Agreement Item (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.agreement_item || ''}
+                                                onChange={(e) => updateCurrentItem({ agreement_item: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'agreement_item',
+                                                            'Select Agreement Item (Search Help - F4)',
+                                                            (dataCatalog as any).agreementItems || [],
+                                                            currentItem?.agreement_item,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 00010"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'agreement_item',
+                                                        'Select Agreement Item (Search Help - F4)',
+                                                        (dataCatalog as any).agreementItems || [],
+                                                        currentItem?.agreement_item,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Agreement Item (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Line position number within outline agreement (KTPNR)
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 3: Organizational Sourcing & Internal Supply */}
+                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-[#1c2d42]">
+                                    <Layers className="h-4 w-4 text-[#0070f2]" />
+                                    <span>Organizational Assignment & Internal Supply</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    {/* Purchasing Organization (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Purchasing Org (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.purchasing_organization || ''}
+                                                onChange={(e) => updateCurrentItem({ purchasing_organization: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'purchasing_organization',
+                                                            'Select Purchasing Organization (Search Help - F4)',
+                                                            dataCatalog.purchasingOrganizations || [],
+                                                            currentItem?.purchasing_organization,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 1100"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'purchasing_organization',
+                                                        'Select Purchasing Organization (Search Help - F4)',
+                                                        dataCatalog.purchasingOrganizations || [],
+                                                        currentItem?.purchasing_organization,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Purchasing Organization (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Procuring unit (EKORG)
+                                        </span>
+                                    </div>
+
+                                    {/* Purchasing Group (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Purchasing Group (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.purchasing_group || ''}
+                                                onChange={(e) => updateCurrentItem({ purchasing_group: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'purchasing_group',
+                                                            'Select Purchasing Group (Search Help - F4)',
+                                                            dataCatalog.purchasingGroups || [],
+                                                            currentItem?.purchasing_group,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 103"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'purchasing_group',
+                                                        'Select Purchasing Group (Search Help - F4)',
+                                                        dataCatalog.purchasingGroups || [],
+                                                        currentItem?.purchasing_group,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Purchasing Group (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Buyer group (EKGRP)
+                                        </span>
+                                    </div>
+
+                                    {/* Supplying Plant (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Supplying Plant (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Internal / STO</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.supplying_plant || ''}
+                                                onChange={(e) => updateCurrentItem({ supplying_plant: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'supplying_plant',
+                                                            'Select Supplying Plant (Search Help - F4)',
+                                                            dataCatalog.plants || [],
+                                                            currentItem?.supplying_plant,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 1200"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'supplying_plant',
+                                                        'Select Supplying Plant (Search Help - F4)',
+                                                        dataCatalog.plants || [],
+                                                        currentItem?.supplying_plant,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Supplying Plant (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Issuing plant for stock transport (RESWK)
+                                        </span>
+                                    </div>
+
+                                    {/* Issuing Storage Location (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Issuing S.Loc (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.issuing_storage_location || ''}
+                                                onChange={(e) => updateCurrentItem({ issuing_storage_location: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'issuing_storage_location',
+                                                            'Select Issuing Storage Location (Search Help - F4)',
+                                                            dataCatalog.storageLocations || [],
+                                                            currentItem?.issuing_storage_location,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. SL01"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'issuing_storage_location',
+                                                        'Select Issuing Storage Location (Search Help - F4)',
+                                                        dataCatalog.storageLocations || [],
+                                                        currentItem?.issuing_storage_location,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Issuing Storage Location (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Issuing storage location (RESLO)
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 4: Dynamic Live Determined Source Summary Card */}
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-xs font-semibold text-[#1c2d42] flex items-center gap-1.5">
+                                        <Sparkles className="h-3.5 w-3.5 text-[#0070f2]" />
+                                        <span>Determined Source of Supply Overview</span>
+                                    </div>
+                                    <span className="text-[10px] text-[#556b82]">
+                                        SAP ME51N / S/4HANA Sourcing Specification
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                    <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Assigned Vendor</span>
+                                        <strong className="text-[#1c2d42] block font-mono">
+                                            {currentItem?.fixed_vendor || currentItem?.desired_supplier || 'No vendor assigned'}
                                         </strong>
+                                        <span className="text-[11px] text-slate-500 truncate block">
+                                            {currentItem?.supplier_name || 'Manual entry / F4 lookup ready'}
+                                        </span>
+                                    </div>
+
+                                    <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Info Record / Contract</span>
+                                        <strong className="text-[#1c2d42] block font-mono">
+                                            {currentItem?.info_record || currentItem?.agreement_number || 'None'}
+                                        </strong>
+                                        <span className="text-[11px] text-slate-500 block">
+                                            {currentItem?.agreement_item ? `Contract Item: ${currentItem.agreement_item}` : 'Standard conditions'}
+                                        </span>
+                                    </div>
+
+                                    <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Plant & Sourcing</span>
+                                        <strong className="text-[#1c2d42] block">
+                                            Plant {currentItem?.plant || defaultPlant}
+                                        </strong>
+                                        <span className="text-[11px] text-slate-500 block">
+                                            {currentItem?.supplying_plant
+                                                ? `Supplying Plant: ${currentItem.supplying_plant}`
+                                                : `Storage Loc: ${currentItem?.storage_location || 'Not set'}`}
+                                        </span>
+                                    </div>
+
+                                    <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Purchasing Units</span>
+                                        <strong className="text-[#1c2d42] block font-mono">
+                                            Org: {currentItem?.purchasing_organization || '1100'}
+                                        </strong>
+                                        <span className="text-[11px] text-slate-500 block font-mono">
+                                            Group: {currentItem?.purchasing_group || '103'}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -2927,17 +4095,20 @@ export default function PurchaseRequisitionForm({
                                                     <Paperclip className="h-4 w-4" />
                                                 </div>
                                                 <div>
-                                                    <div className="text-xs font-bold text-[#1c2d42]">
+                                                    <div className="text-xs font-bold text-[#1c2d42] truncate max-w-[220px]" title={currentItem.attachment_name}>
                                                         {currentItem.attachment_name}
                                                     </div>
                                                     <div className="text-[10px] text-[#556b82]">
-                                                        Type: {currentItem.attachment_doc_type} • Any material drawings can be uploaded
+                                                        Type: {currentItem.attachment_doc_type}
+                                                        {currentItem.attachment_file && (
+                                                            <span> • {(currentItem.attachment_file.size / 1024).toFixed(1)} KB</span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
                                             <button
                                                 type="button"
-                                                onClick={() => updateCurrentItem({ attachment_name: '' })}
+                                                onClick={() => updateCurrentItem({ attachment_name: '', attachment_file: null })}
                                                 className="text-rose-600 hover:text-rose-800 text-xs font-semibold p-1"
                                             >
                                                 Remove
@@ -2947,14 +4118,14 @@ export default function PurchaseRequisitionForm({
                                         <div>
                                             <UploadCloud className="mx-auto h-8 w-8 text-slate-400 mb-2" />
                                             <p className="text-xs font-semibold text-[#1c2d42]">
-                                                Any material drawings can be uploaded
+                                                Upload drawings, datasheets, or engineering specs for this item
                                             </p>
                                             <p className="text-[11px] text-[#556b82] mt-1">
-                                                Drag files here or click Upload to attach engineering specifications or drawings
+                                                Accepted formats: PDF, DWG, PNG, JPG, DOCX, XLSX (Stored locally and synced with SAP S/4HANA Cloud)
                                             </p>
                                             <label className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[#0070f2] px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs cursor-pointer hover:bg-[#0057c2] transition-colors">
                                                 <FileUp className="h-3.5 w-3.5" />
-                                                <span>Upload</span>
+                                                <span>Upload Attachment</span>
                                                 <input
                                                     type="file"
                                                     className="hidden"
@@ -2963,6 +4134,7 @@ export default function PurchaseRequisitionForm({
                                                         if (file) {
                                                             updateCurrentItem({
                                                                 attachment_name: file.name,
+                                                                attachment_file: file,
                                                             });
                                                         }
                                                     }}
@@ -3015,9 +4187,21 @@ export default function PurchaseRequisitionForm({
                         </button>
                     )}
 
+                    {/* Draft Button (Stores in local database only) */}
+                    <button
+                        type="button"
+                        onClick={handleSaveDraft}
+                        disabled={submitting || isDrafting}
+                        className="flex items-center gap-1.5 rounded-md border border-[#0070f2] bg-white px-5 py-2 text-xs font-semibold text-[#0070f2] shadow-2xs transition-colors hover:bg-blue-50 active:bg-blue-100 disabled:opacity-50"
+                        title="Save as Draft in local database (is_draft = 1) without syncing to SAP"
+                    >
+                        <Save className={`h-3.5 w-3.5 ${isDrafting ? 'animate-spin' : ''}`} />
+                        <span>{isDrafting ? 'Saving Draft...' : 'Save as Draft'}</span>
+                    </button>
+
                     <button
                         type="submit"
-                        disabled={submitting}
+                        disabled={submitting || isDrafting}
                         className="flex items-center gap-2 rounded-md bg-[#0070f2] px-6 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50"
                     >
                         <Send className={`h-3.5 w-3.5 ${submitting ? 'animate-spin' : ''}`} />

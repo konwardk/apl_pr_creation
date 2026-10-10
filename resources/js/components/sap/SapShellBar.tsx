@@ -119,15 +119,15 @@ export default function SapShellBar({
 
                 {/* Right: Actions, System tools, User Profile */}
                 <div className="flex items-center gap-2">
-                    {/* Superadmin User Management shortcut */}
+                    {/* Superadmin System Configuration shortcut */}
                     {isSuperAdmin && (
                         <Link
                             href="/users"
                             className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-[12px] font-semibold text-purple-700 shadow-2xs transition-colors hover:bg-purple-100 active:bg-purple-200"
-                            title="Superadmin User Management"
+                            title="Superadmin System Configuration"
                         >
-                            <Users className="h-3.5 w-3.5 text-purple-600" />
-                            <span>User Management</span>
+                            <Shield className="h-3.5 w-3.5 text-purple-600" />
+                            <span>System Configuration</span>
                         </Link>
                     )}
 
@@ -246,15 +246,15 @@ export default function SapShellBar({
 
                             <DropdownMenuSeparator className="my-1 bg-[#e2e8f0]" />
 
-                            {/* Superadmin User Management Menu */}
+                            {/* Superadmin System Configuration Menu */}
                             {isSuperAdmin && (
                                 <DropdownMenuItem asChild>
                                     <Link
                                         href="/users"
                                         className="flex w-full cursor-pointer items-center px-2 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 rounded"
                                     >
-                                        <Users className="mr-2 h-3.5 w-3.5 text-purple-600" />
-                                        User Management
+                                        <Shield className="mr-2 h-3.5 w-3.5 text-purple-600" />
+                                        System Configuration
                                     </Link>
                                 </DropdownMenuItem>
                             )}

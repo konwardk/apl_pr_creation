@@ -20,6 +20,9 @@ export interface SapMasterDataConfig {
     batches: SearchHelpOption[];
     revisionLevels: SearchHelpOption[];
     desiredSuppliers: SearchHelpOption[];
+    infoRecords?: SearchHelpOption[];
+    outlineAgreements?: SearchHelpOption[];
+    agreementItems?: SearchHelpOption[];
     attachmentDocTypes: SearchHelpOption[];
     headerOptions?: SearchHelpOption[];
 }
@@ -114,7 +117,36 @@ export const defaultSapMasterData: SapMasterDataConfig = {
     ],
     batches: [],
     revisionLevels: [],
-    desiredSuppliers: [],
+    desiredSuppliers: [
+        { code: 'V-10029', name: 'Tata Chemicals Ltd', supplierName: 'Tata Chemicals Ltd', extra: 'Vendor 10029 • Industrial & Inorganic Chemicals • Active' },
+        { code: 'V-10034', name: 'Gujarat Fluorochemicals Ltd', supplierName: 'Gujarat Fluorochemicals Ltd', extra: 'Vendor 10034 • Specialty Fluoropolymers & Reagents • Active' },
+        { code: 'V-10045', name: 'Reliance Industries Ltd', supplierName: 'Reliance Industries Ltd', extra: 'Vendor 10045 • Petrochemicals & Polymers • Active' },
+        { code: 'V-10052', name: 'BASF India Limited', supplierName: 'BASF India Limited', extra: 'Vendor 10052 • Catalysts, Dispersions & Resins • Active' },
+        { code: 'V-10061', name: 'Linde India Limited', supplierName: 'Linde India Limited', extra: 'Vendor 10061 • Cryogenic & Industrial Gases • Active' },
+        { code: 'V-10080', name: 'Siemens Energy India Ltd', supplierName: 'Siemens Energy India Ltd', extra: 'Vendor 10080 • Turbines, Drives & High-Voltage Spares • Active' },
+        { code: 'V-10095', name: 'Thermax Limited', supplierName: 'Thermax Limited', extra: 'Vendor 10095 • Boilers, Heat Exchangers & Water Solutions • Active' },
+        { code: 'V-10110', name: 'Bharat Heavy Electricals Ltd (BHEL)', supplierName: 'Bharat Heavy Electricals Ltd', extra: 'Vendor 10110 • Heavy Engineering & Pressure Vessels • Active' },
+        { code: 'V-10125', name: 'Indian Oil Corporation Ltd (IOCL)', supplierName: 'Indian Oil Corporation Ltd', extra: 'Vendor 10125 • Fuel & Specialty Base Oils • Active' },
+    ],
+    infoRecords: [
+        { code: '5300001201', name: 'Tata Chemicals - Standard Material Info Record', extra: 'Vendor V-10029 • Plant 1200 • Purchasing Org 1100 • Regular Vendor' },
+        { code: '5300001205', name: 'Reliance Industries - Feedstock Info Record', extra: 'Vendor V-10045 • Plant 1200 • Purchasing Org 1100 • Standard Terms' },
+        { code: '5300001210', name: 'BASF India - Catalyst Supply Info Record', extra: 'Vendor V-10052 • Plant 1200 • Purchasing Org 1100 • Long-term Tier' },
+        { code: '5300001218', name: 'Linde India - Industrial Nitrogen Info Record', extra: 'Vendor V-10061 • Plant 1200 • Purchasing Org 1200 • Pipeline Feed' },
+        { code: '5300001230', name: 'Siemens Energy - Turbine Maintenance Info Record', extra: 'Vendor V-10080 • Plant 1200 • Purchasing Org 1100 • OEM Spares' },
+    ],
+    outlineAgreements: [
+        { code: '4600000110', name: 'Annual Rate Contract 2026 - Bulk Chemicals', extra: 'Vendor V-10029 • Validity: 01.01.2026 - 31.12.2026 • Item 00010' },
+        { code: '4600000125', name: 'Long Term Feedstock Framework Agreement', extra: 'Vendor V-10045 • Validity: 01.04.2025 - 31.03.2027 • Item 00010' },
+        { code: '4600000140', name: 'Plant Spares & Consumables Blanket Contract', extra: 'Vendor V-10052 • Validity: 01.07.2025 - 30.06.2026 • Item 00020' },
+        { code: '4600000155', name: 'Industrial Gas Long-Term Supply Contract', extra: 'Vendor V-10061 • Validity: 01.01.2024 - 31.12.2028 • Item 00010' },
+        { code: '4600000180', name: 'Turbine Spares Master Purchase Agreement', extra: 'Vendor V-10080 • Validity: 01.10.2025 - 30.09.2027 • Item 00010' },
+    ],
+    agreementItems: [
+        { code: '00010', name: 'Item 00010 - Primary Agreement Target Position', extra: 'Contract Target Item 10' },
+        { code: '00020', name: 'Item 00020 - Secondary / Alternate Grade Position', extra: 'Contract Target Item 20' },
+        { code: '00030', name: 'Item 00030 - High-Grade Specification Position', extra: 'Contract Target Item 30' },
+    ],
     attachmentDocTypes: [
         { code: 'SL1', name: 'For External Use (SL1)', extra: 'Drawings & specs shared with suppliers' },
         { code: 'SL9', name: 'For Internal Use (SL9)', extra: 'Confidential internal plant documentation' },

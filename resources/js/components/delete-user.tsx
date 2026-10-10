@@ -26,11 +26,11 @@ export default function DeleteUser() {
                 title="Delete account"
                 description="Delete your account and all of its resources"
             />
-            <div className="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10">
-                <div className="relative space-y-0.5 text-red-600 dark:text-red-100">
-                    <p className="font-medium">Warning</p>
-                    <p className="text-sm">
-                        Please proceed with caution, this cannot be undone.
+            <div className="space-y-4 rounded-xl border border-rose-200 bg-rose-50/80 p-4">
+                <div className="relative space-y-0.5 text-rose-700">
+                    <p className="font-semibold text-xs uppercase tracking-wider">Caution</p>
+                    <p className="text-xs">
+                        Deleting your account cannot be undone. All personal sessions, settings, and authorization associations will be permanently removed.
                     </p>
                 </div>
 
@@ -39,6 +39,7 @@ export default function DeleteUser() {
                         <Button
                             variant="destructive"
                             data-test="delete-user-button"
+                            className="bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-xs transition-colors"
                         >
                             Delete account
                         </Button>

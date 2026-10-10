@@ -54,7 +54,10 @@ class UserManagementTest extends TestCase
     {
         $superadmin = User::where('email', 'superadmin@example.com')->first();
         $employeeRole = Role::where('name', 'employee')->first();
-        $department = Department::first();
+        $department = Department::firstOrCreate(
+            ['code' => 'D-MNT'],
+            ['name' => 'Maintenance', 'description' => 'Plant Maintenance', 'is_active' => true]
+        );
 
         $response = $this->actingAs($superadmin)->post(route('users.store'), [
             'name' => 'Pranab Barua',

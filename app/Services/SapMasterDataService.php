@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\Attachment;
 use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class SapMasterDataService
 {
@@ -293,6 +295,8 @@ class SapMasterDataService
      */
     public function fetchMaterialsFromCdsView(
         ?string $search = null,
+        ?string $material = null,
+        ?string $valuationArea = null,
         ?string $username = null,
         ?string $password = null,
         ?string $endpointUrl = null
@@ -321,7 +325,43 @@ class SapMasterDataService
                     $request = $request->withoutVerifying();
                 }
 
-                $response = $request->get($endpoint);
+                // Base endpoint without query params
+                $baseUri = explode('?', $endpoint)[0];
+
+                $response = null;
+                $cleanedMaterial = $material ? trim($material) : null;
+                $cleanedValuationArea = $valuationArea ? trim($valuationArea) : null;
+
+                // If a specific material number was provided, attempt targeted OData query
+                if (!empty($cleanedMaterial)) {
+                    // 1. Try querying with both Product and ValuationArea if provided
+                    if (!empty($cleanedValuationArea)) {
+                        $filterQuery = "Product eq '{$cleanedMaterial}' and ValuationArea eq '{$cleanedValuationArea}'";
+                        $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
+                        $resp = (clone $request)->get($targetUrl);
+                        if ($resp->successful()) {
+                            $parsedItems = $this->parseMaterialODataItems($resp->json());
+                            if (!empty($parsedItems)) {
+                                $response = $resp;
+                            }
+                        }
+                    }
+
+                    // 2. If no response yet or 0 items with ValuationArea, query by Product only
+                    if (!$response) {
+                        $filterQuery = "Product eq '{$cleanedMaterial}'";
+                        $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
+                        $resp = (clone $request)->get($targetUrl);
+                        if ($resp->successful()) {
+                            $response = $resp;
+                        }
+                    }
+                }
+
+                // If no targeted response, query default endpoint
+                if (!$response) {
+                    $response = $request->get($endpoint);
+                }
 
                 $durationMs = round((microtime(true) - $startTime) * 1000);
 
@@ -329,11 +369,29 @@ class SapMasterDataService
                     $json = $response->json();
                     $items = $this->parseMaterialODataItems($json);
 
+                    // If a specific material is requested, filter items to target
+                    if (!empty($cleanedMaterial)) {
+                        $matched = array_values(array_filter($items, function ($it) use ($cleanedMaterial, $cleanedValuationArea) {
+                            $prodMatch = strtolower($it['Product']) === strtolower($cleanedMaterial)
+                                || strtolower($it['code']) === strtolower($cleanedMaterial);
+                            if ($cleanedValuationArea && !empty($it['ValuationArea'])) {
+                                return $prodMatch && (strtolower($it['ValuationArea']) === strtolower($cleanedValuationArea));
+                            }
+                            return $prodMatch;
+                        }));
+
+                        if (!empty($matched)) {
+                            $items = $matched;
+                        }
+                    }
+
                     if (!empty($search)) {
                         $term = strtolower(trim($search));
                         $items = array_values(array_filter($items, function ($it) use ($term) {
                             return str_contains(strtolower($it['Product']), $term)
-                                || str_contains(strtolower($it['ProductName']), $term);
+                                || str_contains(strtolower($it['ProductName']), $term)
+                                || str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['name']), $term);
                         }));
                     }
 
@@ -476,19 +534,62 @@ class SapMasterDataService
                 }
             }
 
+            $productExternalId = trim((string)($rec['ProductExternalID'] ?? $product));
+            $weightUnit = trim((string)($rec['WeightUnit'] ?? ''));
+            $uom = trim((string)($rec['UnitOfMeasure'] ?? $baseUnit));
+            $productDesc = trim((string)($rec['ProductDescription'] ?? ''));
+            $productDesc1 = trim((string)($rec['ProductDescription_1'] ?? ''));
+            $productDesc2 = trim((string)($rec['ProductDescription_2'] ?? ''));
+            $productDesc3 = trim((string)($rec['ProductDescription_3'] ?? ''));
+            $movingAveragePrice = (string)($rec['MovingAveragePrice'] ?? '0.00');
+            $standardPrice = (string)($rec['StandardPrice'] ?? '0.00');
+            $invValProcedure = trim((string)($rec['InventoryValuationProcedure'] ?? ''));
+            $currency = trim((string)($rec['Currency'] ?? ''));
+            $valuationArea = trim((string)($rec['ValuationArea'] ?? ''));
+
+            // Valuation Price calculation based on Price Control (InventoryValuationProcedure):
+            // If InventoryValuationProcedure = 'V' -> MovingAveragePrice
+            // If InventoryValuationProcedure = 'S' -> StandardPrice
+            $procUpper = strtoupper($invValProcedure);
+            $mapVal = (float)$movingAveragePrice;
+            $stdVal = (float)$standardPrice;
+            $computedValuationPrice = 0.0;
+            if ($procUpper === 'V') {
+                $computedValuationPrice = $mapVal;
+            } elseif ($procUpper === 'S') {
+                $computedValuationPrice = $stdVal;
+            } else {
+                $computedValuationPrice = $mapVal > 0 ? $mapVal : ($stdVal > 0 ? $stdVal : $unitPrice);
+            }
+
+            $effectiveUnitPrice = $computedValuationPrice > 0 ? $computedValuationPrice : $unitPrice;
+
             $parsed[] = [
                 'Product' => trim((string)$product),
-                'ProductName' => trim((string)$productName),
-                'BaseUnit' => trim((string)$baseUnit),
+                'ProductExternalID' => $productExternalId,
+                'WeightUnit' => $weightUnit,
+                'UnitOfMeasure' => $uom,
                 'ProductGroup' => trim((string)$productGroup),
+                'ProductDescription' => $productDesc,
+                'ProductDescription_1' => $productDesc1,
+                'ProductDescription_2' => $productDesc2,
+                'ProductDescription_3' => $productDesc3,
+                'ProductName' => trim((string)$productName),
                 'ProductType' => trim((string)$productType),
-                'UnitPrice' => $unitPrice,
+                'MovingAveragePrice' => $movingAveragePrice,
+                'StandardPrice' => $standardPrice,
+                'InventoryValuationProcedure' => $invValProcedure,
+                'priceControl' => $invValProcedure,
+                'Currency' => $currency,
+                'ValuationArea' => $valuationArea,
+                'valuationPrice' => $computedValuationPrice,
+                'UnitPrice' => $effectiveUnitPrice,
                 'code' => trim((string)$product),
                 'name' => trim((string)$productName),
-                'uom' => trim((string)$baseUnit),
+                'uom' => $uom,
                 'materialGroup' => trim((string)$productGroup),
                 'materialType' => trim((string)$productType),
-                'unitPrice' => $unitPrice,
+                'unitPrice' => $effectiveUnitPrice,
                 'poText' => $poText,
                 'raw_data' => $rec,
             ];
@@ -630,7 +731,18 @@ class SapMasterDataService
             $rawRecords = $json;
         }
 
-        $parsed = [];
+        $parsed = [
+            [
+                'code' => '',
+                'name' => 'Blank - Standard Stock / Inventory',
+                'extra' => 'Inventory / Stock Procurement (Standard - No controlling account assignment required)',
+                'AccountAssignmentCategory' => '',
+                'AcctAssignmentCategoryName' => 'Blank - Standard Stock / Inventory',
+                'language' => 'EN',
+                'raw_data' => ['code' => '', 'name' => 'Blank - Standard Stock / Inventory'],
+            ]
+        ];
+
         foreach ($rawRecords as $rec) {
             $code = $rec['AccountAssignmentCategory']
                 ?? $rec['AccountAssignmentCategory_1']
@@ -665,7 +777,7 @@ class SapMasterDataService
                 'F' => 'Internal / Production Order',
                 'U' => 'Unassigned / Unknown Account Assignment',
                 'C' => 'Sales Order Line Item',
-                'N' => 'Network / Project Activity',
+                'N' => 'Network / Project System (Requires PS Network activity - not valid for standard items)',
                 'Q' => 'Project Make-to-Order',
                 'S' => 'Third-Party Procurement Project',
                 'R' => 'Customer / Plant Service Order',
@@ -691,6 +803,26 @@ class SapMasterDataService
             ];
         }
 
+        // Sort: Priority categories ('', 'K', 'P', 'A') first, then alphabetically by code
+        $priorityOrder = ['', 'K', 'P', 'A', 'F', 'C'];
+        usort($parsed, function ($a, $b) use ($priorityOrder) {
+            $codeA = strtoupper($a['code']);
+            $codeB = strtoupper($b['code']);
+            $posA = array_search($codeA, $priorityOrder, true);
+            $posB = array_search($codeB, $priorityOrder, true);
+
+            if ($posA !== false && $posB !== false) {
+                return $posA <=> $posB;
+            }
+            if ($posA !== false) {
+                return -1;
+            }
+            if ($posB !== false) {
+                return 1;
+            }
+            return strcmp($codeA, $codeB);
+        });
+
         return $parsed;
     }
 
@@ -699,7 +831,38 @@ class SapMasterDataService
      */
     public function getFormattedFallbackAccountAssignmentCategories(): array
     {
-        return [];
+        return [
+            [
+                'code' => '',
+                'name' => 'Blank - Standard Stock / Inventory',
+                'extra' => 'Inventory / Stock Procurement (Standard - No controlling account assignment required)',
+            ],
+            [
+                'code' => 'K',
+                'name' => 'Cost Center',
+                'extra' => 'Posting to Cost Center (Standard Operating Expense)',
+            ],
+            [
+                'code' => 'P',
+                'name' => 'Project',
+                'extra' => 'Work Breakdown Structure (WBS Project Element)',
+            ],
+            [
+                'code' => 'A',
+                'name' => 'Asset',
+                'extra' => 'Capitalized Fixed Asset',
+            ],
+            [
+                'code' => 'F',
+                'name' => 'Order',
+                'extra' => 'Internal / Production Order',
+            ],
+            [
+                'code' => 'U',
+                'name' => 'Unknown',
+                'extra' => 'Unassigned Account Assignment',
+            ],
+        ];
     }
 
     /**
@@ -1027,6 +1190,156 @@ class SapMasterDataService
                 'message' => 'Connection error: ' . $e->getMessage(),
                 'response' => [],
                 'payload' => $payload,
+            ];
+        }
+    }
+
+    /**
+     * Upload an attachment to SAP S/4HANA Cloud via Attachment Service API (API_CV_ATTACHMENT_SRV).
+     *
+     * @param Attachment $attachment
+     * @param string $sapPrNumber
+     * @param string|null $itemNumber
+     * @return array
+     */
+    public function uploadAttachmentToSap(Attachment $attachment, string $sapPrNumber, ?string $itemNumber = null): array
+    {
+        $username = config('sap.auth.username', env('SAP_ODATA_USER'));
+        $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        $endpoint = config(
+            'sap.endpoints.attachment_content',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/AttachmentContentSet'
+        );
+        $serviceRoot = config(
+            'sap.endpoints.attachment_service_root',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/'
+        );
+
+        if (empty($username) || empty($password)) {
+            $attachment->update([
+                'sap_sync_status' => 'pending',
+                'sap_sync_message' => 'SAP Communication User credentials not configured in .env',
+            ]);
+
+            return [
+                'success' => false,
+                'status' => 400,
+                'message' => 'SAP Communication User credentials not configured in .env',
+            ];
+        }
+
+        if (!Storage::disk('public')->exists($attachment->file_path)) {
+            $attachment->update([
+                'sap_sync_status' => 'failed',
+                'sap_sync_message' => "Local file not found at storage path: {$attachment->file_path}",
+            ]);
+
+            return [
+                'success' => false,
+                'status' => 404,
+                'message' => "File not found at {$attachment->file_path}",
+            ];
+        }
+
+        try {
+            $client = new Client([
+                'verify' => config('sap.verify_ssl', false),
+                'timeout' => 30,
+                'http_errors' => false,
+            ]);
+            $cookieJar = new CookieJar();
+
+            // 1. Fetch CSRF Token from Attachment Service Root
+            $tokenRes = $client->request('GET', $serviceRoot, [
+                'auth' => [$username, $password],
+                'headers' => [
+                    'x-csrf-token' => 'Fetch',
+                    'Accept' => 'application/json',
+                ],
+                'cookies' => $cookieJar,
+            ]);
+
+            $csrfToken = $tokenRes->getHeaderLine('x-csrf-token');
+            if (empty($csrfToken)) {
+                $msg = 'Failed to obtain CSRF token from SAP Attachment Service (HTTP ' . $tokenRes->getStatusCode() . ')';
+                $attachment->update([
+                    'sap_sync_status' => 'failed',
+                    'sap_sync_message' => $msg,
+                ]);
+
+                return [
+                    'success' => false,
+                    'status' => $tokenRes->getStatusCode(),
+                    'message' => $msg,
+                ];
+            }
+
+            // 2. Format SAP Object Key: 10-digit PR number (optionally + 5-digit item number)
+            $formattedPrKey = str_pad($sapPrNumber, 10, '0', STR_PAD_LEFT);
+            if (!empty($itemNumber)) {
+                $formattedPrKey .= str_pad($itemNumber, 5, '0', STR_PAD_LEFT);
+            }
+
+            $fileContents = Storage::disk('public')->get($attachment->file_path);
+
+            $postRes = $client->request('POST', $endpoint, [
+                'auth' => [$username, $password],
+                'headers' => [
+                    'x-csrf-token' => $csrfToken,
+                    'Slug' => $attachment->file_name,
+                    'BusinessObjectTypeName' => 'EBAN',
+                    'LinkedSAPObjectKey' => $formattedPrKey,
+                    'HarmonizedDocType' => $attachment->attachment_doc_type ?: 'SL1',
+                    'Content-Type' => $attachment->mime_type ?: 'application/octet-stream',
+                    'Accept' => 'application/json',
+                ],
+                'cookies' => $cookieJar,
+                'body' => $fileContents,
+            ]);
+
+            $statusCode = $postRes->getStatusCode();
+            $body = (string) $postRes->getBody();
+            $resJson = json_decode($body, true) ?: [];
+
+            if ($statusCode === 201 || $statusCode === 200) {
+                $sapDocId = $resJson['d']['DocumentId'] ?? ($resJson['DocumentId'] ?? ('SAP-ATT-' . uniqid()));
+                $attachment->update([
+                    'sap_document_number' => $sapDocId,
+                    'sap_sync_status' => 'synced',
+                    'sap_synced_at' => now(),
+                    'sap_sync_message' => "Successfully uploaded to SAP Attachment Service (Document ID: {$sapDocId})",
+                ]);
+
+                return [
+                    'success' => true,
+                    'status' => $statusCode,
+                    'sap_document_id' => $sapDocId,
+                    'message' => "Attachment {$attachment->file_name} successfully uploaded to SAP S/4HANA Cloud.",
+                ];
+            }
+
+            $errorMessage = $resJson['error']['message']['value'] ?? ($resJson['error']['message'] ?? "HTTP {$statusCode}: " . substr($body, 0, 300));
+            $attachment->update([
+                'sap_sync_status' => 'failed',
+                'sap_sync_message' => $errorMessage,
+            ]);
+
+            return [
+                'success' => false,
+                'status' => $statusCode,
+                'message' => $errorMessage,
+            ];
+        } catch (\Exception $e) {
+            Log::error('Exception uploading attachment to SAP: ' . $e->getMessage());
+            $attachment->update([
+                'sap_sync_status' => 'failed',
+                'sap_sync_message' => 'Upload error: ' . $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'status' => 500,
+                'message' => $e->getMessage(),
             ];
         }
     }

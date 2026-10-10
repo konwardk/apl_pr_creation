@@ -64,5 +64,17 @@ return [
             'SAP_PR_ITEMS_ENDPOINT',
             env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/PurchaseReqnItem'
         ),
+
+        // SAP Attachment Service (API_CV_ATTACHMENT_SRV - Communication Scenario SAP_COM_0119)
+        // Enables binary attachments for Purchase Requisitions (EBAN / BUS2105) in SAP S/4HANA Cloud
+        'attachment_service_root' => env(
+            'SAP_ATTACHMENT_SERVICE_ROOT',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/'
+        ),
+
+        'attachment_content' => env(
+            'SAP_ATTACHMENT_CONTENT_ENDPOINT',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/AttachmentContentSet'
+        ),
     ],
 ];

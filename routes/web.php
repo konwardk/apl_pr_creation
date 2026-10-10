@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DeptManagementController;
 use App\Http\Controllers\HeaderOptionController;
 use App\Http\Controllers\PrDocumentTypeController;
 use App\Http\Controllers\PurchaseRequisitionController;
@@ -16,17 +17,32 @@ Route::middleware(['auth', 'verified', 'role'])->group(function () {
     Route::get('purchase-requisitions/create', [PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
     Route::post('purchase-requisitions', [PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
     Route::post('purchase-requisitions/{purchaseRequisition}/sync', [PurchaseRequisitionController::class, 'sync'])->name('purchase-requisitions.sync');
+    Route::post('purchase-requisitions/{purchaseRequisition}/finalize', [PurchaseRequisitionController::class, 'finalizeDraft'])->name('purchase-requisitions.finalize');
+    Route::get('attachments/{attachment}/download', [PurchaseRequisitionController::class, 'downloadAttachment'])->name('attachments.download');
     Route::get('sap-materials', [PurchaseRequisitionController::class, 'getMaterials'])->name('sap-materials.index');
     Route::get('sap-account-assignment-categories', [PurchaseRequisitionController::class, 'getAccountAssignmentCategories'])->name('sap-account-assignment-categories.index');
     Route::get('sap-plants', [PurchaseRequisitionController::class, 'getPlants'])->name('sap-plants.index');
 
-    // Super Administrator only: User Management & Header Options Configuration
+    // Super Administrator only: System Configuration (User Management & Department Management) & PR Configuration
     Route::middleware(['role:superadmin'])->group(function () {
+        // System Configuration Landing Redirect
+        Route::get('system-configuration', function () {
+            return redirect()->route('users.index');
+        })->name('system-configuration.index');
+
+        // Manage Users
         Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
         Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
         Route::put('users/{user}', [UserManagementController::class, 'update'])->name('users.update');
         Route::delete('users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
         Route::post('users/{user}/toggle-status', [UserManagementController::class, 'toggleStatus'])->name('users.toggle-status');
+
+        // Manage Departments
+        Route::get('departments', [DeptManagementController::class, 'index'])->name('departments.index');
+        Route::post('departments', [DeptManagementController::class, 'store'])->name('departments.store');
+        Route::put('departments/{department}', [DeptManagementController::class, 'update'])->name('departments.update');
+        Route::delete('departments/{department}', [DeptManagementController::class, 'destroy'])->name('departments.destroy');
+        Route::post('departments/{department}/toggle-status', [DeptManagementController::class, 'toggleStatus'])->name('departments.toggle-status');
 
         // PR Configuration Hub
         Route::get('pr-configuration', function (\Illuminate\Http\Request $request) {

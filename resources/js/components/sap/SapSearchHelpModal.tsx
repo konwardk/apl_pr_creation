@@ -40,15 +40,20 @@ export default function SapSearchHelpModal({
             const extra = (opt.extra || '').toLowerCase();
             const uom = (opt.BaseUnit || opt.UnitOfMeasure || opt.uom || '').toLowerCase();
             const group = (opt.ProductGroup || opt.materialGroup || '').toLowerCase();
+            const extId = (opt.ProductExternalID || '').toLowerCase();
             const type = (opt.ProductType || opt.materialType || '').toLowerCase();
+            const supplier = (opt.Supplier || opt.supplierName || opt.SupplierName || '').toLowerCase();
 
             return (
                 product.includes(q) ||
                 productName.includes(q) ||
+                supplier.includes(q) ||
                 extra.includes(q) ||
                 uom.includes(q) ||
                 group.includes(q) ||
-                type.includes(q)
+                type.includes(q) ||
+                extId.includes(q) ||
+                valArea.includes(q)
             );
         });
     }, [options, searchQuery]);
@@ -127,10 +132,10 @@ export default function SapSearchHelpModal({
                                         <>
                                             <th className="py-2.5 px-4 w-36 font-mono">Product</th>
                                             <th className="py-2.5 px-4">ProductName (Description)</th>
-                                            <th className="py-2.5 px-3 w-24">BaseUnit (UoM)</th>
-                                            <th className="py-2.5 px-3 w-28">Material Group</th>
-                                            <th className="py-2.5 px-3 w-28">Material Type</th>
-                                            <th className="py-2.5 px-3 w-24 text-right">Unit Price</th>
+                                            <th className="py-2.5 px-3 w-20">BaseUnit</th>
+                                            <th className="py-2.5 px-3 w-24">Group</th>
+                                            <th className="py-2.5 px-3 w-24">Type</th>
+                                            <th className="py-2.5 px-3 w-28 text-right">Valuation Price</th>
                                         </>
                                     ) : (
                                         <>
@@ -145,14 +150,14 @@ export default function SapSearchHelpModal({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredOptions.map((opt) => {
-                                    const optCode = opt.Product || opt.AccountAssignmentCategory || opt.code;
-                                    const optName = opt.ProductName || opt.AcctAssignmentCategoryName || opt.name;
+                                {filteredOptions.map((opt, idx) => {
+                                    const optCode = opt.Product ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
+                                    const optName = opt.ProductName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
                                     const isSelected = selectedCode === optCode;
 
                                     return (
                                         <tr
-                                            key={optCode}
+                                            key={optCode || `opt-${idx}`}
                                             onClick={() => {
                                                 onSelect(opt);
                                                 onClose();
@@ -173,7 +178,7 @@ export default function SapSearchHelpModal({
                                                     </td>
                                                     <td className="py-2.5 px-3 font-mono text-[11px] font-semibold text-slate-700">
                                                         <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-[#0070f2]">
-                                                            {opt.BaseUnit || opt.uom || 'PC'}
+                                                            {opt.BaseUnit || opt.UnitOfMeasure || opt.uom || 'PC'}
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
@@ -185,18 +190,47 @@ export default function SapSearchHelpModal({
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-3 text-right font-medium text-[#1c2d42]">
-                                                        {(opt.UnitPrice !== undefined && opt.UnitPrice > 0)
-                                                            ? `${Number(opt.UnitPrice).toFixed(2)}`
-                                                            : (opt.unitPrice !== undefined && opt.unitPrice > 0)
-                                                            ? `${Number(opt.unitPrice).toFixed(2)}`
-                                                            : '-'}
+                                                        {(() => {
+                                                            const raw = opt.raw_data || {};
+                                                            const proc = String(opt.InventoryValuationProcedure || raw.InventoryValuationProcedure || opt.priceControl || '').toUpperCase().trim();
+                                                            const map = parseFloat(String(opt.MovingAveragePrice ?? raw.MovingAveragePrice ?? 0)) || 0;
+                                                            const std = parseFloat(String(opt.StandardPrice ?? raw.StandardPrice ?? 0)) || 0;
+                                                            const fallback = parseFloat(String(opt.valuationPrice ?? opt.UnitPrice ?? opt.unitPrice ?? 0)) || 0;
+
+                                                            let price = fallback;
+                                                            let badge = '';
+                                                            if (proc === 'V') {
+                                                                price = map;
+                                                                badge = 'V (MAP)';
+                                                            } else if (proc === 'S') {
+                                                                price = std;
+                                                                badge = 'S (Std)';
+                                                            } else if (map > 0) {
+                                                                price = map;
+                                                            } else if (std > 0) {
+                                                                price = std;
+                                                            }
+
+                                                            return (
+                                                                <div className="flex flex-col items-end">
+                                                                    <span className="font-mono text-xs font-semibold text-[#1c2d42]">
+                                                                        {price.toFixed(2)}
+                                                                    </span>
+                                                                    {badge && (
+                                                                        <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-200">
+                                                                            {badge}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                 </>
                                             ) : (
                                                 <>
                                                     <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
                                                         <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs">
-                                                            {optCode}
+                                                            {optCode !== '' ? optCode : <span className="text-slate-400 font-normal italic font-sans">[Blank]</span>}
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-4 font-medium text-[#1c2d42]">

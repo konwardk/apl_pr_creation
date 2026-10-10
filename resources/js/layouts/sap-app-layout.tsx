@@ -18,6 +18,7 @@ import {
     ChevronDown,
     FileText,
     Building2,
+    Shield,
     ShieldCheck,
     ArrowRight,
 } from 'lucide-react';
@@ -44,11 +45,55 @@ export default function SapAppLayout({
     const [isPrConfigHovered, setIsPrConfigHovered] = useState(false);
     const hoverTimeoutRef = React.useRef<any>(null);
 
+    const [isSysConfigHovered, setIsSysConfigHovered] = useState(false);
+    const sysConfigHoverTimeoutRef = React.useRef<any>(null);
+
     const { auth } = usePage().props as { auth?: { user?: User } };
     const user = auth?.user;
 
     const isSuperAdmin = user?.is_superadmin || user?.role?.name === 'superadmin';
     const isEmployee = user?.is_employee || user?.role?.name === 'employee';
+
+    // System Configuration sub-tabs for hover dropdown
+    const systemConfigSubTabs = [
+        {
+            id: 'users',
+            label: 'Manage Users',
+            description: 'User accounts, role assignments, and permissions',
+            icon: Users,
+            href: '/users',
+            badge: 'Accounts',
+            badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
+        },
+        {
+            id: 'departments',
+            label: 'Manage Departments',
+            description: 'Organizational units, department codes, and HODs',
+            icon: Building2,
+            href: '/departments',
+            badge: 'Org Units',
+            badgeColor: 'bg-blue-100 text-[#0070f2] border-blue-200',
+        },
+    ];
+
+    const handleSysConfigMouseEnter = () => {
+        if (sysConfigHoverTimeoutRef.current) {
+            clearTimeout(sysConfigHoverTimeoutRef.current);
+            sysConfigHoverTimeoutRef.current = null;
+        }
+        setIsSysConfigHovered(true);
+    };
+
+    const handleSysConfigMouseLeave = () => {
+        sysConfigHoverTimeoutRef.current = setTimeout(() => {
+            setIsSysConfigHovered(false);
+        }, 180);
+    };
+
+    const handleSysConfigSubTabClick = (subTab: { href: string }) => {
+        setIsSysConfigHovered(false);
+        router.visit(subTab.href);
+    };
 
     // PR Configuration sub-tabs for hover dropdown
     const prConfigSubTabs = [
@@ -142,7 +187,7 @@ export default function SapAppLayout({
               { id: 'architecture', label: 'Architecture & Dual-Posting', icon: Layers, href: '/dashboard' },
               ...(isSuperAdmin
                   ? [
-                        { id: 'users', label: 'User Management', icon: Users, href: '/users' },
+                        { id: 'system-configuration', label: 'System Configuration', icon: Shield, href: '/users' },
                         { id: 'pr-configuration', label: 'PR Configuration', icon: Settings2, href: '/dashboard' },
                     ]
                   : []),
@@ -150,13 +195,14 @@ export default function SapAppLayout({
 
     const handleTabClick = (tab: { id: string; href?: string }) => {
         setIsPrConfigHovered(false);
+        setIsSysConfigHovered(false);
 
-        if (tab.id === 'users') {
-            router.visit('/users');
+        if (tab.id === 'system-configuration') {
+            router.visit(tab.href || '/users');
             return;
         }
 
-        // If currently on another page (e.g. /users or /purchase-requisitions/create), visit /dashboard
+        // If currently on another page (e.g. /users, /departments, or /purchase-requisitions/create), visit /dashboard
         if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/dashboard')) {
             if (tab.id === 'pr-configuration') {
                 router.visit('/dashboard?tab=pr-configuration');
@@ -189,8 +235,102 @@ export default function SapAppLayout({
                     <nav className="flex space-x-1 sm:space-x-4 overflow-x-auto sm:overflow-visible no-scrollbar py-1">
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
-                            const isActive = activeTab === tab.id;
                             const isPrConfig = tab.id === 'pr-configuration';
+                            const isSysConfig = tab.id === 'system-configuration';
+                            const isActive =
+                                activeTab === tab.id ||
+                                (isSysConfig && (activeTab === 'system-configuration' || activeTab === 'users' || activeTab === 'departments'));
+
+                            if (isSysConfig) {
+                                return (
+                                    <div
+                                        key={tab.id}
+                                        className="relative"
+                                        onMouseEnter={handleSysConfigMouseEnter}
+                                        onMouseLeave={handleSysConfigMouseLeave}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => handleTabClick(tab)}
+                                            className={`group flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold whitespace-nowrap transition-all ${
+                                                isActive
+                                                    ? 'border-[#0070f2] text-[#0070f2]'
+                                                    : 'border-transparent text-[#556b82] hover:border-slate-300 hover:text-[#1c2d42]'
+                                            }`}
+                                        >
+                                            <Icon className={`h-4 w-4 transition-colors ${isActive ? 'text-[#0070f2]' : 'text-[#8c9ba5] group-hover:text-[#1c2d42]'}`} />
+                                            <span>{tab.label}</span>
+                                            <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${isSysConfigHovered ? 'rotate-180 text-[#0070f2]' : 'text-slate-400 group-hover:text-[#1c2d42]'}`} />
+                                        </button>
+
+                                        {/* Hover Dropdown Menu */}
+                                        {isSysConfigHovered && (
+                                            <div className="absolute left-0 sm:left-auto sm:right-0 md:left-0 top-full pt-1.5 z-50 w-80 sm:w-88 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                <div className="rounded-xl border border-[#d9e2ec] bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+                                                    {/* Dropdown Header */}
+                                                    <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-4 py-2.5 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Shield className="h-3.5 w-3.5 text-[#0070f2]" />
+                                                            <span className="text-[11px] font-bold uppercase tracking-wider text-[#556b82]">
+                                                                System Configuration
+                                                            </span>
+                                                        </div>
+                                                        <span className="rounded bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[10px] font-semibold text-[#0070f2]">
+                                                            {systemConfigSubTabs.length} Modules
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Sub-Tabs List */}
+                                                    <div className="p-1.5 space-y-0.5">
+                                                        {systemConfigSubTabs.map((subTab) => {
+                                                            const SubIcon = subTab.icon;
+                                                            return (
+                                                                <button
+                                                                    key={subTab.id}
+                                                                    type="button"
+                                                                    onClick={() => handleSysConfigSubTabClick(subTab)}
+                                                                    className="group/item flex w-full items-start gap-2.5 rounded-lg p-2 text-left hover:bg-blue-50/70 transition-colors"
+                                                                >
+                                                                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600 group-hover/item:bg-[#0070f2] group-hover/item:text-white transition-colors">
+                                                                        <SubIcon className="h-3.5 w-3.5" />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center justify-between gap-1">
+                                                                            <span className="text-xs font-semibold text-[#1c2d42] group-hover/item:text-[#0070f2] transition-colors">
+                                                                                {subTab.label}
+                                                                            </span>
+                                                                            {subTab.badge && (
+                                                                                <span className={`shrink-0 rounded px-1.5 py-0.2 text-[9px] font-bold border ${subTab.badgeColor}`}>
+                                                                                    {subTab.badge}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[10px] text-[#556b82] line-clamp-1 mt-0.5">
+                                                                            {subTab.description}
+                                                                        </p>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {/* Dropdown Footer */}
+                                                    <div className="border-t border-[#d9e2ec] bg-[#f8fafc] px-4 py-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSysConfigSubTabClick(systemConfigSubTabs[0])}
+                                                            className="flex w-full items-center justify-between text-[11px] font-semibold text-[#0070f2] hover:text-[#0057c2]"
+                                                        >
+                                                            <span>Open User Management</span>
+                                                            <ArrowRight className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            }
 
                             if (isPrConfig) {
                                 return (

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PurchaseRequisitionItem extends Model
 {
@@ -66,5 +67,10 @@ class PurchaseRequisitionItem extends Model
     public function purchaseRequisition(): BelongsTo
     {
         return $this->belongsTo(PurchaseRequisition::class);
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(Attachment::class);
     }
 }

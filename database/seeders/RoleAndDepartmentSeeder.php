@@ -40,98 +40,11 @@ class RoleAndDepartmentSeeder extends Seeder
             ]
         );
 
-        // 2. Departments
-        $deptProc = Department::firstOrCreate(
-            ['code' => 'PROC'],
-            [
-                'name' => 'Procurement & Materials Management',
-                'description' => 'Sourcing, purchase requisitions, supplier management, and SAP PO coordination.',
-                'head_of_department' => 'B. K. Gogoi',
-                'is_active' => true,
-            ]
-        );
+        // 2. Pre-seeded Users with Distinct Roles
 
-        $deptChem = Department::firstOrCreate(
-            ['code' => 'CHEM'],
-            [
-                'name' => 'Chemical Processing & Synthesis',
-                'description' => 'Operation and catalytic synthesis for Methanol and 500 TPD Formalin plants.',
-                'head_of_department' => 'Dr. P. C. Hazarika',
-                'is_active' => true,
-            ]
-        );
-
-        $deptMech = Department::firstOrCreate(
-            ['code' => 'MECH'],
-            [
-                'name' => 'Mechanical & Plant Maintenance',
-                'description' => 'Rotating equipment, reactors, boilers, pipelines, and preventive overhauls.',
-                'head_of_department' => 'N. Sonowal',
-                'is_active' => true,
-            ]
-        );
-
-        $deptElec = Department::firstOrCreate(
-            ['code' => 'ELEC'],
-            [
-                'name' => 'Electrical & Instrumentation',
-                'description' => 'DCS control systems, high voltage switchgear, and safety loop calibration.',
-                'head_of_department' => 'S. Dutta',
-                'is_active' => true,
-            ]
-        );
-
-        $deptProd = Department::firstOrCreate(
-            ['code' => 'PROD'],
-            [
-                'name' => 'Production Operations',
-                'description' => 'Daily industrial plant operations and feedstock utility management.',
-                'head_of_department' => 'K. Bordoloi',
-                'is_active' => true,
-            ]
-        );
-
-        $deptQc = Department::firstOrCreate(
-            ['code' => 'QC'],
-            [
-                'name' => 'Quality Control & Analytical Lab',
-                'description' => 'Chemical purity testing, chromatographic analysis, and ASTM quality conformance.',
-                'head_of_department' => 'M. Saikia',
-                'is_active' => true,
-            ]
-        );
-
-        $deptFin = Department::firstOrCreate(
-            ['code' => 'FIN'],
-            [
-                'name' => 'Finance & Accounts',
-                'description' => 'Cost center accounting, GL budgets, and procurement financial audit.',
-                'head_of_department' => 'R. Sarmah',
-                'is_active' => true,
-            ]
-        );
-
-        $deptIt = Department::firstOrCreate(
-            ['code' => 'IT'],
-            [
-                'name' => 'Information Technology & SAP Systems',
-                'description' => 'SAP Public Cloud S/4HANA architecture, OData services, and cyber infrastructure.',
-                'head_of_department' => 'Dipankar Paul',
-                'is_active' => true,
-            ]
-        );
-
-        $deptHr = Department::firstOrCreate(
-            ['code' => 'HR'],
-            [
-                'name' => 'Human Resources & General Admin',
-                'description' => 'Personnel records, plant site safety policies, and organizational management.',
-                'head_of_department' => 'J. Kalita',
-                'is_active' => true,
-            ]
-        );
-
-        // 3. Pre-seeded Users with Distinct Roles
+        $itDeptId = Department::where('code', 'IT')->value('id');
+        $procDeptId = Department::where('code', 'PROC')->value('id');
+        $chemDeptId = Department::where('code', 'CHEM')->value('id');
 
         // Superadmin: test@example.com (current demo user) & superadmin@example.com
         User::updateOrCreate(
@@ -140,7 +53,7 @@ class RoleAndDepartmentSeeder extends Seeder
                 'name' => 'Dipankar Paul (Superadmin)',
                 'password' => Hash::make('password'),
                 'role_id' => $superadminRole->id,
-                'department_id' => $deptIt->id,
+                'department_id' => $itDeptId,
                 'employee_id' => 'APL-DIR-001',
                 'designation' => 'Chief Technology Officer / Superadmin',
                 'phone' => '+91 98640 12345',
@@ -156,7 +69,7 @@ class RoleAndDepartmentSeeder extends Seeder
                 'name' => 'APL Super Administrator',
                 'password' => Hash::make('password'),
                 'role_id' => $superadminRole->id,
-                'department_id' => $deptIt->id,
+                'department_id' => $itDeptId,
                 'employee_id' => 'APL-SA-001',
                 'designation' => 'Head of Corporate Systems & Superadmin',
                 'phone' => '+91 98640 99999',
@@ -173,7 +86,7 @@ class RoleAndDepartmentSeeder extends Seeder
                 'name' => 'Rajesh Sharma (Admin)',
                 'password' => Hash::make('password'),
                 'role_id' => $adminRole->id,
-                'department_id' => $deptProc->id,
+                'department_id' => $procDeptId,
                 'employee_id' => 'APL-ADM-101',
                 'designation' => 'Senior Procurement Manager & SAP Dispatcher',
                 'phone' => '+91 94350 23456',
@@ -190,7 +103,7 @@ class RoleAndDepartmentSeeder extends Seeder
                 'name' => 'Ananya Baruah (Employee)',
                 'password' => Hash::make('password'),
                 'role_id' => $employeeRole->id,
-                'department_id' => $deptChem->id,
+                'department_id' => $chemDeptId,
                 'employee_id' => 'APL-EMP-504',
                 'designation' => 'Process Engineer - Methanol Plant II',
                 'phone' => '+91 94351 34567',

@@ -18,7 +18,7 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        $query = PurchaseRequisition::with(['items', 'user', 'headerOption'])->latest();
+        $query = PurchaseRequisition::with(['items', 'user', 'headerOption', 'attachments'])->latest();
 
         // If employee, only show their own created PRs
         if ($user && $user->isEmployee()) {
@@ -31,7 +31,8 @@ class DashboardController extends Controller
             'total_count' => $prs->count(),
             'total_amount' => $prs->sum('total_amount'),
             'synced_count' => $prs->where('sap_sync_status', 'synced')->count(),
-            'pending_sync_count' => $prs->where('sap_sync_status', 'pending')->count(),
+            'pending_sync_count' => $prs->where('sap_sync_status', 'pending')->where('is_draft', false)->count(),
+            'draft_count' => $prs->where('is_draft', true)->count(),
             'failed_sync_count' => $prs->where('sap_sync_status', 'failed')->count(),
             'in_approval_count' => $prs->where('approval_status', 'in_approval')->count(),
             'approved_count' => $prs->where('approval_status', 'approved')->count(),

@@ -9,14 +9,10 @@ import { Label } from '@/components/ui/label';
 import { edit } from '@/routes/security';
 import type { Props as ManagePasskeysProps } from '@/components/manage-passkeys';
 import ManagePasskeys from '@/components/manage-passkeys';
-import type { Props as ManageTwoFactorProps } from '@/components/manage-two-factor';
-import ManageTwoFactor from '@/components/manage-two-factor';
 
-// oxfmt-ignore
 type Props = {
     passwordRules: string;
-} & ManagePasskeysProps &
-    ManageTwoFactorProps;
+} & ManagePasskeysProps;
 
 export default function Security(props: Props) {
     const passwordInput = useRef<HTMLInputElement>(null);
@@ -59,64 +55,66 @@ export default function Security(props: Props) {
                 >
                     {({ errors, processing }) => (
                         <>
-                            <div className="grid gap-2">
-                                <Label htmlFor="current_password">
-                                    Current password
+                            <div className="grid gap-1.5">
+                                <Label htmlFor="current_password" className="text-xs font-semibold text-[#1c2d42]">
+                                    Current Password
                                 </Label>
 
                                 <PasswordInput
                                     id="current_password"
                                     ref={currentPasswordInput}
                                     name="current_password"
-                                    className="mt-1 block w-full"
+                                    className="mt-1 block w-full rounded-lg border border-[#d9e2ec] bg-white px-3 py-2 text-xs text-[#1c2d42] shadow-2xs hover:border-[#0070f2] focus:border-[#0070f2] focus:ring-2 focus:ring-[#0070f2]/20 focus:outline-none"
                                     autoComplete="current-password"
-                                    placeholder="Current password"
+                                    placeholder="Enter your current password"
                                 />
 
-                                <InputError message={errors.current_password} />
+                                <InputError className="mt-1 text-xs" message={errors.current_password} />
                             </div>
 
-                            <div className="grid gap-2">
-                                <Label htmlFor="password">New password</Label>
+                            <div className="grid gap-1.5">
+                                <Label htmlFor="password" className="text-xs font-semibold text-[#1c2d42]">New Password</Label>
 
                                 <PasswordInput
                                     id="password"
                                     ref={passwordInput}
                                     name="password"
-                                    className="mt-1 block w-full"
+                                    className="mt-1 block w-full rounded-lg border border-[#d9e2ec] bg-white px-3 py-2 text-xs text-[#1c2d42] shadow-2xs hover:border-[#0070f2] focus:border-[#0070f2] focus:ring-2 focus:ring-[#0070f2]/20 focus:outline-none"
                                     autoComplete="new-password"
-                                    placeholder="New password"
+                                    placeholder="Enter your new password"
                                     passwordrules={props.passwordRules}
                                 />
 
-                                <InputError message={errors.password} />
+                                <InputError className="mt-1 text-xs" message={errors.password} />
                             </div>
 
-                            <div className="grid gap-2">
-                                <Label htmlFor="password_confirmation">
-                                    Confirm password
+                            <div className="grid gap-1.5">
+                                <Label htmlFor="password_confirmation" className="text-xs font-semibold text-[#1c2d42]">
+                                    Confirm New Password
                                 </Label>
 
                                 <PasswordInput
                                     id="password_confirmation"
                                     name="password_confirmation"
-                                    className="mt-1 block w-full"
+                                    className="mt-1 block w-full rounded-lg border border-[#d9e2ec] bg-white px-3 py-2 text-xs text-[#1c2d42] shadow-2xs hover:border-[#0070f2] focus:border-[#0070f2] focus:ring-2 focus:ring-[#0070f2]/20 focus:outline-none"
                                     autoComplete="new-password"
-                                    placeholder="Confirm password"
+                                    placeholder="Re-enter your new password"
                                     passwordrules={props.passwordRules}
                                 />
 
                                 <InputError
+                                    className="mt-1 text-xs"
                                     message={errors.password_confirmation}
                                 />
                             </div>
 
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3 pt-2">
                                 <Button
                                     disabled={processing}
                                     data-test="update-password-button"
+                                    className="bg-[#0070f2] hover:bg-[#0057c2] text-white font-semibold text-xs px-5 py-2 rounded-lg shadow-xs transition-colors"
                                 >
-                                    Save
+                                    {processing ? 'Updating Password...' : 'Update Password'}
                                 </Button>
                             </div>
                         </>
@@ -124,25 +122,12 @@ export default function Security(props: Props) {
                 </Form>
             </div>
 
-            <ManageTwoFactor
-                canManageTwoFactor={props.canManageTwoFactor}
-                requiresConfirmation={props.requiresConfirmation}
-                twoFactorEnabled={props.twoFactorEnabled}
-            />
-
-            <ManagePasskeys
-                canManagePasskeys={props.canManagePasskeys}
-                passkeys={props.passkeys}
-            />
+            <div className="border-t border-[#d9e2ec] pt-6">
+                <ManagePasskeys
+                    canManagePasskeys={props.canManagePasskeys}
+                    passkeys={props.passkeys}
+                />
+            </div>
         </>
     );
 }
-
-Security.layout = {
-    breadcrumbs: [
-        {
-            title: 'Security settings',
-            href: edit(),
-        },
-    ],
-};

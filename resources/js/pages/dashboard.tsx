@@ -25,6 +25,7 @@ import {
     Package,
     SlidersHorizontal,
     Settings2,
+    Paperclip,
 } from 'lucide-react';
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
 import type { User, HeaderOption, PrDocumentType } from '@/types';
@@ -46,6 +47,21 @@ interface PrItem {
     gl_account?: string;
 }
 
+interface AttachmentItem {
+    id: number;
+    purchase_requisition_id: number;
+    purchase_requisition_item_id?: number | null;
+    item_number?: string | null;
+    file_name: string;
+    file_path: string;
+    file_size: number;
+    formatted_size?: string;
+    url?: string;
+    mime_type?: string;
+    attachment_doc_type: string;
+    sap_sync_status: string;
+}
+
 interface PurchaseRequisition {
     id: number;
     pr_number: string;
@@ -60,6 +76,7 @@ interface PurchaseRequisition {
     total_amount: number | string;
     currency: string;
     approval_status: 'draft' | 'in_approval' | 'approved' | 'rejected';
+    is_draft?: boolean | number;
     sap_sync_status: 'pending' | 'synced' | 'failed';
     sap_sync_message?: string | null;
     sap_synced_at?: string | null;
@@ -68,6 +85,7 @@ interface PurchaseRequisition {
     created_at: string;
     user?: User | null;
     items?: PrItem[];
+    attachments?: AttachmentItem[];
 }
 
 interface DashboardProps {
@@ -77,6 +95,7 @@ interface DashboardProps {
     stats?: {
         total_count: number;
         total_amount: number;
+        draft_count?: number;
         synced_count: number;
         pending_sync_count: number;
         failed_sync_count: number;
@@ -103,6 +122,7 @@ export default function Dashboard({
     stats = {
         total_count: 0,
         total_amount: 0,
+        draft_count: 0,
         synced_count: 0,
         pending_sync_count: 0,
         failed_sync_count: 0,
@@ -161,16 +181,23 @@ export default function Dashboard({
     };
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | 'synced' | 'pending' | 'failed'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'synced' | 'pending' | 'failed'>('all');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [selectedPrForPayload, setSelectedPrForPayload] = useState<PurchaseRequisition | null>(null);
     const [syncingId, setSyncingId] = useState<number | null>(null);
+    const [finalizingId, setFinalizingId] = useState<number | null>(null);
 
     // Filter Purchase Requisitions
     const filteredPrs = useMemo(() => {
         return purchaseRequisitions.filter((pr) => {
             const matchesStatus =
-                statusFilter === 'all' ? true : pr.sap_sync_status === statusFilter;
+                statusFilter === 'all'
+                    ? true
+                    : statusFilter === 'draft'
+                    ? Boolean(pr.is_draft)
+                    : statusFilter === 'pending'
+                    ? pr.sap_sync_status === 'pending' && !pr.is_draft
+                    : pr.sap_sync_status === statusFilter;
 
             const q = searchQuery.toLowerCase().trim();
             const matchesQuery =
@@ -205,8 +232,10 @@ export default function Dashboard({
     }, [purchaseRequisitions]);
 
     // Single PR Sync
-
     const handleSyncPr = (pr: PurchaseRequisition) => {
+        if (pr.is_draft) {
+            return;
+        }
         setSyncingId(pr.id);
         router.post(
             `/purchase-requisitions/${pr.id}/sync`,
@@ -217,9 +246,21 @@ export default function Dashboard({
         );
     };
 
-    // Sync all pending PRs
+    // Finalize Draft PR (Toggle is_draft to 0)
+    const handleFinalizePr = (pr: PurchaseRequisition) => {
+        setFinalizingId(pr.id);
+        router.post(
+            `/purchase-requisitions/${pr.id}/finalize`,
+            {},
+            {
+                onFinish: () => setFinalizingId(null),
+            }
+        );
+    };
+
+    // Sync all pending PRs (excluding draft PRs)
     const handleSyncAllPending = () => {
-        const pendingPr = purchaseRequisitions.find((p) => p.sap_sync_status === 'pending');
+        const pendingPr = purchaseRequisitions.find((p) => p.sap_sync_status === 'pending' && !p.is_draft);
         if (pendingPr) {
             handleSyncPr(pendingPr);
         }
@@ -257,7 +298,7 @@ export default function Dashboard({
                                         </>
                                     ) : (
                                         <>
-                                            Hello, <strong className="text-[#1c2d42]">{user?.name || 'Requester'}</strong>. Dual-posting active: all requisitions are recorded in local database (<code className="font-mono text-xs">apl_pr_db</code>) and synced to SAP Public Cloud via OData V4.
+                                            Hello, <strong className="text-[#1c2d42]">{user?.name || 'Requester'}</strong>. Dual-posting active: all requisitions are recorded in local database (<code className="font-mono text-xs">Local Database</code>) and synced to SAP Public Cloud via OData V4.
                                         </>
                                     )}
                                 </p>
@@ -425,6 +466,17 @@ export default function Dashboard({
                                 </button>
                                 <button
                                     type="button"
+                                    onClick={() => setStatusFilter('draft')}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                                        statusFilter === 'draft'
+                                            ? 'bg-slate-700 text-white shadow-xs'
+                                            : 'bg-slate-100 text-[#556b82] hover:bg-slate-200/70 hover:text-[#1c2d42]'
+                                    }`}
+                                >
+                                    Drafts ({stats.draft_count ?? purchaseRequisitions.filter((p) => p.is_draft).length})
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={() => setStatusFilter('synced')}
                                     className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                                         statusFilter === 'synced'
@@ -512,7 +564,11 @@ export default function Dashboard({
                                                     <div className="font-mono font-bold text-[#0070f2]">
                                                         {pr.pr_number}
                                                     </div>
-                                                    {pr.sap_pr_number ? (
+                                                    {pr.is_draft ? (
+                                                        <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-700 border border-slate-300">
+                                                            <span>Draft (Local DB)</span>
+                                                        </div>
+                                                    ) : pr.sap_pr_number ? (
                                                         <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-[#0057c2] border border-blue-200">
                                                             <span>SAP #{pr.sap_pr_number}</span>
                                                         </div>
@@ -547,6 +603,24 @@ export default function Dashboard({
                                                             </span>
                                                         )}
                                                     </div>
+                                                    {pr.attachments && pr.attachments.length > 0 && (
+                                                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                                            {pr.attachments.map((att) => (
+                                                                <a
+                                                                    key={att.id}
+                                                                    href={`/attachments/${att.id}/download`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center gap-1 rounded bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-[#0070f2] px-1.5 py-0.5 text-[10px] font-medium border border-slate-200 transition-colors"
+                                                                    title={`Download ${att.file_name} (${att.formatted_size || att.file_size + ' bytes'}) • SAP Status: ${att.sap_sync_status}`}
+                                                                >
+                                                                    <Paperclip className="h-3 w-3 text-[#0070f2]" />
+                                                                    <span className="truncate max-w-[140px]">{att.file_name}</span>
+                                                                    <span className="text-[9px] text-slate-400">({att.attachment_doc_type})</span>
+                                                                </a>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </td>
 
                                                 {/* Plant / CoCode */}
@@ -571,7 +645,15 @@ export default function Dashboard({
 
                                                 {/* SAP OData Status */}
                                                 <td className="py-3 px-3 text-center">
-                                                    {pr.sap_sync_status === 'synced' ? (
+                                                    {pr.is_draft ? (
+                                                        <span
+                                                            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 border border-slate-300"
+                                                            title="Draft PR saved in local database only. Cannot be synced to SAP until finalized."
+                                                        >
+                                                            <FileSpreadsheet className="h-3 w-3 text-slate-500" />
+                                                            Draft (Local Only)
+                                                        </span>
+                                                    ) : pr.sap_sync_status === 'synced' ? (
                                                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">
                                                             <CheckCircle2 className="h-3 w-3" />
                                                             Synced (201)
@@ -592,13 +674,15 @@ export default function Dashboard({
                                                 {/* Approval */}
                                                 <td className="py-3 px-3 text-center">
                                                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                                                        pr.approval_status === 'approved'
+                                                        pr.is_draft
+                                                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                                                            : pr.approval_status === 'approved'
                                                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                                             : pr.approval_status === 'in_approval'
                                                             ? 'bg-blue-50 text-[#0070f2] border border-blue-200'
                                                             : 'bg-slate-100 text-slate-600'
                                                     }`}>
-                                                        {pr.approval_status.replace('_', ' ')}
+                                                        {pr.is_draft ? 'Draft' : pr.approval_status.replace('_', ' ')}
                                                     </span>
                                                 </td>
 
@@ -615,17 +699,32 @@ export default function Dashboard({
                                                             <span>Payload</span>
                                                         </button>
 
-                                                        {!isEmployee && pr.sap_sync_status !== 'synced' && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleSyncPr(pr)}
-                                                                disabled={syncingId === pr.id}
-                                                                className="flex items-center gap-1 rounded bg-[#0070f2] px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
-                                                                title="Post / Sync to SAP S/4HANA Cloud OData V4"
-                                                            >
-                                                                <Send className={`h-3 w-3 ${syncingId === pr.id ? 'animate-spin' : ''}`} />
-                                                                <span>{syncingId === pr.id ? 'Posting...' : 'Sync to SAP'}</span>
-                                                            </button>
+                                                        {pr.is_draft ? (
+                                                            !isEmployee && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleFinalizePr(pr)}
+                                                                    disabled={finalizingId === pr.id}
+                                                                    className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 transition-colors"
+                                                                    title="Finalize Draft (Sets is_draft = 0, making PR eligible for SAP sync)"
+                                                                >
+                                                                    <CheckCircle2 className={`h-3 w-3 ${finalizingId === pr.id ? 'animate-spin' : ''}`} />
+                                                                    <span>{finalizingId === pr.id ? 'Finalizing...' : 'Finalize Draft'}</span>
+                                                                </button>
+                                                            )
+                                                        ) : (
+                                                            !isEmployee && pr.sap_sync_status !== 'synced' && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSyncPr(pr)}
+                                                                    disabled={syncingId === pr.id}
+                                                                    className="flex items-center gap-1 rounded bg-[#0070f2] px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
+                                                                    title="Post / Sync to SAP S/4HANA Cloud OData V4"
+                                                                >
+                                                                    <Send className={`h-3 w-3 ${syncingId === pr.id ? 'animate-spin' : ''}`} />
+                                                                    <span>{syncingId === pr.id ? 'Posting...' : 'Sync to SAP'}</span>
+                                                                </button>
+                                                            )
                                                         )}
                                                     </div>
                                                 </td>

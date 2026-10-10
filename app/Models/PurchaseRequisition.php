@@ -26,6 +26,7 @@ class PurchaseRequisition extends Model
         'currency',
         'requisitioner',
         'approval_status',
+        'is_draft',
         'sap_sync_status',
         'sap_sync_message',
         'sap_synced_at',
@@ -36,6 +37,7 @@ class PurchaseRequisition extends Model
     protected $casts = [
         'total_amount' => 'decimal:2',
         'auto_source_determination' => 'boolean',
+        'is_draft' => 'boolean',
         'sap_synced_at' => 'datetime',
         'sap_payload' => 'array',
         'sap_response' => 'array',
@@ -54,6 +56,11 @@ class PurchaseRequisition extends Model
     public function headerOption(): BelongsTo
     {
         return $this->belongsTo(HeaderOption::class, 'header_option_id');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(Attachment::class);
     }
 
     /**
@@ -129,9 +136,10 @@ class PurchaseRequisition extends Model
                     'PurReqnItemCurrency' => $item->currency ?: ($this->currency ?: 'INR'),
                 ];
 
-                // Account Assignment is only sent when category is provided (e.g. 'K' for Cost Center)
-                if (!empty($item->account_assignment_category)) {
-                    $itemPayload['AccountAssignmentCategory'] = $item->account_assignment_category;
+                // Account Assignment is only sent when valid controlling category is provided (e.g. 'K' for Cost Center)
+                $aac = trim((string) $item->account_assignment_category);
+                if (!empty($aac) && strtoupper($aac) !== 'NONE' && strtoupper($aac) !== 'BLANK') {
+                    $itemPayload['AccountAssignmentCategory'] = $aac;
                     $itemPayload['_PurchaseReqnAcctAssgmt'] = [
                         [
                             'PurchaseReqnAcctAssgmtNumber' => '1',

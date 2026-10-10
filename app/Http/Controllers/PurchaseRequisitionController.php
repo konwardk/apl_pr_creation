@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Attachment;
 use App\Models\HeaderOption;
 use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
@@ -13,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 use Inertia\Inertia;
@@ -33,7 +35,10 @@ class PurchaseRequisitionController extends Controller
     public function getMaterials(Request $request): JsonResponse
     {
         $search = $request->query('query') ?? $request->query('search');
-        $result = $this->sapService->fetchMaterialsFromCdsView($search);
+        $material = $request->query('material') ?? $request->query('material_code') ?? $request->query('product') ?? $request->query('Product');
+        $valuationArea = $request->query('valuationArea') ?? $request->query('valuation_area') ?? $request->query('plant') ?? $request->query('Plant');
+
+        $result = $this->sapService->fetchMaterialsFromCdsView($search, $material, $valuationArea);
 
         return response()->json($result);
     }
@@ -94,13 +99,13 @@ class PurchaseRequisitionController extends Controller
 
         // 3. Account Assignment Categories from live SAP CDS view YY1_ACCOUNTASSIGNMENTCAT_CDS
         $acctResult = $this->sapService->fetchAccountAssignmentCategoriesFromCdsView();
-        $accountAssignmentCategories = ($acctResult['success'] ?? false)
+        $accountAssignmentCategories = ($acctResult['success'] ?? false && !empty($acctResult['items']))
             ? array_map(fn($item) => [
                 'code' => $item['code'],
                 'name' => $item['name'],
                 'extra' => $item['extra'] ?? '',
-            ], $acctResult['items'] ?? [])
-            : [];
+            ], $acctResult['items'])
+            : $this->sapService->getFormattedFallbackAccountAssignmentCategories();
 
         // 4. Materials from live SAP CDS view YY1_MATERIALS_CDS
         $materialsResult = $this->sapService->fetchMaterialsFromCdsView();
@@ -112,8 +117,23 @@ class PurchaseRequisitionController extends Controller
                 'materialType' => $item['materialType'] ?? '',
                 'uom' => $item['uom'] ?? 'PC',
                 'unitPrice' => (float)($item['unitPrice'] ?? 0),
+                'valuationPrice' => (float)($item['valuationPrice'] ?? $item['unitPrice'] ?? 0),
                 'poText' => $item['poText'] ?? '',
                 'extra' => trim(($item['materialGroup'] ?? '') . ' • ' . ($item['uom'] ?? '')),
+                'Product' => $item['Product'] ?? $item['code'],
+                'ProductName' => $item['ProductName'] ?? $item['name'],
+                'ProductExternalID' => $item['ProductExternalID'] ?? $item['code'],
+                'WeightUnit' => $item['WeightUnit'] ?? '',
+                'UnitOfMeasure' => $item['UnitOfMeasure'] ?? $item['uom'] ?? 'PC',
+                'ProductGroup' => $item['ProductGroup'] ?? $item['materialGroup'] ?? '',
+                'ProductType' => $item['ProductType'] ?? $item['materialType'] ?? '',
+                'MovingAveragePrice' => $item['MovingAveragePrice'] ?? '0.00',
+                'StandardPrice' => $item['StandardPrice'] ?? '0.00',
+                'InventoryValuationProcedure' => $item['InventoryValuationProcedure'] ?? '',
+                'priceControl' => $item['priceControl'] ?? $item['InventoryValuationProcedure'] ?? '',
+                'Currency' => $item['Currency'] ?? '',
+                'ValuationArea' => $item['ValuationArea'] ?? '',
+                'raw_data' => $item['raw_data'] ?? [],
             ], $materialsResult['items'] ?? [])
             : [];
 
@@ -260,6 +280,7 @@ class PurchaseRequisitionController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
+            'is_draft' => 'nullable|boolean',
             'description' => 'nullable|string|max:255',
             'header_note' => 'nullable|string',
             'header_option_id' => 'nullable|exists:header_options,id',
@@ -306,13 +327,29 @@ class PurchaseRequisitionController extends Controller
             'items.*.closure_comment' => 'nullable|string',
             'items.*.attachment_doc_type' => 'nullable|string|max:50',
             'items.*.attachment_name' => 'nullable|string|max:255',
+            'items.*.attachment_file' => 'nullable|file|max:25600',
+            'attachments' => 'nullable|array',
+            'attachments.*' => 'nullable|file|max:25600',
         ]);
 
         /** @var PurchaseRequisition|null $pr */
         $pr = null;
         $prNumber = '';
+        $isDraft = !empty($validated['is_draft']) || $request->boolean('is_draft');
 
-        DB::transaction(function () use ($validated, $request, &$pr, &$prNumber) {
+        // Validate against unsupported SAP Account Assignment Categories (e.g. 'N' Network for standard PR items)
+        if (!$isDraft) {
+            foreach ($validated['items'] as $index => $item) {
+                $aac = strtoupper(trim($item['account_assignment_category'] ?? ''));
+                if ($aac === 'N') {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "items.{$index}.account_assignment_category" => "Account Assignment Category 'N' (Network) is not supported for standard Purchase Requisitions in SAP S/4HANA Cloud (SAP error ME/066). Leave blank for Stock/Inventory materials or select 'K' for Cost Center.",
+                    ]);
+                }
+            }
+        }
+
+        DB::transaction(function () use ($validated, $request, $isDraft, &$pr, &$prNumber) {
             $nextSeq = (PurchaseRequisition::max('id') ?? 0) + 1;
             $prNumber = 'PR-' . date('Y') . '-' . str_pad($nextSeq, 5, '0', STR_PAD_LEFT);
 
@@ -338,9 +375,12 @@ class PurchaseRequisitionController extends Controller
                 'total_amount' => $totalAmount,
                 'currency' => $validated['currency'] ?? 'INR',
                 'requisitioner' => $validated['requisitioner'] ?? ($request->user()?->name ?? 'Requester'),
-                'approval_status' => 'approved',
+                'approval_status' => $isDraft ? 'draft' : 'approved',
+                'is_draft' => $isDraft ? 1 : 0,
                 'sap_sync_status' => 'pending',
-                'sap_sync_message' => 'Created in local database. Ready for SAP S/4HANA OData V4 POST.',
+                'sap_sync_message' => $isDraft
+                    ? 'Saved as Draft in local MySQL database (is_draft = 1). Not synced to SAP server.'
+                    : 'Created in local database. Ready for SAP S/4HANA OData V4 POST.',
             ]);
 
             foreach ($validated['items'] as $index => $itemData) {
@@ -348,7 +388,16 @@ class PurchaseRequisitionController extends Controller
                 $itemTotal = (((float)$itemData['quantity'] / $pu) * (float)$itemData['unit_price']);
                 $itemNum = !empty($itemData['item_number']) ? $itemData['item_number'] : str_pad(($index + 1) * 10, 5, '0', STR_PAD_LEFT);
 
-                PurchaseRequisitionItem::create([
+                // Detect uploaded attachment file for this item line
+                $uploadedFile = $request->file("items.{$index}.attachment_file")
+                    ?? ($request->file('items')[$index]['attachment_file'] ?? null);
+
+                $attName = $itemData['attachment_name'] ?? null;
+                if ($uploadedFile && $uploadedFile->isValid()) {
+                    $attName = $uploadedFile->getClientOriginalName();
+                }
+
+                $prItem = PurchaseRequisitionItem::create([
                     'purchase_requisition_id' => $pr->id,
                     'item_number' => $itemNum,
                     'item_type' => $itemData['item_type'] ?? 'material',
@@ -385,19 +434,65 @@ class PurchaseRequisitionController extends Controller
                     'delivery_text' => $itemData['delivery_text'] ?? null,
                     'material_po_text' => $itemData['material_po_text'] ?? null,
                     'closure_comment' => $itemData['closure_comment'] ?? null,
-                    'attachment_doc_type' => $itemData['attachment_doc_type'] ?? null,
-                    'attachment_name' => $itemData['attachment_name'] ?? null,
+                    'attachment_doc_type' => $itemData['attachment_doc_type'] ?? 'SL1',
+                    'attachment_name' => $attName,
                 ]);
+
+                // Store uploaded attachment file in database and local public storage disk
+                if ($uploadedFile && $uploadedFile->isValid()) {
+                    $storedPath = $uploadedFile->store("attachments/{$prNumber}", 'public');
+                    Attachment::create([
+                        'purchase_requisition_id' => $pr->id,
+                        'purchase_requisition_item_id' => $prItem->id,
+                        'item_number' => $itemNum,
+                        'file_name' => $uploadedFile->getClientOriginalName(),
+                        'file_path' => $storedPath,
+                        'file_size' => $uploadedFile->getSize(),
+                        'mime_type' => $uploadedFile->getClientMimeType() ?: $uploadedFile->getMimeType(),
+                        'attachment_doc_type' => $itemData['attachment_doc_type'] ?? 'SL1',
+                        'sap_sync_status' => 'pending',
+                        'user_id' => $request->user()?->id,
+                    ]);
+                }
             }
 
-            $pr->load('items');
+            // Store any general PR-level attachments
+            if ($request->hasFile('attachments')) {
+                foreach ($request->file('attachments') as $generalFile) {
+                    if ($generalFile && $generalFile->isValid()) {
+                        $storedPath = $generalFile->store("attachments/{$prNumber}", 'public');
+                        Attachment::create([
+                            'purchase_requisition_id' => $pr->id,
+                            'purchase_requisition_item_id' => null,
+                            'item_number' => null,
+                            'file_name' => $generalFile->getClientOriginalName(),
+                            'file_path' => $storedPath,
+                            'file_size' => $generalFile->getSize(),
+                            'mime_type' => $generalFile->getClientMimeType() ?: $generalFile->getMimeType(),
+                            'attachment_doc_type' => 'SL1',
+                            'sap_sync_status' => 'pending',
+                            'user_id' => $request->user()?->id,
+                        ]);
+                    }
+                }
+            }
+
+            $pr->load(['items', 'attachments']);
             $pr->update([
                 'sap_payload' => $pr->toSapODataV4Payload(),
             ]);
         });
 
-        // Sync newly created PR to SAP S/4HANA Cloud server
-        $pr->load('items');
+        // If saved as Draft (is_draft = 1), keep in local database only and do NOT sync to SAP server
+        if ($pr->is_draft) {
+            return redirect()->route('dashboard')->with(
+                'success',
+                "Purchase Requisition {$prNumber} successfully saved as Draft in local database (is_draft = 1). Draft PRs cannot be synced to SAP server until draft status is removed."
+            );
+        }
+
+        // Sync newly created PR to SAP S/4HANA Cloud server (only when is_draft = 0)
+        $pr->load(['items', 'attachments']);
         $syncResult = $this->sapService->postPurchaseRequisition($pr);
 
         if ($syncResult['success']) {
@@ -410,6 +505,11 @@ class PurchaseRequisitionController extends Controller
                 'sap_payload' => $syncResult['payload'],
                 'sap_response' => $syncResult['response'],
             ]);
+
+            // Dispatch any attached files to SAP Attachment Service (API_CV_ATTACHMENT_SRV)
+            foreach ($pr->attachments as $att) {
+                $this->sapService->uploadAttachmentToSap($att, $sapPrNum, $att->item_number);
+            }
 
             return redirect()->route('dashboard')->with(
                 'success',
@@ -439,7 +539,12 @@ class PurchaseRequisitionController extends Controller
             return back()->with('error', 'Employees are not authorized to trigger direct SAP Cloud dispatch.');
         }
 
-        $purchaseRequisition->load('items');
+        // The draft PRs cannot be synced to the SAP server until the Draft status is 0
+        if ($purchaseRequisition->is_draft) {
+            return back()->with('error', "Draft Purchase Requisition ({$purchaseRequisition->pr_number}) cannot be synced to SAP server until Draft status is 0.");
+        }
+
+        $purchaseRequisition->load(['items', 'attachments']);
         $syncResult = $this->sapService->postPurchaseRequisition($purchaseRequisition);
 
         if ($syncResult['success']) {
@@ -453,6 +558,11 @@ class PurchaseRequisitionController extends Controller
                 'sap_response' => $syncResult['response'],
             ]);
 
+            // Dispatch any attached files to SAP Attachment Service (API_CV_ATTACHMENT_SRV)
+            foreach ($purchaseRequisition->attachments as $att) {
+                $this->sapService->uploadAttachmentToSap($att, $sapPrNum, $att->item_number);
+            }
+
             return back()->with('success', "PR posted to SAP Public Cloud successfully (SAP #{$sapPrNum})");
         } else {
             $purchaseRequisition->update([
@@ -464,5 +574,35 @@ class PurchaseRequisitionController extends Controller
 
             return back()->with('error', "SAP Cloud sync failed: " . ($syncResult['message'] ?? 'Unknown error'));
         }
+    }
+
+    /**
+     * Finalize a draft purchase requisition (toggle is_draft to 0).
+     */
+    public function finalizeDraft(Request $request, PurchaseRequisition $purchaseRequisition): RedirectResponse
+    {
+        if (!$purchaseRequisition->is_draft) {
+            return back()->with('info', "Purchase Requisition {$purchaseRequisition->pr_number} is already finalized (is_draft = 0).");
+        }
+
+        $purchaseRequisition->update([
+            'is_draft' => 0,
+            'approval_status' => 'approved',
+            'sap_sync_message' => 'Draft finalized in local database. Ready for SAP S/4HANA OData V4 sync.',
+        ]);
+
+        return back()->with('success', "Purchase Requisition {$purchaseRequisition->pr_number} draft finalized (is_draft = 0). It is now eligible for SAP Cloud sync.");
+    }
+
+    /**
+     * Download or view a PR attachment file.
+     */
+    public function downloadAttachment(Attachment $attachment)
+    {
+        if (!Storage::disk('public')->exists($attachment->file_path)) {
+            abort(404, 'Attachment file not found on server.');
+        }
+
+        return Storage::disk('public')->download($attachment->file_path, $attachment->file_name);
     }
 }

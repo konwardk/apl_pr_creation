@@ -12,6 +12,9 @@ export type Department = {
     description?: string | null;
     head_of_department?: string | null;
     is_active: boolean;
+    users_count?: number;
+    created_at?: string;
+    updated_at?: string;
 };
 
 export type User = {

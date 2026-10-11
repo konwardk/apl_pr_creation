@@ -107,7 +107,7 @@ class UserManagementController extends Controller
             'phone' => $validated['phone'] ?? null,
             'plant' => $validated['plant'] ?? '1200 - Dibrugarh Manufacturing Plant',
             'is_active' => $request->boolean('is_active', true),
-            'email_verified_at' => now(),
+            'email_verified_at' => now(), // Auto-verified: user can directly log in without email verification
         ]);
 
         return back()->with('success', "{$role->display_name} '{$user->name}' was created successfully.");

@@ -28,7 +28,7 @@ import {
     Paperclip,
 } from 'lucide-react';
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
-import type { User, HeaderOption, PrDocumentType } from '@/types';
+import type { User, HeaderOption, PrDocumentType, ItemCategory } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
 interface PrItem {
@@ -92,6 +92,7 @@ interface DashboardProps {
     purchaseRequisitions?: PurchaseRequisition[];
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
+    itemCategories?: ItemCategory[];
     stats?: {
         total_count: number;
         total_amount: number;
@@ -119,6 +120,7 @@ export default function Dashboard({
     purchaseRequisitions = [],
     headerOptions = [],
     prDocumentTypes = [],
+    itemCategories = [],
     stats = {
         total_count: 0,
         total_amount: 0,
@@ -907,6 +909,7 @@ export default function Dashboard({
                 <PrConfigurationDashboard
                     headerOptions={headerOptions}
                     prDocumentTypes={prDocumentTypes}
+                    itemCategories={itemCategories}
                     isSuperAdmin={isSuperAdmin}
                     activeSubTab={activeSubTab}
                     onSubTabChange={(sub) => handleTabChange('pr-configuration', sub)}
@@ -919,6 +922,7 @@ export default function Dashboard({
                 onClose={() => setIsCreateOpen(false)}
                 headerOptions={headerOptions}
                 prDocumentTypes={prDocumentTypes}
+                itemCategories={itemCategories}
             />
 
             {/* Modal: Inspect SAP OData V4 Payload */}

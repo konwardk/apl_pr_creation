@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Attachment;
 use App\Models\HeaderOption;
+use App\Models\ItemCategory;
 use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
@@ -97,7 +98,18 @@ class PurchaseRequisitionController extends Controller
             'extra' => $dt->description ?: $dt->category,
         ])->toArray();
 
-        // 3. Account Assignment Categories from live SAP CDS view YY1_ACCOUNTASSIGNMENTCAT_CDS
+        // 3. Item categories from internal database (apl_pr_db)
+        $itemCategories = ItemCategory::where('is_active', true)
+            ->orderBy('code')
+            ->get();
+
+        $itemCategoriesData = $itemCategories->map(fn($ic) => [
+            'code' => $ic->code,
+            'name' => $ic->name,
+            'extra' => $ic->description ?: '',
+        ])->toArray();
+
+        // 4. Account Assignment Categories from live SAP CDS view YY1_ACCOUNTASSIGNMENTCAT_CDS
         $acctResult = $this->sapService->fetchAccountAssignmentCategoriesFromCdsView();
         $accountAssignmentCategories = ($acctResult['success'] ?? false && !empty($acctResult['items']))
             ? array_map(fn($item) => [
@@ -224,6 +236,7 @@ class PurchaseRequisitionController extends Controller
         return Inertia::render('purchase-requisitions/create', [
             'headerOptions' => $headerOptions,
             'prDocumentTypes' => $prDocumentTypes,
+            'itemCategories' => $itemCategories,
             'masterData' => [
                 'headerOptions' => $headerOptions->map(fn($opt) => [
                     'code' => (string)$opt->id,
@@ -231,6 +244,7 @@ class PurchaseRequisitionController extends Controller
                     'extra' => $opt->code ?: '',
                 ])->toArray(),
                 'documentTypes' => $docTypesData,
+                'itemCategories' => $itemCategoriesData,
                 'plants' => $plants,
                 'accountAssignmentCategories' => $accountAssignmentCategories,
                 'materialGroups' => $materialGroups,

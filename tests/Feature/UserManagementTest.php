@@ -220,4 +220,45 @@ class UserManagementTest extends TestCase
             ->has('purchaseRequisitions', 2)
         );
     }
+
+    public function test_superadmin_can_create_user_who_can_directly_login_without_email_verification(): void
+    {
+        $superadmin = User::where('email', 'superadmin@example.com')->first();
+        $employeeRole = Role::where('name', 'employee')->first();
+        $department = Department::firstOrCreate(
+            ['code' => 'D-OPER'],
+            ['name' => 'Operations', 'description' => 'Operations Team', 'is_active' => true]
+        );
+
+        // 1. Superadmin creates user
+        $response = $this->actingAs($superadmin)->post(route('users.store'), [
+            'name' => 'Direct Access User',
+            'email' => 'direct.access@example.com',
+            'password' => 'secret123',
+            'role_id' => $employeeRole->id,
+            'department_id' => $department->id,
+            'employee_id' => 'APL-EMP-7777',
+            'designation' => 'Plant Operator',
+            'is_active' => true,
+        ]);
+
+        $response->assertSessionHas('success');
+
+        $newUser = User::where('email', 'direct.access@example.com')->first();
+        $this->assertNotNull($newUser);
+
+        // 2. User logs in directly
+        auth()->logout();
+        $loginResponse = $this->post(route('login.store'), [
+            'email' => 'direct.access@example.com',
+            'password' => 'secret123',
+        ]);
+
+        $loginResponse->assertRedirect(route('dashboard', absolute: false));
+        $this->assertAuthenticatedAs($newUser);
+
+        // 3. User accesses protected dashboard directly without email verification prompt
+        $dashboardResponse = $this->actingAs($newUser)->get(route('dashboard'));
+        $dashboardResponse->assertOk();
+    }
 }

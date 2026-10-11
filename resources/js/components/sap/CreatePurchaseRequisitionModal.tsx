@@ -1,7 +1,7 @@
 import React from 'react';
 import { router } from '@inertiajs/react';
 import { X, ExternalLink, Package } from 'lucide-react';
-import { HeaderOption, PrDocumentType } from '@/types';
+import { HeaderOption, PrDocumentType, ItemCategory } from '@/types';
 import PurchaseRequisitionForm from './PurchaseRequisitionForm';
 
 interface CreatePurchaseRequisitionModalProps {
@@ -9,6 +9,7 @@ interface CreatePurchaseRequisitionModalProps {
     onClose: () => void;
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
+    itemCategories?: ItemCategory[];
 }
 
 export default function CreatePurchaseRequisitionModal({
@@ -16,6 +17,7 @@ export default function CreatePurchaseRequisitionModal({
     onClose,
     headerOptions = [],
     prDocumentTypes = [],
+    itemCategories = [],
 }: CreatePurchaseRequisitionModalProps) {
     if (!isOpen) return null;
 
@@ -66,6 +68,7 @@ export default function CreatePurchaseRequisitionModal({
                         onCloseModal={onClose}
                         headerOptions={headerOptions}
                         prDocumentTypes={prDocumentTypes}
+                        itemCategories={itemCategories}
                     />
                 </div>
             </div>

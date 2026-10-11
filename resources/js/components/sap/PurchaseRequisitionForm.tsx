@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
-import { HeaderOption, PrDocumentType } from '@/types';
+import { HeaderOption, PrDocumentType, ItemCategory } from '@/types';
 
 export interface PrItemData {
     id: string;
@@ -92,6 +92,7 @@ interface PurchaseRequisitionFormProps {
     masterData?: Partial<SapMasterDataConfig>;
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
+    itemCategories?: ItemCategory[];
     isModal?: boolean;
     onCloseModal?: () => void;
 }
@@ -100,6 +101,7 @@ export default function PurchaseRequisitionForm({
     masterData = {},
     headerOptions = [],
     prDocumentTypes = [],
+    itemCategories = [],
     isModal = false,
     onCloseModal,
 }: PurchaseRequisitionFormProps) {
@@ -116,10 +118,19 @@ export default function PurchaseRequisitionForm({
         }))
         : null;
 
+    const activeItemCategories = itemCategories && itemCategories.length > 0
+        ? itemCategories.filter((ic) => ic.is_active).map((ic) => ({
+            code: ic.code,
+            name: ic.name,
+            extra: ic.description || '',
+        }))
+        : null;
+
     const dataCatalog: SapMasterDataConfig = {
         ...defaultSapMasterData,
         ...masterData,
         ...(activePrDocTypes ? { documentTypes: activePrDocTypes } : {}),
+        ...(activeItemCategories ? { itemCategories: activeItemCategories } : {}),
     };
 
     const defaultPlant = dataCatalog.plants && dataCatalog.plants.length > 0 ? dataCatalog.plants[0].code : '1200';

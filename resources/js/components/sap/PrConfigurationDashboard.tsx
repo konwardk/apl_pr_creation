@@ -22,9 +22,10 @@ import {
     Globe,
     Lock,
 } from 'lucide-react';
-import type { HeaderOption, PrDocumentType } from '@/types';
+import type { HeaderOption, PrDocumentType, ItemCategory } from '@/types';
 import HeaderOptionsManager from './HeaderOptionsManager';
 import DocumentTypesManager from './DocumentTypesManager';
+import ItemCategoriesManager from './ItemCategoriesManager';
 import PlantsManager from './PlantsManager';
 
 export interface PrConfigSubTab {
@@ -41,6 +42,7 @@ export interface PrConfigSubTab {
 interface PrConfigurationDashboardProps {
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
+    itemCategories?: ItemCategory[];
     isSuperAdmin?: boolean;
     activeSubTab?: string;
     onSubTabChange?: (subTab: string) => void;
@@ -49,6 +51,7 @@ interface PrConfigurationDashboardProps {
 export default function PrConfigurationDashboard({
     headerOptions = [],
     prDocumentTypes = [],
+    itemCategories = [],
     isSuperAdmin = true,
     activeSubTab: controlledSubTab,
     onSubTabChange,
@@ -98,6 +101,16 @@ export default function PrConfigurationDashboard({
                 isReady: true,
             },
             {
+                id: 'item-categories',
+                label: 'Manage Item Category',
+                description: 'SAP Item Categories (Standard, Consignment, Subcontracting, etc.) for line items F4 Help',
+                icon: Boxes,
+                badge: `${itemCategories.length} Categories`,
+                badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+                category: 'PR Classification',
+                isReady: true,
+            },
+            {
                 id: 'plants-sourcing',
                 label: 'Plants & Purchasing Organizations',
                 description: 'SAP S/4HANA Cloud Plants (ZUI_TMS_DESPATCH_04 / PlantVH) and buyer orgs',
@@ -128,7 +141,7 @@ export default function PrConfigurationDashboard({
                 isReady: true,
             },
         ],
-        [headerOptions.length, prDocumentTypes.length]
+        [headerOptions.length, prDocumentTypes.length, itemCategories.length]
     );
 
     // Filter sub-tabs based on sidebar search
@@ -307,6 +320,14 @@ export default function PrConfigurationDashboard({
                     {activeSubTab === 'document-types' && (
                         <DocumentTypesManager
                             documentTypes={prDocumentTypes}
+                            isSuperAdmin={isSuperAdmin}
+                        />
+                    )}
+
+                    {/* SUB-TAB: ITEM CATEGORIES */}
+                    {activeSubTab === 'item-categories' && (
+                        <ItemCategoriesManager
+                            itemCategories={itemCategories}
                             isSuperAdmin={isSuperAdmin}
                         />
                     )}

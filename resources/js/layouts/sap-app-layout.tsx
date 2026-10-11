@@ -21,6 +21,7 @@ import {
     Shield,
     ShieldCheck,
     ArrowRight,
+    Boxes,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -112,6 +113,14 @@ export default function SapAppLayout({
             icon: FileText,
             badge: '9 Types',
             badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+        },
+        {
+            id: 'item-categories',
+            label: 'Manage Item Category',
+            description: 'SAP Item Categories (Standard, Consignment, Subcontracting, etc.) for line items F4 Help',
+            icon: Boxes,
+            badge: 'Master Data',
+            badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
         },
         {
             id: 'plants-sourcing',

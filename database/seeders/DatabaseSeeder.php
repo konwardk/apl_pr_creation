@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             RoleAndDepartmentSeeder::class,
             HeaderOptionSeeder::class,
             PrDocumentTypeSeeder::class,
+            ItemCategorySeeder::class,
             PurchaseRequisitionSeeder::class,
         ]);
     }

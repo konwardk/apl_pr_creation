@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeptManagementController;
 use App\Http\Controllers\HeaderOptionController;
+use App\Http\Controllers\ItemCategoryController;
 use App\Http\Controllers\PrDocumentTypeController;
 use App\Http\Controllers\PurchaseRequisitionController;
 use App\Http\Controllers\UserManagementController;
@@ -12,7 +13,8 @@ Route::get('/', function () {
     return auth()->check() ? redirect()->route('dashboard') : redirect()->route('login');
 })->name('home');
 
-Route::middleware(['auth', 'verified', 'role'])->group(function () {
+// Route::middleware(['auth', 'verified', 'role'])->group(function () {
+Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('purchase-requisitions/create', [PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
     Route::post('purchase-requisitions', [PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
@@ -67,6 +69,13 @@ Route::middleware(['auth', 'verified', 'role'])->group(function () {
         Route::put('pr-document-types/{prDocumentType}', [PrDocumentTypeController::class, 'update'])->name('pr-document-types.update');
         Route::delete('pr-document-types/{prDocumentType}', [PrDocumentTypeController::class, 'destroy'])->name('pr-document-types.destroy');
         Route::post('pr-document-types/{prDocumentType}/toggle-status', [PrDocumentTypeController::class, 'toggleStatus'])->name('pr-document-types.toggle-status');
+
+        // Item Categories Management (Manual CRUD for PR line items F4 Search Help)
+        Route::get('item-categories', [ItemCategoryController::class, 'index'])->name('item-categories.index');
+        Route::post('item-categories', [ItemCategoryController::class, 'store'])->name('item-categories.store');
+        Route::put('item-categories/{itemCategory}', [ItemCategoryController::class, 'update'])->name('item-categories.update');
+        Route::delete('item-categories/{itemCategory}', [ItemCategoryController::class, 'destroy'])->name('item-categories.destroy');
+        Route::post('item-categories/{itemCategory}/toggle-status', [ItemCategoryController::class, 'toggleStatus'])->name('item-categories.toggle-status');
     });
 });
 

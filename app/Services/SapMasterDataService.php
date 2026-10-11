@@ -569,6 +569,7 @@ class SapMasterDataService
                 'ProductExternalID' => $productExternalId,
                 'WeightUnit' => $weightUnit,
                 'UnitOfMeasure' => $uom,
+                'BaseUnit' => $baseUnit,
                 'ProductGroup' => trim((string)$productGroup),
                 'ProductDescription' => $productDesc,
                 'ProductDescription_1' => $productDesc1,

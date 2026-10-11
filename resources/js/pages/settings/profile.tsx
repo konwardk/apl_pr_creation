@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { edit } from '@/routes/profile';
 import type { Auth } from '@/types';
-import { send } from '@/routes/verification';
+// import { send } from '@/routes/verification'; // Email verification disabled for now
 
 type PageProps = {
     auth: Auth;
@@ -84,6 +84,7 @@ export default function Profile({
                                 />
                             </div>
 
+                            {/* Email verification notice disabled for now; will integrate later
                             {mustVerifyEmail &&
                                 auth.user.email_verified_at === null && (
                                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -106,6 +107,7 @@ export default function Profile({
                                         )}
                                     </div>
                                 )}
+                            */}
 
                             <div className="flex items-center gap-3 pt-2">
                                 <Button

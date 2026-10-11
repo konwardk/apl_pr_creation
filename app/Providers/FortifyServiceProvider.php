@@ -63,9 +63,9 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::verifyEmailView(fn (Request $request) => Inertia::render('auth/verify-email', [
-            'status' => $request->session()->get('status'),
-        ]));
+        // Fortify::verifyEmailView(fn (Request $request) => Inertia::render('auth/verify-email', [
+        //     'status' => $request->session()->get('status'),
+        // ])); // Email verification disabled for now; will integrate later
 
         Fortify::registerView(fn () => Inertia::render('auth/register', [
             'passwordRules' => Password::defaults()->toPasswordRulesString(),

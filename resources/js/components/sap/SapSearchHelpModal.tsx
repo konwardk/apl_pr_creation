@@ -35,37 +35,46 @@ export default function SapSearchHelpModal({
         const q = searchQuery.toLowerCase().trim();
         if (!q) return options;
         return options.filter((opt) => {
-            const product = (opt.Plant || opt.Product || opt.AccountAssignmentCategory || opt.code || '').toLowerCase();
-            const productName = (opt.PlantName || opt.ProductName || opt.AcctAssignmentCategoryName || opt.name || '').toLowerCase();
+            const product = (opt.Product || opt.MaterialGroup || opt.code || '').toLowerCase();
+            const productName = (opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.name || '').toLowerCase();
+            const plant = (opt.Plant || opt.plant || opt.ValuationArea || '').toLowerCase();
             const extra = (opt.extra || '').toLowerCase();
             const uom = (opt.BaseUnit || opt.UnitOfMeasure || opt.uom || '').toLowerCase();
-            const group = (opt.ProductGroup || opt.materialGroup || '').toLowerCase();
+            const group = (opt.ProductGroup || opt.materialGroup || opt.MaterialGroup || '').toLowerCase();
             const extId = (opt.ProductExternalID || '').toLowerCase();
             const type = (opt.ProductType || opt.materialType || '').toLowerCase();
             const supplier = (opt.Supplier || opt.supplierName || opt.SupplierName || '').toLowerCase();
+            const proc = (opt.InventoryValuationProcedure || opt.priceControl || '').toLowerCase();
+            const currency = (opt.Currency || opt.currency || '').toLowerCase();
 
             return (
                 product.includes(q) ||
                 productName.includes(q) ||
+                plant.includes(q) ||
                 supplier.includes(q) ||
                 extra.includes(q) ||
                 uom.includes(q) ||
                 group.includes(q) ||
                 type.includes(q) ||
-                extId.includes(q) ||
-                valArea.includes(q)
+                proc.includes(q) ||
+                currency.includes(q) ||
+                extId.includes(q)
             );
         });
     }, [options, searchQuery]);
 
     if (!isOpen) return null;
 
-    const isMaterialSearch = filteredOptions.some((o) => o.Product || o.materialType || o.BaseUnit);
-    const hasExtendedColumns = isMaterialSearch || filteredOptions.some((o) => o.materialType);
+    const isMaterialSearch = filteredOptions.some((o) => (o.Product && !o.MaterialGroup) || o.materialType || o.BaseUnit || o.StandardPrice !== undefined || o.MovingAveragePrice !== undefined);
+    const isMaterialGroupSearch = !isMaterialSearch && (
+        filteredOptions.some((o) => o.MaterialGroup || o.MaterialGroupName) ||
+        title.toLowerCase().includes('material group')
+    );
+    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || filteredOptions.some((o) => o.materialType);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className={`relative w-full ${isMaterialSearch ? 'max-w-4xl' : hasExtendedColumns ? 'max-w-3xl' : 'max-w-xl'} rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}>
+            <div className={`relative w-full ${isMaterialSearch ? 'max-w-5xl' : (isMaterialGroupSearch || hasExtendedColumns) ? 'max-w-3xl' : 'max-w-xl'} rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}>
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-[#d9e2ec] px-5 py-3.5 bg-[#f8fafc]">
                     <div className="flex items-center gap-2.5">
@@ -94,7 +103,7 @@ export default function SapSearchHelpModal({
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder={isMaterialSearch ? "Search by Product (Material #), ProductName (Description), or UoM..." : "Type to search code or description..."}
+                            placeholder={isMaterialSearch ? "Search by Product (Material #), Plant, ProductType, UoM, or Price Control..." : isMaterialGroupSearch ? "Search by Material Group code (e.g. 100001, 110001) or description (e.g. Acids, Pipes)..." : "Type to search code or description..."}
                             autoFocus
                             className="h-8.5 w-full rounded-md border border-[#d9e2ec] pl-9 pr-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                         />
@@ -130,12 +139,20 @@ export default function SapSearchHelpModal({
                                 <tr>
                                     {isMaterialSearch ? (
                                         <>
-                                            <th className="py-2.5 px-4 w-36 font-mono">Product</th>
-                                            <th className="py-2.5 px-4">ProductName (Description)</th>
-                                            <th className="py-2.5 px-3 w-20">BaseUnit</th>
-                                            <th className="py-2.5 px-3 w-24">Group</th>
-                                            <th className="py-2.5 px-3 w-24">Type</th>
-                                            <th className="py-2.5 px-3 w-28 text-right">Valuation Price</th>
+                                            <th className="py-2.5 px-3.5 w-40 font-mono">Product (Material)</th>
+                                            <th className="py-2.5 px-3 w-20">Plant</th>
+                                            <th className="py-2.5 px-3 w-20">Type</th>
+                                            <th className="py-2.5 px-3 w-20">Base Unit</th>
+                                            <th className="py-2.5 px-3 w-28 text-center">Price Control</th>
+                                            <th className="py-2.5 px-3 w-24 text-right">Standard Price</th>
+                                            <th className="py-2.5 px-3 w-24 text-right">Moving Avg.</th>
+                                            <th className="py-2.5 px-3.5 w-32 text-right">Valuation Price</th>
+                                        </>
+                                    ) : isMaterialGroupSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-36 font-mono">Material Group</th>
+                                            <th className="py-2.5 px-4">Group Name / Description</th>
+                                            <th className="py-2.5 px-4 w-44">SAP Classification</th>
                                         </>
                                     ) : (
                                         <>
@@ -146,18 +163,18 @@ export default function SapSearchHelpModal({
                                             )}
                                         </>
                                     )}
-                                    <th className="py-2.5 px-4 text-right w-16">Action</th>
+                                    <th className="py-2.5 px-3 text-right w-16">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt, idx) => {
-                                    const optCode = opt.Product ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
-                                    const optName = opt.ProductName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
+                                    const optCode = opt.MaterialGroup ?? opt.Product ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
+                                    const optName = opt.MaterialGroupName ?? opt.ProductName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
                                     const isSelected = selectedCode === optCode;
 
                                     return (
                                         <tr
-                                            key={optCode || `opt-${idx}`}
+                                            key={`${optCode}-${opt.Plant || idx}`}
                                             onClick={() => {
                                                 onSelect(opt);
                                                 onClose();
@@ -168,43 +185,83 @@ export default function SapSearchHelpModal({
                                         >
                                             {isMaterialSearch ? (
                                                 <>
-                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
-                                                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs">
+                                                    {/* Product */}
+                                                    <td className="py-2.5 px-3.5 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs text-[#1c2d42]">
                                                             {opt.Product || opt.code}
                                                         </span>
+                                                        {opt.ProductName && opt.ProductName !== opt.Product && (
+                                                            <div className="text-[11px] font-normal text-slate-600 truncate max-w-[150px]">
+                                                                {opt.ProductName}
+                                                            </div>
+                                                        )}
                                                     </td>
-                                                    <td className="py-2.5 px-4 font-medium text-[#1c2d42]">
-                                                        {opt.ProductName || opt.name}
-                                                    </td>
-                                                    <td className="py-2.5 px-3 font-mono text-[11px] font-semibold text-slate-700">
-                                                        <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-[#0070f2]">
-                                                            {opt.BaseUnit || opt.UnitOfMeasure || opt.uom || 'PC'}
+                                                    {/* Plant (now input from this API) */}
+                                                    <td className="py-2.5 px-3 font-mono">
+                                                        <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                                                            {opt.Plant || opt.plant || opt.ValuationArea || '-'}
                                                         </span>
                                                     </td>
-                                                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
-                                                        {opt.ProductGroup || opt.materialGroup || '-'}
-                                                    </td>
+                                                    {/* Product Type */}
                                                     <td className="py-2.5 px-3">
                                                         <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-700">
                                                             {opt.ProductType || opt.materialType || '-'}
                                                         </span>
                                                     </td>
-                                                    <td className="py-2.5 px-3 text-right font-medium text-[#1c2d42]">
+                                                    {/* Base Unit */}
+                                                    <td className="py-2.5 px-3 font-mono text-[11px] font-semibold text-slate-700">
+                                                        <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-[#0070f2]">
+                                                            {opt.BaseUnit || opt.UnitOfMeasure || opt.uom || 'EA'}
+                                                        </span>
+                                                    </td>
+                                                    {/* Price Control */}
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        {(() => {
+                                                            const raw = opt.raw_data || {};
+                                                            const proc = String(opt.InventoryValuationProcedure || raw.InventoryValuationProcedure || opt.priceControl || '').toUpperCase().trim();
+                                                            if (proc === 'V') {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                                                                        V (Moving Avg)
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            if (proc === 'S') {
+                                                                return (
+                                                                    <span className="inline-flex items-center gap-1 rounded bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                                                                        S (Standard)
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return <span className="text-[11px] text-slate-400">{proc || '-'}</span>;
+                                                        })()}
+                                                    </td>
+                                                    {/* Standard Price */}
+                                                    <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-700">
+                                                        {Number(opt.StandardPrice ?? 0).toFixed(2)}
+                                                    </td>
+                                                    {/* Moving Average Price */}
+                                                    <td className="py-2.5 px-3 text-right font-mono text-xs text-slate-700">
+                                                        {Number(opt.MovingAveragePrice ?? 0).toFixed(2)}
+                                                    </td>
+                                                    {/* Valuation Price (Calculated: V -> MovingAveragePrice, S -> StandardPrice) */}
+                                                    <td className="py-2.5 px-3.5 text-right font-medium text-[#1c2d42]">
                                                         {(() => {
                                                             const raw = opt.raw_data || {};
                                                             const proc = String(opt.InventoryValuationProcedure || raw.InventoryValuationProcedure || opt.priceControl || '').toUpperCase().trim();
                                                             const map = parseFloat(String(opt.MovingAveragePrice ?? raw.MovingAveragePrice ?? 0)) || 0;
                                                             const std = parseFloat(String(opt.StandardPrice ?? raw.StandardPrice ?? 0)) || 0;
                                                             const fallback = parseFloat(String(opt.valuationPrice ?? opt.UnitPrice ?? opt.unitPrice ?? 0)) || 0;
+                                                            const curr = opt.Currency || raw.Currency || 'INR';
 
                                                             let price = fallback;
-                                                            let badge = '';
+                                                            let sourceTag = '';
                                                             if (proc === 'V') {
                                                                 price = map;
-                                                                badge = 'V (MAP)';
+                                                                sourceTag = 'Picked from MAP (V)';
                                                             } else if (proc === 'S') {
                                                                 price = std;
-                                                                badge = 'S (Std)';
+                                                                sourceTag = 'Picked from Std (S)';
                                                             } else if (map > 0) {
                                                                 price = map;
                                                             } else if (std > 0) {
@@ -213,17 +270,33 @@ export default function SapSearchHelpModal({
 
                                                             return (
                                                                 <div className="flex flex-col items-end">
-                                                                    <span className="font-mono text-xs font-semibold text-[#1c2d42]">
-                                                                        {price.toFixed(2)}
+                                                                    <span className="font-mono text-xs font-bold text-[#0070f2]">
+                                                                        {price.toFixed(2)} {curr}
                                                                     </span>
-                                                                    {badge && (
-                                                                        <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-200">
-                                                                            {badge}
+                                                                    {sourceTag && (
+                                                                        <span className="text-[9px] font-semibold text-slate-500">
+                                                                            {sourceTag}
                                                                         </span>
                                                                     )}
                                                                 </div>
                                                             );
                                                         })()}
+                                                    </td>
+                                                </>
+                                             ) : isMaterialGroupSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-indigo-700">
+                                                        <span className="rounded bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs font-mono">
+                                                            {opt.MaterialGroup || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-semibold text-[#1c2d42]">
+                                                        {opt.MaterialGroupName || opt.name}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-[11px] text-[#556b82]">
+                                                        <span className="inline-flex items-center gap-1 rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                                                            {opt.extra || 'SAP Material Group'}
+                                                        </span>
                                                     </td>
                                                 </>
                                             ) : (

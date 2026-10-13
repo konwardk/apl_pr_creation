@@ -24,6 +24,7 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('sap-materials', [PurchaseRequisitionController::class, 'getMaterials'])->name('sap-materials.index');
     Route::get('sap-account-assignment-categories', [PurchaseRequisitionController::class, 'getAccountAssignmentCategories'])->name('sap-account-assignment-categories.index');
     Route::get('sap-plants', [PurchaseRequisitionController::class, 'getPlants'])->name('sap-plants.index');
+    Route::get('sap-material-groups', [PurchaseRequisitionController::class, 'getMaterialGroups'])->name('sap-material-groups.index');
 
     // Super Administrator only: System Configuration (User Management & Department Management) & PR Configuration
     Route::middleware(['role:superadmin'])->group(function () {

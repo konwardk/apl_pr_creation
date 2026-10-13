@@ -31,7 +31,7 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
-     * Fetch Materials / Products from SAP S/4HANA Cloud CDS View (YY1_MATERIALS_CDS)
+     * Fetch Materials / Products from SAP S/4HANA Cloud CDS View (YY1_PRODUCTPLANTVALUATION_CDS)
      */
     public function getMaterials(Request $request): JsonResponse
     {
@@ -62,6 +62,17 @@ class PurchaseRequisitionController extends Controller
     {
         $search = $request->query('query') ?? $request->query('search');
         $result = $this->sapService->fetchPlantsFromSap($search);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch Material Groups from SAP S/4HANA Cloud CDS View (YY1_MATERIALGROUP_CDS)
+     */
+    public function getMaterialGroups(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchMaterialGroupsFromCdsView($search);
 
         return response()->json($result);
     }
@@ -119,7 +130,7 @@ class PurchaseRequisitionController extends Controller
             ], $acctResult['items'])
             : $this->sapService->getFormattedFallbackAccountAssignmentCategories();
 
-        // 4. Materials from live SAP CDS view YY1_MATERIALS_CDS
+        // 4. Materials from live SAP CDS view YY1_PRODUCTPLANTVALUATION_CDS
         $materialsResult = $this->sapService->fetchMaterialsFromCdsView();
         $materials = ($materialsResult['success'] ?? false)
             ? array_map(fn($item) => [
@@ -135,7 +146,10 @@ class PurchaseRequisitionController extends Controller
                 'Product' => $item['Product'] ?? $item['code'],
                 'ProductName' => $item['ProductName'] ?? $item['name'],
                 'ProductExternalID' => $item['ProductExternalID'] ?? $item['code'],
+                'Plant' => $item['Plant'] ?? $item['ValuationArea'] ?? '',
                 'WeightUnit' => $item['WeightUnit'] ?? '',
+                'BaseUnit' => $item['BaseUnit'] ?? $item['uom'] ?? 'EA',
+                'Division' => $item['Division'] ?? '',
                 'UnitOfMeasure' => $item['UnitOfMeasure'] ?? $item['uom'] ?? 'PC',
                 'ProductGroup' => $item['ProductGroup'] ?? $item['materialGroup'] ?? '',
                 'ProductType' => $item['ProductType'] ?? $item['materialType'] ?? '',
@@ -144,22 +158,23 @@ class PurchaseRequisitionController extends Controller
                 'InventoryValuationProcedure' => $item['InventoryValuationProcedure'] ?? '',
                 'priceControl' => $item['priceControl'] ?? $item['InventoryValuationProcedure'] ?? '',
                 'Currency' => $item['Currency'] ?? '',
-                'ValuationArea' => $item['ValuationArea'] ?? '',
+                'ValuationArea' => $item['ValuationArea'] ?? $item['Plant'] ?? '',
                 'raw_data' => $item['raw_data'] ?? [],
             ], $materialsResult['items'] ?? [])
             : [];
 
-        // 5. Extract real Material Groups dynamically from SAP master materials
-        $materialGroups = collect($materials)
-            ->pluck('materialGroup')
-            ->filter()
-            ->unique()
-            ->values()
-            ->map(fn($group) => [
-                'code' => $group,
-                'name' => "Material Group {$group}",
-                'extra' => 'SAP Material Group',
-            ])->toArray();
+        // 5. Material Groups from live SAP CDS view YY1_MATERIALGROUP_CDS
+        $matGroupResult = $this->sapService->fetchMaterialGroupsFromCdsView();
+        $materialGroups = ($matGroupResult['success'] ?? false && !empty($matGroupResult['items']))
+            ? array_map(fn($item) => [
+                'code' => $item['code'],
+                'name' => $item['name'],
+                'extra' => $item['extra'] ?? '',
+                'MaterialGroup' => $item['MaterialGroup'] ?? $item['code'],
+                'MaterialGroupName' => $item['MaterialGroupName'] ?? $item['name'],
+                'Language' => $item['Language'] ?? 'EN',
+            ], $matGroupResult['items'])
+            : $this->sapService->getFormattedFallbackMaterialGroups();
 
         // 6. Extract real Units of Measure dynamically from SAP master materials
         $unitsOfMeasure = collect($materials)

@@ -29,10 +29,10 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json'
         ),
 
-        // CDS View for Materials / Products
+        // CDS View for Materials / Products with Plant Valuation (YY1_PRODUCTPLANTVALUATION_CDS)
         'materials' => env(
             'SAP_MATERIALS_ENDPOINT',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_MATERIALS_CDS/YY1_MATERIALS?$format=json'
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PRODUCTPLANTVALUATION_CDS/YY1_ProductPlantValuation?$format=json'
         ),
 
         // CDS View for Account Assignment Categories
@@ -45,6 +45,12 @@ return [
         'plants' => env(
             'SAP_PLANTS_ENDPOINT',
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
+        ),
+
+        // CDS View for Material Groups (YY1_MATERIALGROUP_CDS)
+        'material_groups' => env(
+            'SAP_MATERIAL_GROUP_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_MATERIALGROUP_CDS/YY1_MATERIALGROUP?$format=json'
         ),
 
         // OData V4 PR Service Root (for CSRF Token Fetch)

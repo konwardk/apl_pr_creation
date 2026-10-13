@@ -291,7 +291,7 @@ class SapMasterDataService
 
     /**
      * Fetch Materials / Products from SAP S/4HANA Cloud CDS View:
-     * YY1_MATERIALS_CDS / YY1_MATERIALS
+     * YY1_PRODUCTPLANTVALUATION_CDS / YY1_ProductPlantValuation
      */
     public function fetchMaterialsFromCdsView(
         ?string $search = null,
@@ -303,7 +303,7 @@ class SapMasterDataService
     ): array {
         $endpoint = $endpointUrl ?: config(
             'sap.endpoints.materials',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_MATERIALS_CDS/YY1_MATERIALS?$format=json'
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PRODUCTPLANTVALUATION_CDS/YY1_ProductPlantValuation?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -330,13 +330,12 @@ class SapMasterDataService
 
                 $response = null;
                 $cleanedMaterial = $material ? trim($material) : null;
-                $cleanedValuationArea = $valuationArea ? trim($valuationArea) : null;
+                $cleanedPlant = $valuationArea ? trim($valuationArea) : null;
 
-                // If a specific material number was provided, attempt targeted OData query
+                // 1. If material number and plant provided, query with Product and Plant filter
                 if (!empty($cleanedMaterial)) {
-                    // 1. Try querying with both Product and ValuationArea if provided
-                    if (!empty($cleanedValuationArea)) {
-                        $filterQuery = "Product eq '{$cleanedMaterial}' and ValuationArea eq '{$cleanedValuationArea}'";
+                    if (!empty($cleanedPlant)) {
+                        $filterQuery = "Product eq '{$cleanedMaterial}' and Plant eq '{$cleanedPlant}'";
                         $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
                         $resp = (clone $request)->get($targetUrl);
                         if ($resp->successful()) {
@@ -347,7 +346,7 @@ class SapMasterDataService
                         }
                     }
 
-                    // 2. If no response yet or 0 items with ValuationArea, query by Product only
+                    // 2. If no response yet, query by Product only
                     if (!$response) {
                         $filterQuery = "Product eq '{$cleanedMaterial}'";
                         $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
@@ -355,6 +354,16 @@ class SapMasterDataService
                         if ($resp->successful()) {
                             $response = $resp;
                         }
+                    }
+                }
+
+                // If only plant was provided (filter by plant in CDS view)
+                if (!$response && !empty($cleanedPlant) && empty($cleanedMaterial)) {
+                    $filterQuery = "Plant eq '{$cleanedPlant}'";
+                    $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
+                    $resp = (clone $request)->get($targetUrl);
+                    if ($resp->successful()) {
+                        $response = $resp;
                     }
                 }
 
@@ -371,11 +380,11 @@ class SapMasterDataService
 
                     // If a specific material is requested, filter items to target
                     if (!empty($cleanedMaterial)) {
-                        $matched = array_values(array_filter($items, function ($it) use ($cleanedMaterial, $cleanedValuationArea) {
+                        $matched = array_values(array_filter($items, function ($it) use ($cleanedMaterial, $cleanedPlant) {
                             $prodMatch = strtolower($it['Product']) === strtolower($cleanedMaterial)
                                 || strtolower($it['code']) === strtolower($cleanedMaterial);
-                            if ($cleanedValuationArea && !empty($it['ValuationArea'])) {
-                                return $prodMatch && (strtolower($it['ValuationArea']) === strtolower($cleanedValuationArea));
+                            if ($cleanedPlant && !empty($it['Plant'])) {
+                                return $prodMatch && (strtolower($it['Plant']) === strtolower($cleanedPlant));
                             }
                             return $prodMatch;
                         }));
@@ -391,7 +400,8 @@ class SapMasterDataService
                             return str_contains(strtolower($it['Product']), $term)
                                 || str_contains(strtolower($it['ProductName']), $term)
                                 || str_contains(strtolower($it['code']), $term)
-                                || str_contains(strtolower($it['name']), $term);
+                                || str_contains(strtolower($it['name']), $term)
+                                || str_contains(strtolower($it['Plant']), $term);
                         }));
                     }
 
@@ -400,7 +410,7 @@ class SapMasterDataService
                         'is_live' => true,
                         'status' => $response->status(),
                         'latency_ms' => $durationMs,
-                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_MATERIALS_CDS)',
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_PRODUCTPLANTVALUATION_CDS)',
                         'endpoint' => $endpoint,
                         'count' => count($items),
                         'items' => $items,
@@ -535,6 +545,8 @@ class SapMasterDataService
             }
 
             $productExternalId = trim((string)($rec['ProductExternalID'] ?? $product));
+            $plant = trim((string)($rec['Plant'] ?? $rec['ValuationArea'] ?? '1200'));
+            $division = trim((string)($rec['Division'] ?? ''));
             $weightUnit = trim((string)($rec['WeightUnit'] ?? ''));
             $uom = trim((string)($rec['UnitOfMeasure'] ?? $baseUnit));
             $productDesc = trim((string)($rec['ProductDescription'] ?? ''));
@@ -544,12 +556,16 @@ class SapMasterDataService
             $movingAveragePrice = (string)($rec['MovingAveragePrice'] ?? '0.00');
             $standardPrice = (string)($rec['StandardPrice'] ?? '0.00');
             $invValProcedure = trim((string)($rec['InventoryValuationProcedure'] ?? ''));
-            $currency = trim((string)($rec['Currency'] ?? ''));
-            $valuationArea = trim((string)($rec['ValuationArea'] ?? ''));
+            $currency = trim((string)($rec['Currency'] ?? 'INR'));
+            if ($currency === '') {
+                $currency = 'INR';
+            }
 
             // Valuation Price calculation based on Price Control (InventoryValuationProcedure):
-            // If InventoryValuationProcedure = 'V' -> MovingAveragePrice
-            // If InventoryValuationProcedure = 'S' -> StandardPrice
+            // The valuation will be coming from passing the material number and plant.
+            // On selecting these input, it will check:
+            // if the Price Control = V then pick the MovingAveragePrice
+            // if the Price Control = S then pick the StandardPrice
             $procUpper = strtoupper($invValProcedure);
             $mapVal = (float)$movingAveragePrice;
             $stdVal = (float)$standardPrice;
@@ -566,28 +582,32 @@ class SapMasterDataService
 
             $parsed[] = [
                 'Product' => trim((string)$product),
-                'ProductExternalID' => $productExternalId,
+                'Plant' => $plant,
+                'plant' => $plant,
+                'ValuationArea' => $plant,
+                'ProductType' => trim((string)$productType),
                 'WeightUnit' => $weightUnit,
-                'UnitOfMeasure' => $uom,
                 'BaseUnit' => $baseUnit,
+                'UnitOfMeasure' => $baseUnit,
+                'Division' => $division,
+                'division' => $division,
                 'ProductGroup' => trim((string)$productGroup),
                 'ProductDescription' => $productDesc,
                 'ProductDescription_1' => $productDesc1,
                 'ProductDescription_2' => $productDesc2,
                 'ProductDescription_3' => $productDesc3,
                 'ProductName' => trim((string)$productName),
-                'ProductType' => trim((string)$productType),
                 'MovingAveragePrice' => $movingAveragePrice,
                 'StandardPrice' => $standardPrice,
                 'InventoryValuationProcedure' => $invValProcedure,
                 'priceControl' => $invValProcedure,
                 'Currency' => $currency,
-                'ValuationArea' => $valuationArea,
+                'currency' => $currency,
                 'valuationPrice' => $computedValuationPrice,
                 'UnitPrice' => $effectiveUnitPrice,
                 'code' => trim((string)$product),
                 'name' => trim((string)$productName),
-                'uom' => $uom,
+                'uom' => $baseUnit,
                 'materialGroup' => trim((string)$productGroup),
                 'materialType' => trim((string)$productType),
                 'unitPrice' => $effectiveUnitPrice,
@@ -1054,6 +1074,206 @@ class SapMasterDataService
                 'PlantName' => 'Rani Nagar',
             ],
         ];
+    }
+
+    /**
+     * Default realistic fallback material groups representing SAP S/4HANA Cloud
+     * YY1_MATERIALGROUP_CDS / YY1_MATERIALGROUP CDS view release data.
+     */
+    protected array $fallbackMaterialGroups = [
+        ['code' => '100001', 'name' => 'Acids', 'extra' => 'SAP Material Group • Acids', 'MaterialGroup' => '100001', 'MaterialGroupName' => 'Acids', 'Language' => 'EN'],
+        ['code' => '100002', 'name' => 'Alkalis', 'extra' => 'SAP Material Group • Alkalis', 'MaterialGroup' => '100002', 'MaterialGroupName' => 'Alkalis', 'Language' => 'EN'],
+        ['code' => '100003', 'name' => 'Resin', 'extra' => 'SAP Material Group • Resin', 'MaterialGroup' => '100003', 'MaterialGroupName' => 'Resin', 'Language' => 'EN'],
+        ['code' => '100004', 'name' => 'Salt', 'extra' => 'SAP Material Group • Salt', 'MaterialGroup' => '100004', 'MaterialGroupName' => 'Salt', 'Language' => 'EN'],
+        ['code' => '100005', 'name' => 'Raw Materials', 'extra' => 'SAP Material Group • Raw Materials', 'MaterialGroup' => '100005', 'MaterialGroupName' => 'Raw Materials', 'Language' => 'EN'],
+        ['code' => '100006', 'name' => 'Fan', 'extra' => 'SAP Material Group • Fan', 'MaterialGroup' => '100006', 'MaterialGroupName' => 'Fan', 'Language' => 'EN'],
+        ['code' => '100007', 'name' => 'Centrifugal Blowers', 'extra' => 'SAP Material Group • Centrifugal Blowers', 'MaterialGroup' => '100007', 'MaterialGroupName' => 'Centrifugal Blowers', 'Language' => 'EN'],
+        ['code' => '100008', 'name' => 'Rotary Blower', 'extra' => 'SAP Material Group • Rotary Blower', 'MaterialGroup' => '100008', 'MaterialGroupName' => 'Rotary Blower', 'Language' => 'EN'],
+        ['code' => '110001', 'name' => 'Cs Pipes', 'extra' => 'SAP Material Group • Cs Pipes', 'MaterialGroup' => '110001', 'MaterialGroupName' => 'Cs Pipes', 'Language' => 'EN'],
+        ['code' => '110002', 'name' => 'Cs Erw Pipes', 'extra' => 'SAP Material Group • Cs Erw Pipes', 'MaterialGroup' => '110002', 'MaterialGroupName' => 'Cs Erw Pipes', 'Language' => 'EN'],
+        ['code' => 'L001', 'name' => 'Industrial Raw Chemicals', 'extra' => 'SAP Material Group • Chemicals', 'MaterialGroup' => 'L001', 'MaterialGroupName' => 'Industrial Raw Chemicals', 'Language' => 'EN'],
+        ['code' => 'L002', 'name' => 'Plant Spares & Mechanical', 'extra' => 'SAP Material Group • Spares', 'MaterialGroup' => 'L002', 'MaterialGroupName' => 'Plant Spares & Mechanical', 'Language' => 'EN'],
+        ['code' => 'SERV', 'name' => 'General Services & Overhaul', 'extra' => 'SAP Service Group • Services', 'MaterialGroup' => 'SERV', 'MaterialGroupName' => 'General Services & Overhaul', 'Language' => 'EN'],
+    ];
+
+    /**
+     * Get fallback material groups matching live SAP YY1_MATERIALGROUP_CDS service data.
+     */
+    public function getFormattedFallbackMaterialGroups(): array
+    {
+        return $this->fallbackMaterialGroups;
+    }
+
+    /**
+     * Fetch Material Groups from SAP S/4HANA Cloud CDS View:
+     * YY1_MATERIALGROUP_CDS / YY1_MATERIALGROUP
+     */
+    public function fetchMaterialGroupsFromCdsView(
+        ?string $search = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.material_groups',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_MATERIALGROUP_CDS/YY1_MATERIALGROUP?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                // In SAP CDS view, filter by Language eq 'EN' to get English descriptions
+                $filterQuery = "Language eq 'EN'";
+                $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
+
+                $response = $request->get($targetUrl);
+
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parseMaterialGroupODataItems($json);
+
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['name']), $term)
+                                || str_contains(strtolower($it['extra'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_MATERIALGROUP_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " material groups live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Material Groups CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => $this->getFormattedFallbackMaterialGroups(),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Material Groups CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackMaterialGroups(),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (Material Groups)',
+            'endpoint' => $endpoint,
+            'count' => count($this->fallbackMaterialGroups),
+            'items' => $this->getFormattedFallbackMaterialGroups(),
+            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback material groups.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized material group items.
+     */
+    protected function parseMaterialGroupODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        $seen = [];
+
+        foreach ($rawRecords as $rec) {
+            $code = $rec['MaterialGroup']
+                ?? $rec['MaterialGroup_1']
+                ?? $rec['ProductGroup']
+                ?? $rec['code']
+                ?? null;
+
+            if (empty($code)) {
+                continue;
+            }
+
+            $codeStr = trim((string)$code);
+            if (isset($seen[$codeStr])) {
+                continue;
+            }
+            $seen[$codeStr] = true;
+
+            $name = '';
+            foreach (['MaterialGroupName', 'MaterialGroupDesc', 'Description', 'ProductGroupName', 'name'] as $nameKey) {
+                if (!empty($rec[$nameKey]) && trim((string)$rec[$nameKey]) !== '') {
+                    $name = trim((string)$rec[$nameKey]);
+                    break;
+                }
+            }
+            if ($name === '') {
+                $name = "Material Group {$codeStr}";
+            }
+
+            $parsed[] = [
+                'code' => $codeStr,
+                'name' => $name,
+                'extra' => "SAP Material Group • {$name}",
+                'MaterialGroup' => $codeStr,
+                'MaterialGroupName' => $name,
+                'Language' => $rec['Language'] ?? 'EN',
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackMaterialGroups();
     }
 
     /**

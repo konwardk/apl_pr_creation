@@ -589,6 +589,34 @@ class PurchaseRequisitionTest extends TestCase
         $this->assertNotNull($blankOpt);
         $this->assertStringContainsString('Stock', $blankOpt['name']);
     }
+
+    public function test_sap_material_groups_endpoint_returns_data(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get(route('sap-material-groups.index'));
+
+        $response->assertOk();
+        $data = $response->json();
+        $this->assertTrue($data['success']);
+        $this->assertNotEmpty($data['items']);
+        $this->assertArrayHasKey('code', $data['items'][0]);
+        $this->assertArrayHasKey('name', $data['items'][0]);
+        $this->assertArrayHasKey('MaterialGroup', $data['items'][0]);
+    }
+
+    public function test_create_pr_page_provides_material_groups_master_data(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get(route('purchase-requisitions.create'));
+
+        $response->assertOk();
+        $response->assertInertia(fn($page) =>
+            $page->component('purchase-requisitions/create')
+                ->has('masterData.materialGroups')
+        );
+    }
 }
 
 

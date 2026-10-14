@@ -18,9 +18,13 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('purchase-requisitions/create', [PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
     Route::post('purchase-requisitions', [PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
+    Route::get('purchase-requisitions/{purchaseRequisition}', [PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');
+    Route::get('purchase-requisitions/{purchaseRequisition}/edit', [PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');
+    Route::match(['put', 'post'], 'purchase-requisitions/{purchaseRequisition}', [PurchaseRequisitionController::class, 'update'])->name('purchase-requisitions.update');
     Route::post('purchase-requisitions/{purchaseRequisition}/sync', [PurchaseRequisitionController::class, 'sync'])->name('purchase-requisitions.sync');
     Route::post('purchase-requisitions/{purchaseRequisition}/finalize', [PurchaseRequisitionController::class, 'finalizeDraft'])->name('purchase-requisitions.finalize');
     Route::get('attachments/{attachment}/download', [PurchaseRequisitionController::class, 'downloadAttachment'])->name('attachments.download');
+    Route::delete('attachments/{attachment}', [PurchaseRequisitionController::class, 'deleteAttachment'])->name('attachments.destroy');
     Route::get('sap-materials', [PurchaseRequisitionController::class, 'getMaterials'])->name('sap-materials.index');
     Route::get('sap-account-assignment-categories', [PurchaseRequisitionController::class, 'getAccountAssignmentCategories'])->name('sap-account-assignment-categories.index');
     Route::get('sap-plants', [PurchaseRequisitionController::class, 'getPlants'])->name('sap-plants.index');

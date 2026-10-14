@@ -238,8 +238,8 @@ export default function SapAppLayout({
             />
 
             {/* SAP Spaces & Pages Navigation Bar */}
-            <div className="sticky top-13 z-30 border-b border-[#d9e2ec] bg-white px-4 sm:px-6 shadow-xs">
-                <div className="flex items-center justify-between">
+            <div className="sticky top-13 z-30 border-b border-[#d9e2ec] bg-white px-4 sm:px-6 lg:px-8 shadow-xs">
+                <div className="flex w-full items-center justify-between">
                     {/* Navigation Tabs */}
                     <nav className="flex space-x-1 sm:space-x-4 overflow-x-auto sm:overflow-visible no-scrollbar py-1">
                         {tabs.map((tab) => {
@@ -474,13 +474,13 @@ export default function SapAppLayout({
             </div>
 
             {/* Main Application Canvas */}
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+            <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
                 {children}
             </main>
 
             {/* Enterprise Footer */}
-            <footer className="mt-auto border-t border-[#d9e2ec] bg-white py-3.5 px-6 text-center text-xs text-[#556b82]">
-                <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 sm:flex-row">
+            <footer className="mt-auto border-t border-[#d9e2ec] bg-white py-3.5 px-4 sm:px-6 lg:px-8 text-center text-xs text-[#556b82]">
+                <div className="flex w-full flex-col items-center justify-between gap-2 sm:flex-row">
                     <div className="flex items-center gap-2">
                         <span className="font-semibold text-[#1c2d42]">Assam Petro-Chemicals Ltd.</span>
                         <span>•</span>

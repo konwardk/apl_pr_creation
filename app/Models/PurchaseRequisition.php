@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PurchaseRequisition extends Model
 {
@@ -43,6 +44,29 @@ class PurchaseRequisition extends Model
         'sap_response' => 'array',
     ];
 
+    protected $appends = [
+        'is_editable',
+        'resolved_contract_requisition',
+    ];
+
+    /**
+     * Determine if this PR can currently be edited (only while in draft mode and not already synced).
+     */
+    public function getIsEditableAttribute(): bool
+    {
+        return (bool) $this->is_draft && $this->sap_sync_status !== 'synced';
+    }
+
+    public function isDraft(): bool
+    {
+        return (bool) $this->is_draft;
+    }
+
+    public function isEditable(): bool
+    {
+        return (bool) $this->is_draft && $this->sap_sync_status !== 'synced';
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -61,6 +85,30 @@ class PurchaseRequisition extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(Attachment::class);
+    }
+
+    /**
+     * Relation between Purchase Requisition and Contract Requisition based on the Purchase Requisition Number in SAP.
+     */
+    public function contractRequisition(): HasOne
+    {
+        return $this->hasOne(ContractRequisition::class, 'pr_number_sap', 'sap_pr_number');
+    }
+
+    /**
+     * Local fallback relation based on purchase_requisition_id.
+     */
+    public function contractRequisitionLocal(): HasOne
+    {
+        return $this->hasOne(ContractRequisition::class, 'purchase_requisition_id');
+    }
+
+    /**
+     * Resolved contract requisition (by SAP PR number or local ID).
+     */
+    public function getResolvedContractRequisitionAttribute(): ?ContractRequisition
+    {
+        return $this->contractRequisition ?? $this->contractRequisitionLocal;
     }
 
     /**

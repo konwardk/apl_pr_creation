@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import SapAppLayout from '@/layouts/sap-app-layout';
-import CreatePurchaseRequisitionModal from '@/components/sap/CreatePurchaseRequisitionModal';
 import SapPayloadModal from '@/components/sap/SapPayloadModal';
 import {
     Plus,
@@ -26,6 +25,7 @@ import {
     SlidersHorizontal,
     Settings2,
     Paperclip,
+    Edit3,
 } from 'lucide-react';
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
 import type { User, HeaderOption, PrDocumentType, ItemCategory } from '@/types';
@@ -184,10 +184,13 @@ export default function Dashboard({
 
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'synced' | 'pending' | 'failed'>('all');
-    const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [selectedPrForPayload, setSelectedPrForPayload] = useState<PurchaseRequisition | null>(null);
     const [syncingId, setSyncingId] = useState<number | null>(null);
     const [finalizingId, setFinalizingId] = useState<number | null>(null);
+
+    const handleEditPr = (pr: PurchaseRequisition) => {
+        router.visit(`/purchase-requisitions/${pr.id}/edit`);
+    };
 
     // Filter Purchase Requisitions
     const filteredPrs = useMemo(() => {
@@ -563,9 +566,14 @@ export default function Dashboard({
                                             <tr key={pr.id} className="hover:bg-slate-50/70 transition-colors">
                                                 {/* PR Number */}
                                                 <td className="py-3 px-3">
-                                                    <div className="font-mono font-bold text-[#0070f2]">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => router.visit(`/purchase-requisitions/${pr.id}`)}
+                                                        className="font-mono font-bold text-[#0070f2] hover:underline text-left"
+                                                        title="View Purchase Requisition Details"
+                                                    >
                                                         {pr.pr_number}
-                                                    </div>
+                                                    </button>
                                                     {pr.is_draft ? (
                                                         <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-slate-700 border border-slate-300">
                                                             <span>Draft (Local DB)</span>
@@ -693,6 +701,16 @@ export default function Dashboard({
                                                     <div className="flex items-center justify-end gap-1.5">
                                                         <button
                                                             type="button"
+                                                            onClick={() => router.visit(`/purchase-requisitions/${pr.id}`)}
+                                                            className="flex items-center gap-1 rounded border border-[#d9e2ec] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c2d42] hover:border-blue-300 hover:bg-blue-50 hover:text-[#0070f2] transition-colors"
+                                                            title="View Purchase Requisition Details"
+                                                        >
+                                                            <Eye className="h-3 w-3 text-[#0070f2]" />
+                                                            <span>View</span>
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
                                                             onClick={() => setSelectedPrForPayload(pr)}
                                                             className="flex items-center gap-1 rounded border border-[#d9e2ec] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c2d42] hover:bg-slate-50 transition-colors"
                                                             title="Inspect SAP OData V4 Payload & Items"
@@ -702,18 +720,30 @@ export default function Dashboard({
                                                         </button>
 
                                                         {pr.is_draft ? (
-                                                            !isEmployee && (
+                                                            <>
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => handleFinalizePr(pr)}
-                                                                    disabled={finalizingId === pr.id}
-                                                                    className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 transition-colors"
-                                                                    title="Finalize Draft (Sets is_draft = 0, making PR eligible for SAP sync)"
+                                                                    onClick={() => handleEditPr(pr)}
+                                                                    className="flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-[#0070f2] hover:bg-blue-100 active:bg-blue-200 transition-colors"
+                                                                    title="Edit Draft Purchase Requisition"
                                                                 >
-                                                                    <CheckCircle2 className={`h-3 w-3 ${finalizingId === pr.id ? 'animate-spin' : ''}`} />
-                                                                    <span>{finalizingId === pr.id ? 'Finalizing...' : 'Finalize Draft'}</span>
+                                                                    <Edit3 className="h-3 w-3" />
+                                                                    <span>Edit</span>
                                                                 </button>
-                                                            )
+
+                                                                {!isEmployee && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleFinalizePr(pr)}
+                                                                        disabled={finalizingId === pr.id}
+                                                                        className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 transition-colors"
+                                                                        title="Finalize Draft (Sets is_draft = 0, making PR eligible for SAP sync)"
+                                                                    >
+                                                                        <CheckCircle2 className={`h-3 w-3 ${finalizingId === pr.id ? 'animate-spin' : ''}`} />
+                                                                        <span>{finalizingId === pr.id ? 'Finalizing...' : 'Finalize Draft'}</span>
+                                                                    </button>
+                                                                )}
+                                                            </>
                                                         ) : (
                                                             !isEmployee && pr.sap_sync_status !== 'synced' && (
                                                                 <button
@@ -916,14 +946,7 @@ export default function Dashboard({
                 />
             )}
 
-            {/* Modal: Create Purchase Requisition */}
-            <CreatePurchaseRequisitionModal
-                isOpen={isCreateOpen}
-                onClose={() => setIsCreateOpen(false)}
-                headerOptions={headerOptions}
-                prDocumentTypes={prDocumentTypes}
-                itemCategories={itemCategories}
-            />
+
 
             {/* Modal: Inspect SAP OData V4 Payload */}
             <SapPayloadModal

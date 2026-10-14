@@ -1,0 +1,40 @@
+export type TenderTypeOption = 'Single' | 'Open' | 'Openlimited' | 'Limited';
+export type TenderEstimateValueOption = 'Excluding GST' | 'Including GST';
+
+export interface ContractRequisitionData {
+    id?: number;
+    cr_no?: string;
+    pr_number_sap?: string;
+    purchase_requisition_id?: number;
+    sap_uuid?: string;
+    contract_title?: string;
+    payment_terms?: string;
+    bidders_qualification_criteria?: string;
+    special_terms_condition?: string;
+    guarantee_warranty_period?: string;
+    defect_liability_period?: string;
+    others?: string;
+    requisitioner_name?: string;
+    req_designation?: string;
+    req_department?: string;
+    tender_type?: TenderTypeOption | string;
+    tender_estimate_value?: TenderEstimateValueOption | string;
+    total_pr_value?: number | string;
+    total_pr_value_in_word?: string;
+    custom_field_1?: string;
+    custom_field_2?: string;
+    custom_field_3?: string;
+    custom_field_4?: string;
+    custom_field_5?: string;
+    custom_field_6?: string;
+    custom_field_7?: string;
+    custom_field_8?: string;
+    sap_last_changed_by?: string;
+    sap_last_changed_on?: string;
+    sap_created_by?: string;
+    sap_created_on?: string;
+    sap_description?: string;
+    sap_sync_status?: 'pending' | 'synced' | 'failed';
+    sap_sync_message?: string;
+    sap_synced_at?: string;
+}

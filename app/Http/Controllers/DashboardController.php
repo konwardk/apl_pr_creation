@@ -19,7 +19,14 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        $query = PurchaseRequisition::with(['items', 'user', 'headerOption', 'attachments'])->latest();
+        $query = PurchaseRequisition::with([
+            'items',
+            'user',
+            'headerOption',
+            'attachments',
+            'contractRequisition',
+            'contractRequisitionLocal',
+        ])->latest();
 
         // If employee, only show their own created PRs
         if ($user && $user->isEmployee()) {

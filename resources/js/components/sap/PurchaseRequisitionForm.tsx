@@ -30,16 +30,18 @@ import {
 } from 'lucide-react';
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
-import { HeaderOption, PrDocumentType, ItemCategory } from '@/types';
+import { HeaderOption, PrDocumentType, ItemCategory, ContractRequisitionData } from '@/types';
 
 export interface PrItemData {
     id: string;
+    item_id?: number;
     item_number: string;
     item_type: 'material' | 'service' | '';
     material_type: string;
     item_category: string;
     material_code: string;
     supplier_material_number: string;
+    manufacturer_part_number?: string;
     batch: string;
     revision_level: string;
     description: string;
@@ -89,6 +91,27 @@ export interface PrItemData {
     valuation_price_source?: string;
 }
 
+function convertAmountToWords(num: number): string {
+    if (isNaN(num) || num <= 0) return '';
+    const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    const inWords = (n: number): string => {
+        if (n < 20) return a[n];
+        if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '');
+        if (n < 1000) return inWords(Math.floor(n / 100)) + ' Hundred' + (n % 100 !== 0 ? ' ' + inWords(n % 100) : '');
+        if (n < 100000) return inWords(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 !== 0 ? ' ' + inWords(n % 1000) : '');
+        if (n < 10000000) return inWords(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 !== 0 ? ' ' + inWords(n % 100000) : '');
+        return inWords(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 !== 0 ? ' ' + inWords(n % 10000000) : '');
+    };
+    const whole = Math.floor(num);
+    const fraction = Math.round((num - whole) * 100);
+    let str = inWords(whole) + ' Rupees';
+    if (fraction > 0) {
+        str += ' and ' + inWords(fraction) + ' Paise';
+    }
+    return str + ' Only';
+}
+
 interface PurchaseRequisitionFormProps {
     masterData?: Partial<SapMasterDataConfig>;
     headerOptions?: HeaderOption[];
@@ -96,6 +119,8 @@ interface PurchaseRequisitionFormProps {
     itemCategories?: ItemCategory[];
     isModal?: boolean;
     onCloseModal?: () => void;
+    initialData?: any;
+    defaultCrNo?: string;
 }
 
 export default function PurchaseRequisitionForm({
@@ -105,6 +130,8 @@ export default function PurchaseRequisitionForm({
     itemCategories = [],
     isModal = false,
     onCloseModal,
+    initialData,
+    defaultCrNo,
 }: PurchaseRequisitionFormProps) {
     const { auth } = usePage<any>().props;
     const defaultRequisitioner = auth?.user?.name
@@ -144,15 +171,140 @@ export default function PurchaseRequisitionForm({
         return d.toISOString().split('T')[0];
     };
 
+    const isEdit = Boolean(initialData && initialData.id);
+
     // Header State
-    const [description, setDescription] = useState('');
-    const [prType, setPrType] = useState(defaultDocType);
-    const [headerOptionId, setHeaderOptionId] = useState<string>('');
-    const [autoSourceDetermination, setAutoSourceDetermination] = useState(false);
-    const [headerNote, setHeaderNote] = useState('');
-    const [companyCode, setCompanyCode] = useState('1000');
-    const [currency, setCurrency] = useState('INR');
-    const [requisitioner, setRequisitioner] = useState(defaultRequisitioner);
+    const [description, setDescription] = useState(initialData?.description || '');
+    const [prType, setPrType] = useState(initialData?.pr_type || defaultDocType);
+    const [headerOptionId, setHeaderOptionId] = useState<string>(
+        initialData?.header_option_id ? String(initialData.header_option_id) : ''
+    );
+    const [autoSourceDetermination, setAutoSourceDetermination] = useState(
+        Boolean(initialData?.auto_source_determination)
+    );
+    const [headerNote, setHeaderNote] = useState(initialData?.header_note || '');
+    const [companyCode, setCompanyCode] = useState(initialData?.company_code || '1000');
+    const [currency, setCurrency] = useState(initialData?.currency || 'INR');
+    const [requisitioner, setRequisitioner] = useState(initialData?.requisitioner || defaultRequisitioner);
+
+    // Contract Requisition (SAP CBO: YY1_CONTRACTREQUISITION) State
+    const initialCr =
+        initialData?.resolved_contract_requisition ||
+        initialData?.contract_requisition_local ||
+        initialData?.contract_requisition ||
+        initialData?.resolvedContractRequisition ||
+        initialData?.contractRequisitionLocal ||
+        initialData?.contractRequisition ||
+        {};
+    const [contractRequisition, setContractRequisition] = useState<ContractRequisitionData>({
+        id: initialCr.id,
+        cr_no: initialCr.cr_no || defaultCrNo || '',
+        pr_number_sap: initialCr.pr_number_sap || initialData?.sap_pr_number || '',
+        contract_title: initialCr.contract_title || '',
+        payment_terms: initialCr.payment_terms || '0001',
+        bidders_qualification_criteria: initialCr.bidders_qualification_criteria || '',
+        special_terms_condition: initialCr.special_terms_condition || '',
+        guarantee_warranty_period: initialCr.guarantee_warranty_period || '',
+        defect_liability_period: initialCr.defect_liability_period || '',
+        others: initialCr.others || '',
+        requisitioner_name: initialCr.requisitioner_name || initialData?.requisitioner || defaultRequisitioner || '',
+        req_designation: initialCr.req_designation || '',
+        req_department: initialCr.req_department || '',
+        tender_type: initialCr.tender_type || 'Single',
+        tender_estimate_value: initialCr.tender_estimate_value || 'Excluding GST',
+        total_pr_value: initialCr.total_pr_value !== undefined && initialCr.total_pr_value !== null ? initialCr.total_pr_value : '',
+        total_pr_value_in_word: initialCr.total_pr_value_in_word || '',
+        custom_field_1: initialCr.custom_field_1 || '',
+        custom_field_2: initialCr.custom_field_2 || '',
+        custom_field_3: initialCr.custom_field_3 || '',
+        custom_field_4: initialCr.custom_field_4 || '',
+        custom_field_5: initialCr.custom_field_5 || '',
+        custom_field_6: initialCr.custom_field_6 || '',
+        custom_field_7: initialCr.custom_field_7 || '',
+        custom_field_8: initialCr.custom_field_8 || '',
+        sap_description: initialCr.sap_description || '',
+    });
+    const CR_NOTE_TABS = [
+        {
+            id: 'contract_title',
+            label: 'Contract Title',
+            field: 'contract_title',
+            title: 'Contract Title (ContractTitle)',
+            placeholder: 'Enter official title or subject matter of the contract requisition...',
+            maxLength: 500,
+            helpText: 'Official title / subject matter of the contract requisition (SAP: ContractTitle, max 500 chars).',
+            rows: 3,
+        },
+        {
+            id: 'payment_terms',
+            label: 'Payment Terms',
+            field: 'payment_terms',
+            title: 'Payment Terms (PaymentTerms)',
+            placeholder: 'e.g. 0001 (Immediate Payment) or Net 30 days upon submission of verified invoice...',
+            maxLength: 20,
+            helpText: 'Standard payment term key or description (SAP: PaymentTerms, max 20 chars).',
+            rows: 3,
+        },
+        {
+            id: 'bidders_qualification_criteria',
+            label: "Bidder's Qualification",
+            field: 'bidders_qualification_criteria',
+            title: "Bidder's Qualification Criteria (BiddersQualificationCriteria)",
+            placeholder: 'Detail technical capabilities, prior experience with similar works, financial turnover, ISO certificates, or statutory registrations...',
+            maxLength: 500,
+            helpText: 'Technical, financial, and regulatory qualifications for vendor selection (SAP: BiddersQualificationCriteria, max 500 chars).',
+            rows: 4,
+        },
+        {
+            id: 'special_terms_condition',
+            label: 'Special Terms & Conditions',
+            field: 'special_terms_condition',
+            title: 'Special Terms & Conditions (SpecialTermsCondition)',
+            placeholder: 'Specify liquidated damages, inspection criteria, delivery milestones, penalty clauses, or escalation terms...',
+            maxLength: 500,
+            helpText: 'Special contract terms, milestones, or liquidated damages clauses (SAP: SpecialTermsCondition).',
+            rows: 4,
+        },
+        {
+            id: 'guarantee_warranty_period',
+            label: 'Guarantee / Warranty',
+            field: 'guarantee_warranty_period',
+            title: 'Guarantee / Warranty Period (GuaranteeWarrantyPeriod)',
+            placeholder: 'e.g. 18 months from supply or 12 months from commissioning, whichever is earlier...',
+            maxLength: 500,
+            helpText: 'Standard warranty and guarantee coverage terms (SAP: GuaranteeWarrantyPeriod, max 500 chars).',
+            rows: 3,
+        },
+        {
+            id: 'defect_liability_period',
+            label: 'Defect Liability Period',
+            field: 'defect_liability_period',
+            title: 'Defect Liability Period (DefectLiabilityPeriod)',
+            placeholder: 'e.g. 12 months from final handover and acceptance of works...',
+            maxLength: 50,
+            helpText: 'Contractual defect liability duration (SAP: DefectLiabilityPeriod, max 50 chars).',
+            rows: 3,
+        },
+        {
+            id: 'others',
+            label: 'Other Terms & Specs',
+            field: 'others',
+            title: 'Other Terms & Specifications (Others)',
+            placeholder: 'Specify any safety protocols, environmental compliance, packing instructions, or insurance requirements...',
+            maxLength: 500,
+            helpText: 'Additional terms, safety and statutory requirements, or packing standards (SAP: Others).',
+            rows: 4,
+        },
+    ] as const;
+
+    const [activeCrNoteTab, setActiveCrNoteTab] = useState<string>('contract_title');
+
+    const updateContractRequisition = (updates: Partial<ContractRequisitionData>) => {
+        setContractRequisition((prev) => ({
+            ...prev,
+            ...updates,
+        }));
+    };
 
     // Combined header options from props or masterData
     const availableHeaderOptions = (
@@ -197,6 +349,7 @@ export default function PurchaseRequisitionForm({
         item_category: '',
         material_code: '',
         supplier_material_number: '',
+        manufacturer_part_number: '',
         batch: '',
         revision_level: '',
         description: '',
@@ -246,10 +399,131 @@ export default function PurchaseRequisitionForm({
         valuation_price_source: '',
     });
 
-    // Items List - Initialized with one line item without default material fields (user selects Material or Service)
-    const [items, setItems] = useState<PrItemData[]>([
-        createEmptyPrItem('00010', ''),
-    ]);
+    const buildInitialItems = (data?: any): PrItemData[] => {
+        if (data?.items && data.items.length > 0) {
+            return data.items.map((it: any, index: number) => {
+                const rawDelDate = it.delivery_date ? String(it.delivery_date).substring(0, 10) : getTodayString(14);
+                const rawReqDate = it.requisition_date ? String(it.requisition_date).substring(0, 10) : getTodayString(0);
+                const rawRelDate = it.release_date ? String(it.release_date).substring(0, 10) : getTodayString(0);
+
+                return {
+                    id: it.id ? `item-db-${it.id}` : `item-${index}`,
+                    item_id: it.id || undefined,
+                    item_number: it.item_number || String((index + 1) * 10).padStart(5, '0'),
+                    item_type: (it.item_type || (it.material_code ? 'material' : (it.account_assignment_category === 'K' ? 'service' : ''))) as any,
+                    material_type: it.material_type || '',
+                    item_category: it.item_category || '',
+                    material_code: it.material_code || '',
+                    supplier_material_number: it.supplier_material_number || '',
+                    manufacturer_part_number: it.manufacturer_part_number || it.supplier_material_number || '',
+                    batch: it.batch || '',
+                    revision_level: it.revision_level || '',
+                    description: it.description || '',
+                    material_group: it.material_group || 'YBPM01',
+                    desired_supplier: it.desired_supplier || '',
+                    fixed_vendor: it.fixed_vendor || it.desired_supplier || '',
+                    supplier_name: it.desired_supplier || it.fixed_vendor || '',
+                    info_record: it.info_record || '',
+                    agreement_number: it.agreement_number || '',
+                    agreement_item: it.agreement_item || '',
+                    supplying_plant: it.supplying_plant || '',
+                    issuing_storage_location: it.issuing_storage_location || '',
+                    quantity: it.quantity !== null && it.quantity !== undefined ? it.quantity : '',
+                    unit_of_measure: it.unit_of_measure || 'PC',
+                    unit_price: it.unit_price !== null && it.unit_price !== undefined ? it.unit_price : '',
+                    price_unit: it.price_unit ? Number(it.price_unit) : 1,
+                    currency: it.currency || data?.currency || currency,
+                    tax_code: it.tax_code || '',
+                    po_price_type: it.po_price_type || 'Do not adopt',
+                    plant: it.plant || data?.plant || defaultPlant,
+                    storage_location: it.storage_location || '',
+                    account_assignment_category: it.account_assignment_category || '',
+                    requirement_tracking_number: it.requirement_tracking_number || '',
+                    cost_center: it.cost_center || '',
+                    gl_account: it.gl_account || '',
+                    purchasing_organization: it.purchasing_organization || '1100',
+                    purchasing_group: it.purchasing_group || '103',
+                    delivery_date: rawDelDate,
+                    requisition_date: rawReqDate,
+                    release_date: rawRelDate,
+                    planned_delivery_time: it.planned_delivery_time ? Number(it.planned_delivery_time) : 0,
+                    gr_processing_time: it.gr_processing_time ? Number(it.gr_processing_time) : 0,
+                    item_text: it.item_text || '',
+                    item_note: it.item_note || '',
+                    delivery_text: it.delivery_text || '',
+                    material_po_text: it.material_po_text || '',
+                    closure_comment: it.closure_comment || '',
+                    attachment_doc_type: it.attachment_doc_type || 'SL1',
+                    attachment_name: it.attachment_name || '',
+                    attachment_file: null,
+                    source_assigned: Boolean(it.desired_supplier || it.fixed_vendor || it.info_record || it.agreement_number),
+                    moving_average_price: '0.00',
+                    standard_price: '0.00',
+                    inventory_valuation_procedure: '',
+                    price_control: '',
+                    valuation_area: it.plant || '',
+                    valuation_price_source: '',
+                };
+            });
+        }
+        return [createEmptyPrItem('00010', '')];
+    };
+
+    // Items List - Initialized with line items from initialData or empty item
+    const [items, setItems] = useState<PrItemData[]>(() => buildInitialItems(initialData));
+
+    // Synchronize initialData when it changes
+    React.useEffect(() => {
+        if (initialData && initialData.id) {
+            setDescription(initialData.description || '');
+            setPrType(initialData.pr_type || defaultDocType);
+            setHeaderOptionId(initialData.header_option_id ? String(initialData.header_option_id) : '');
+            setAutoSourceDetermination(Boolean(initialData.auto_source_determination));
+            setHeaderNote(initialData.header_note || '');
+            setCompanyCode(initialData.company_code || '1000');
+            setCurrency(initialData.currency || 'INR');
+            setRequisitioner(initialData.requisitioner || defaultRequisitioner);
+            setItems(buildInitialItems(initialData));
+
+            const icr =
+                initialData.resolved_contract_requisition ||
+                initialData.contract_requisition_local ||
+                initialData.contract_requisition ||
+                initialData.resolvedContractRequisition ||
+                initialData.contractRequisitionLocal ||
+                initialData.contractRequisition;
+            if (icr) {
+                setContractRequisition({
+                    id: icr.id,
+                    cr_no: icr.cr_no || defaultCrNo || '',
+                    pr_number_sap: icr.pr_number_sap || initialData.sap_pr_number || '',
+                    contract_title: icr.contract_title || '',
+                    payment_terms: icr.payment_terms || '0001',
+                    bidders_qualification_criteria: icr.bidders_qualification_criteria || '',
+                    special_terms_condition: icr.special_terms_condition || '',
+                    guarantee_warranty_period: icr.guarantee_warranty_period || '',
+                    defect_liability_period: icr.defect_liability_period || '',
+                    others: icr.others || '',
+                    requisitioner_name: icr.requisitioner_name || initialData.requisitioner || defaultRequisitioner || '',
+                    req_designation: icr.req_designation || '',
+                    req_department: icr.req_department || '',
+                    tender_type: icr.tender_type || 'Single',
+                    tender_estimate_value: icr.tender_estimate_value || 'Excluding GST',
+                    total_pr_value: icr.total_pr_value !== undefined && icr.total_pr_value !== null ? icr.total_pr_value : '',
+                    total_pr_value_in_word: icr.total_pr_value_in_word || '',
+                    custom_field_1: icr.custom_field_1 || '',
+                    custom_field_2: icr.custom_field_2 || '',
+                    custom_field_3: icr.custom_field_3 || '',
+                    custom_field_4: icr.custom_field_4 || '',
+                    custom_field_5: icr.custom_field_5 || '',
+                    custom_field_6: icr.custom_field_6 || '',
+                    custom_field_7: icr.custom_field_7 || '',
+                    custom_field_8: icr.custom_field_8 || '',
+                    sap_description: icr.sap_description || '',
+                });
+            }
+        }
+    }, [initialData]);
 
     // Submission and UI Feedback
     const [submitting, setSubmitting] = useState(false);
@@ -1222,61 +1496,78 @@ export default function PurchaseRequisitionForm({
             setSubmitting(true);
         }
 
-        router.post(
-            '/purchase-requisitions',
-            {
-                is_draft: isDraft ? 1 : 0,
-                description: description.trim() || currentItem.description || 'Draft Purchase Requisition',
-                header_note: headerNote,
-                header_option_id: headerOptionId || null,
-                pr_type: prType,
-                auto_source_determination: autoSourceDetermination,
-                company_code: companyCode || '1000',
-                plant: currentItem.plant || '1000',
-                currency: currency,
-                requisitioner: requisitioner,
-                items: items.map((it) => ({
-                    item_number: it.item_number,
-                    item_type: it.item_type || 'material',
-                    material_type: it.material_type,
-                    item_category: it.item_category,
-                    description: it.description || 'Draft Item',
-                    material_code: it.material_code,
-                    supplier_material_number: it.supplier_material_number,
-                    batch: it.batch,
-                    revision_level: it.revision_level,
-                    material_group: it.material_group || 'YBPM01',
-                    desired_supplier: it.desired_supplier || it.fixed_vendor || '',
-                    quantity: Number(it.quantity) > 0 ? it.quantity : 1,
-                    unit_of_measure: it.unit_of_measure || 'PC',
-                    unit_price: Number(it.unit_price) >= 0 ? it.unit_price : 0,
-                    price_unit: it.price_unit || 1,
-                    currency: it.currency || currency,
-                    tax_code: it.tax_code,
-                    po_price_type: it.po_price_type,
-                    plant: it.plant || currentItem.plant || '1000',
-                    storage_location: it.storage_location,
-                    account_assignment_category: it.account_assignment_category,
-                    requirement_tracking_number: it.requirement_tracking_number,
-                    cost_center: it.cost_center,
-                    gl_account: it.gl_account,
-                    purchasing_organization: it.purchasing_organization || '1100',
-                    purchasing_group: it.purchasing_group || '103',
-                    delivery_date: it.delivery_date,
-                    requisition_date: it.requisition_date,
-                    release_date: it.release_date,
-                    planned_delivery_time: it.planned_delivery_time,
-                    gr_processing_time: it.gr_processing_time,
-                    item_text: it.item_text,
-                    item_note: it.item_note,
-                    delivery_text: it.delivery_text,
-                    material_po_text: it.material_po_text,
-                    closure_comment: it.closure_comment,
-                    attachment_doc_type: it.attachment_doc_type,
-                    attachment_name: it.attachment_name,
-                    attachment_file: it.attachment_file || null,
-                })),
+        const endpoint = isEdit ? `/purchase-requisitions/${initialData.id}` : '/purchase-requisitions';
+        const payloadData: any = {
+            ...(isEdit ? { _method: 'PUT' } : {}),
+            is_draft: isDraft ? 1 : 0,
+            description: description.trim() || currentItem.description || (isDraft ? 'Draft Purchase Requisition' : 'Purchase Requisition'),
+            header_note: headerNote,
+            header_option_id: headerOptionId || null,
+            pr_type: prType,
+            auto_source_determination: autoSourceDetermination,
+            company_code: companyCode || '1000',
+            plant: currentItem.plant || '1000',
+            currency: currency,
+            requisitioner: requisitioner,
+            contract_requisition: {
+                ...contractRequisition,
+                total_pr_value: contractRequisition.total_pr_value !== '' ? contractRequisition.total_pr_value : calculateTotal(),
+                requisitioner_name: contractRequisition.requisitioner_name || requisitioner,
+                sap_description: (contractRequisition.sap_description || contractRequisition.contract_title || description || 'Contract Requisition').substring(0, 80),
             },
+            items: items.map((it) => ({
+                id: (it as any).item_id || undefined,
+                item_number: it.item_number,
+                item_type: it.item_type || 'material',
+                material_type: it.material_type,
+                item_category: it.item_category,
+                description: it.description || 'Draft Item',
+                material_code: it.material_code,
+                supplier_material_number: it.manufacturer_part_number || it.supplier_material_number || '',
+                manufacturer_part_number: it.manufacturer_part_number || it.supplier_material_number || '',
+                batch: it.batch,
+                revision_level: it.revision_level,
+                material_group: it.material_group || 'YBPM01',
+                desired_supplier: it.desired_supplier || it.fixed_vendor || '',
+                fixed_vendor: it.fixed_vendor || '',
+                supplying_plant: it.supplying_plant || '',
+                agreement_number: it.agreement_number || '',
+                agreement_item: it.agreement_item || '',
+                info_record: it.info_record || '',
+                quantity: Number(it.quantity) > 0 ? it.quantity : 1,
+                unit_of_measure: it.unit_of_measure || 'PC',
+                unit_price: Number(it.unit_price) >= 0 ? it.unit_price : 0,
+                price_unit: it.price_unit || 1,
+                currency: it.currency || currency,
+                tax_code: it.tax_code,
+                po_price_type: it.po_price_type,
+                plant: it.plant || currentItem.plant || '1000',
+                storage_location: it.storage_location,
+                account_assignment_category: it.account_assignment_category,
+                requirement_tracking_number: it.requirement_tracking_number,
+                cost_center: it.cost_center,
+                gl_account: it.gl_account,
+                purchasing_organization: it.purchasing_organization || '1100',
+                purchasing_group: it.purchasing_group || '103',
+                delivery_date: it.delivery_date,
+                requisition_date: it.requisition_date,
+                release_date: it.release_date,
+                planned_delivery_time: it.planned_delivery_time,
+                gr_processing_time: it.gr_processing_time,
+                item_text: it.item_text,
+                item_note: it.item_note,
+                delivery_text: it.delivery_text,
+                material_po_text: it.material_po_text,
+                closure_comment: it.closure_comment,
+                attachment_doc_type: it.attachment_doc_type,
+                attachment_name: it.attachment_name,
+                attachment_file: it.attachment_file || null,
+            })),
+        };
+
+        router.post(
+            endpoint,
+            payloadData,
             {
                 forceFormData: true,
                 onSuccess: () => {
@@ -1324,14 +1615,22 @@ export default function PurchaseRequisitionForm({
                                 </button>
                             )}
                             <h1 className="text-xl font-bold tracking-tight text-[#1c2d42]">
-                                New Purchase Requisition
+                                {isEdit ? `Edit PR: ${initialData.pr_number}` : 'New Purchase Requisition'}
                             </h1>
-                            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-[#0070f2]">
-                                SAP S/4HANA Cloud (Public Edition)
-                            </span>
+                            {isEdit ? (
+                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-300">
+                                    Draft Mode (Editable)
+                                </span>
+                            ) : (
+                                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-[#0070f2]">
+                                    SAP S/4HANA Cloud (Public Edition)
+                                </span>
+                            )}
                         </div>
                         <p className="mt-1 text-xs text-[#556b82]">
-                            {description || 'New Requisition'}
+                            {isEdit
+                                ? `Editing draft PR in local database (is_draft = 1) • Modify fields or sync directly to SAP Cloud`
+                                : (description || 'New Requisition')}
                         </p>
                     </div>
 
@@ -1374,19 +1673,28 @@ export default function PurchaseRequisitionForm({
                             onClick={handleSaveDraft}
                             disabled={submitting || isDrafting}
                             className="flex items-center gap-1.5 rounded-md border border-[#0070f2] bg-white px-4 py-2 text-xs font-semibold text-[#0070f2] shadow-2xs transition-colors hover:bg-blue-50 active:bg-blue-100 disabled:opacity-50"
-                            title="Save as Draft in local database (is_draft = 1) without syncing to SAP"
+                            title={isEdit ? "Update changes as Draft in local database (is_draft = 1)" : "Save as Draft in local database (is_draft = 1) without syncing to SAP"}
                         >
                             <Save className={`h-3.5 w-3.5 ${isDrafting ? 'animate-spin' : ''}`} />
-                            <span>{isDrafting ? 'Saving Draft...' : 'Save as Draft'}</span>
+                            <span>
+                                {isDrafting
+                                    ? (isEdit ? 'Updating Draft...' : 'Saving Draft...')
+                                    : (isEdit ? 'Update Draft' : 'Save as Draft')}
+                            </span>
                         </button>
 
                         <button
                             type="submit"
                             disabled={submitting || isDrafting}
                             className="flex items-center gap-2 rounded-md bg-[#0070f2] px-5 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50"
+                            title="Finalize draft and sync with SAP S/4HANA Cloud"
                         >
                             <Send className={`h-3.5 w-3.5 ${submitting ? 'animate-spin' : ''}`} />
-                            <span>{submitting ? 'Creating & Syncing with SAP Cloud...' : 'Create & Sync with SAP'}</span>
+                            <span>
+                                {submitting
+                                    ? 'Syncing with SAP Cloud...'
+                                    : (isEdit ? 'Save & Sync to SAP' : 'Sync with SAP')}
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -1412,8 +1720,9 @@ export default function PurchaseRequisitionForm({
                     <span className="text-[11px] text-[#556b82]">PR Header Level Properties</span>
                 </div>
 
-                <div className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="p-6 space-y-5">
+                    {/* Top Row: Description & Document Type */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         {/* Purchase Requisition Description */}
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
@@ -1436,7 +1745,6 @@ export default function PurchaseRequisitionForm({
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
                                     Document Type <span className="text-rose-500">*</span>
                                 </label>
-                                <span className="text-[10px] text-rose-600 font-medium"></span>
                             </div>
                             <select
                                 value={prType}
@@ -1463,56 +1771,209 @@ export default function PurchaseRequisitionForm({
                                 );
                             })()}
                         </div>
+                    </div>
 
-                        {/* Header Option */}
+                    {/* Requisitioner Details: 1. Requisitioner Name, 2. Req. Designation, 3. Req. Department */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-3 border-t border-slate-100">
+                        {/* 1. Requisitioner Name */}
                         <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-xs font-semibold text-[#1c2d42]">
-                                    Header Option
-                                </label>
-                                <span className="text-[10px] text-[#0070f2] font-semibold">
-                                    Master Data
-                                </span>
-                            </div>
-                            <select
-                                value={headerOptionId}
-                                onChange={(e) => setHeaderOptionId(e.target.value)}
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none bg-white transition-colors"
-                            >
-                                <option value="">-- Select Header Option --</option>
-                                {availableHeaderOptions.map((opt: any) => (
-                                    <option key={opt.id} value={opt.id}>
-                                        {opt.name} {opt.code ? `(${opt.code})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            {/* <span className="mt-1 block text-[10px] text-[#556b82]">
-                                Configured by Superadmin
-                            </span> */}
+                            <label className="block text-xs font-semibold text-[#1c2d42] mb-1.5">
+                                Requisitioner Name
+                            </label>
+                            <input
+                                type="text"
+                                value={contractRequisition.requisitioner_name || requisitioner || ''}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setRequisitioner(val);
+                                    updateContractRequisition({ requisitioner_name: val });
+                                }}
+                                placeholder="e.g. Ashish Borgohain"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                            />
+                        </div>
+
+                        {/* 2. Req. Designation */}
+                        <div>
+                            <label className="block text-xs font-semibold text-[#1c2d42] mb-1.5">
+                                Req. Designation
+                            </label>
+                            <input
+                                type="text"
+                                value={contractRequisition.req_designation || ''}
+                                onChange={(e) => updateContractRequisition({ req_designation: e.target.value })}
+                                placeholder="e.g. Senior Manager (Projects)"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                            />
+                        </div>
+
+                        {/* 3. Req. Department */}
+                        <div>
+                            <label className="block text-xs font-semibold text-[#1c2d42] mb-1.5">
+                                Req. Department
+                            </label>
+                            <input
+                                type="text"
+                                value={contractRequisition.req_department || ''}
+                                onChange={(e) => updateContractRequisition({ req_department: e.target.value })}
+                                placeholder="e.g. Chemical Operations"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                            />
                         </div>
                     </div>
 
-                    {selectedHeaderOption && (
-                        <div className="mt-3 rounded-lg border border-blue-100 bg-gradient-to-r from-blue-50/70 to-slate-50 p-2.5 text-xs text-[#1c2d42] flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-2">
-                                <span className="rounded bg-[#0070f2] text-white px-1.5 py-0.5 text-[10px] font-bold">
-                                    {selectedHeaderOption.code || 'OPTION'}
+                    {/* Tender Details: 4. Tender Type, 5. Tender Estimated Value */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-3 border-t border-slate-100">
+                        {/* 4. Tender Type */}
+                        <div className="rounded-lg border border-[#d9e2ec] bg-slate-50/50 p-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="block text-xs font-bold text-[#1c2d42]">
+                                    Tender Type
+                                </label>
+                                <span className="text-[10px] font-semibold text-[#0070f2] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                    Single Select
                                 </span>
-                                <span className="font-semibold text-xs text-[#1c2d42]">{selectedHeaderOption.name}</span>
-                                {selectedHeaderOption.description && (
-                                    <span className="text-[11px] text-[#556b82] hidden sm:inline">
-                                        — {selectedHeaderOption.description}
-                                    </span>
-                                )}
                             </div>
-                            <span className="text-[10px] text-[#0070f2] font-medium whitespace-nowrap bg-white px-2 py-0.5 rounded border border-blue-200">
-                                Active Header Option
-                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {(['Single', 'Open', 'Openlimited', 'Limited'] as const).map((opt) => {
+                                    const isSelected = (contractRequisition.tender_type || 'Single') === opt;
+                                    return (
+                                        <label
+                                            key={opt}
+                                            className={`flex items-center gap-2 p-2 rounded-md border text-xs font-semibold cursor-pointer transition-all ${
+                                                isSelected
+                                                    ? 'border-[#0070f2] bg-blue-50/90 text-[#0070f2] ring-1 ring-[#0070f2]'
+                                                    : 'border-[#d9e2ec] bg-white text-[#1c2d42] hover:border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="header_tender_type"
+                                                value={opt}
+                                                checked={isSelected}
+                                                onChange={() => updateContractRequisition({ tender_type: opt })}
+                                                className="h-3.5 w-3.5 text-[#0070f2] border-slate-300 focus:ring-[#0070f2]"
+                                            />
+                                            <span className="truncate">{opt}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    )}
+
+                        {/* 5. Tender Estimated Value */}
+                        <div className="rounded-lg border border-[#d9e2ec] bg-slate-50/50 p-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="block text-xs font-bold text-[#1c2d42]">
+                                    Tender Estimated Value
+                                </label>
+                                <span className="text-[10px] font-semibold text-[#0070f2] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                    Tax Basis
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {(['Excluding GST', 'Including GST'] as const).map((opt) => {
+                                    const isSelected = (contractRequisition.tender_estimate_value || 'Excluding GST') === opt;
+                                    return (
+                                        <label
+                                            key={opt}
+                                            className={`flex items-center gap-2 p-2 rounded-md border text-xs font-semibold cursor-pointer transition-all ${
+                                                isSelected
+                                                    ? 'border-[#0070f2] bg-blue-50/90 text-[#0070f2] ring-1 ring-[#0070f2]'
+                                                    : 'border-[#d9e2ec] bg-white text-[#1c2d42] hover:border-slate-300 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="header_tender_estimate_value"
+                                                value={opt}
+                                                checked={isSelected}
+                                                onChange={() => updateContractRequisition({ tender_estimate_value: opt })}
+                                                className="h-3.5 w-3.5 text-[#0070f2] border-slate-300 focus:ring-[#0070f2]"
+                                            />
+                                            <span className="truncate">{opt}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Valuation: 6. Total PR Value, 7. Total PR Value in Words */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-3 border-t border-slate-100">
+                        {/* 6. Total PR Value */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Total PR Value ({currency})
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const tot = calculateTotal();
+                                        updateContractRequisition({
+                                            total_pr_value: tot,
+                                            total_pr_value_in_word: convertAmountToWords(tot),
+                                        });
+                                    }}
+                                    className="text-[11px] font-semibold text-[#0070f2] hover:underline"
+                                    title="Auto-calculate from line items total"
+                                >
+                                    Sync Total from Items
+                                </button>
+                            </div>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={contractRequisition.total_pr_value !== undefined ? contractRequisition.total_pr_value : ''}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const numVal = parseFloat(val);
+                                        updateContractRequisition({
+                                            total_pr_value: val,
+                                            ...(!isNaN(numVal) && numVal > 0 ? { total_pr_value_in_word: convertAmountToWords(numVal) } : {}),
+                                        });
+                                    }}
+                                    placeholder="0.00"
+                                    className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        {/* 7. Total PR Value In Words */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Total PR Value in Words
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const numVal = Number(contractRequisition.total_pr_value || calculateTotal());
+                                        if (numVal > 0) {
+                                            updateContractRequisition({
+                                                total_pr_value_in_word: convertAmountToWords(numVal),
+                                            });
+                                        }
+                                    }}
+                                    className="text-[11px] font-semibold text-[#0070f2] hover:underline"
+                                >
+                                    Auto Convert to Words
+                                </button>
+                            </div>
+                            <input
+                                type="text"
+                                value={contractRequisition.total_pr_value_in_word || ''}
+                                onChange={(e) => updateContractRequisition({ total_pr_value_in_word: e.target.value })}
+                                placeholder="e.g. One Lakh Fifty Thousand Rupees Only"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                            />
+                        </div>
+                    </div>
 
                     {/* Automatic Source Determination Checkbox */}
-                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input
                                 type="checkbox"
@@ -1524,39 +1985,118 @@ export default function PurchaseRequisitionForm({
                                 Automatic Source Determination
                             </span>
                         </label>
-                        <span className="text-[11px] text-[#556b82]">
-                            
-                        </span>
                     </div>
                 </div>
             </div>
 
-            {/* SECTION: PR HEADER - Notes */}
+            {/* SECTION: PR HEADER - Notes & Contract Requisition Tabs */}
             <div className="rounded-xl border border-[#d9e2ec] bg-white shadow-xs overflow-hidden">
                 <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-6 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-100 text-amber-800">
                             <FileSpreadsheet className="h-3.5 w-3.5" />
                         </div>
-                        <h2 className="text-sm font-bold text-[#1c2d42]">Header: Notes</h2>
+                        <h2 className="text-sm font-bold text-[#1c2d42]">Header: Notes & Contract Requisition Details</h2>
                     </div>
-                    <span className="text-[11px] text-[#556b82]">Header Note</span>
+                    <span className="text-[11px] text-[#556b82]">PR Header & Contract Specifications</span>
                 </div>
 
-                <div className="p-6">
-                    <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-semibold text-[#1c2d42]">
-                            Header Note
-                        </label>
-                        <span className="text-[10px] text-[#556b82]"></span>
+                <div className="p-6 space-y-6">
+                    {/* Header Note Field */}
+                    <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                Header Note
+                            </label>
+                            <span className="text-[10px] text-[#556b82]">PR Header Note</span>
+                        </div>
+                        <textarea
+                            rows={3}
+                            value={headerNote}
+                            onChange={(e) => setHeaderNote(e.target.value)}
+                            placeholder="Type any high-level approval justification, procurement instructions, or work-related notes here..."
+                            className="w-full rounded-md border border-[#d9e2ec] p-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                        />
                     </div>
-                    <textarea
-                        rows={3}
-                        value={headerNote}
-                        onChange={(e) => setHeaderNote(e.target.value)}
-                        placeholder="Type any high-level approval justification, procurement instructions, or work-related notes here..."
-                        className="w-full rounded-md border border-[#d9e2ec] p-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                    />
+
+                    {/* Contract Requisition Specifications Tabbed Section */}
+                    <div className="rounded-lg border border-[#d9e2ec] bg-white shadow-2xs overflow-hidden">
+                        {/* Subheader banner */}
+                        <div className="border-b border-[#d9e2ec] bg-gradient-to-r from-[#f8fafc] via-blue-50/30 to-[#f8fafc] px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-[#1c2d42] uppercase tracking-wider">
+                                    Contract Requisition Specifications
+                                </span>
+                                <span className="rounded-full bg-blue-100 text-[#0070f2] px-2 py-0.5 text-[10px] font-bold">
+                                    SAP CBO
+                                </span>
+                            </div>
+                            <span className="text-[11px] text-[#556b82]">
+                                Select a tab to view and edit detailed contract notes and terms
+                            </span>
+                        </div>
+
+                        {/* Tabs Navigation */}
+                        <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-3 overflow-x-auto no-scrollbar">
+                            <nav className="flex space-x-1 py-1.5">
+                                {CR_NOTE_TABS.map((tab) => {
+                                    const isActive = activeCrNoteTab === tab.id;
+                                    const val = String(contractRequisition[tab.field as keyof ContractRequisitionData] || '');
+                                    const hasContent = val.trim().length > 0;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            onClick={() => setActiveCrNoteTab(tab.id)}
+                                            className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-semibold whitespace-nowrap transition-all ${
+                                                isActive
+                                                    ? 'border-[#0070f2] text-[#0070f2] bg-white shadow-2xs rounded-t-md'
+                                                    : 'border-transparent text-[#556b82] hover:border-slate-300 hover:text-[#1c2d42]'
+                                            }`}
+                                        >
+                                            <span>{tab.label}</span>
+                                            {hasContent && (
+                                                <span className="h-1.5 w-1.5 rounded-full bg-[#0070f2]" title="Has content" />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </nav>
+                        </div>
+
+                        {/* Tab Content Panel with Textarea */}
+                        <div className="p-5 bg-white">
+                            {(() => {
+                                const currentTab = CR_NOTE_TABS.find((t) => t.id === activeCrNoteTab) || CR_NOTE_TABS[0];
+                                const currentVal = String(contractRequisition[currentTab.field as keyof ContractRequisitionData] || '');
+                                return (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                    {currentTab.title}
+                                                </label>
+                                                <p className="text-[11px] text-[#556b82]">
+                                                    {currentTab.helpText}
+                                                </p>
+                                            </div>
+                                            <span className="text-[10px] text-[#556b82] font-mono">
+                                                {currentVal.length} / {currentTab.maxLength} chars
+                                            </span>
+                                        </div>
+                                        <textarea
+                                            rows={currentTab.rows}
+                                            maxLength={currentTab.maxLength}
+                                            value={currentVal}
+                                            onChange={(e) => updateContractRequisition({ [currentTab.field]: e.target.value })}
+                                            placeholder={currentTab.placeholder}
+                                            className="w-full rounded-md border border-[#d9e2ec] p-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none bg-white transition-colors"
+                                        />
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1680,8 +2220,7 @@ export default function PurchaseRequisitionForm({
                                 
                                 <th className="py-2.5 px-2.5 w-28 bg-[#f8fafc]">
                                     <span className="flex items-center gap-1">
-                                        Mat. Type
-                                        <span className="text-[9px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-1 py-0.2 rounded">F4</span>
+                                        Purch. Group
                                     </span>
                                 </th>
                                 <th className="py-2.5 px-2.5 w-24 bg-[#f8fafc]">
@@ -2012,47 +2551,18 @@ export default function PurchaseRequisitionForm({
                                             </div>
                                         </td>
                                        
-                                        {/* Material Type with F4 */}
+                                        {/* Purchasing Group */}
                                         <td className="py-2 px-2.5">
                                             <div className="relative flex items-center">
                                                 <input
                                                     type="text"
-                                                    value={it.material_type || ''}
+                                                    value={it.purchasing_group || ''}
                                                     onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { material_type: e.target.value })}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'F4') {
-                                                            e.preventDefault();
-                                                            openSearchHelp(
-                                                                'material_type',
-                                                                'Select Material Type (Search Help)',
-                                                                dataCatalog.materialTypes,
-                                                                it.material_type,
-                                                                idx
-                                                            );
-                                                        }
-                                                    }}
-                                                    placeholder="ROH"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                    onChange={(e) => updateItemById(it.id, { purchasing_group: e.target.value })}
+                                                    placeholder="103"
+                                                    title="Purchasing Group"
+                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white px-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                                 />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        openSearchHelp(
-                                                            'material_type',
-                                                            'Select Material Type (Search Help)',
-                                                            dataCatalog.materialTypes,
-                                                            it.material_type,
-                                                            idx
-                                                        );
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Material Type Search Help (F4)"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
                                             </div>
                                         </td>
                                         {/* Material Group */}
@@ -2445,53 +2955,26 @@ export default function PurchaseRequisitionForm({
                                     </div>
                                 </div>
 
-                                {/* Material Type (Search help) */}
+                                {/* Purchasing Group */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Material Type (F4)
+                                            Purchasing Group
                                         </label>
-                                        <span className="text-[10px] text-[#556b82]">Optional</span>
+                                        <span className="text-[10px] text-[#556b82]">Buyer / Org Code</span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            value={currentItem?.material_type || ''}
-                                            onChange={(e) => updateCurrentItem({ material_type: e.target.value })}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'F4') {
-                                                    e.preventDefault();
-                                                    openSearchHelp(
-                                                        'material_type',
-                                                        'Select Material Type (Search Help)',
-                                                        dataCatalog.materialTypes,
-                                                        currentItem?.material_type,
-                                                        activeItemIndex
-                                                    );
-                                                }
-                                            }}
-                                            placeholder="ROH - Raw Materials"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            value={currentItem?.purchasing_group || ''}
+                                            onChange={(e) => updateCurrentItem({ purchasing_group: e.target.value })}
+                                            placeholder="e.g. 103"
+                                            title="Purchasing Group"
+                                            className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                openSearchHelp(
-                                                    'material_type',
-                                                    'Select Material Type (Search Help)',
-                                                    dataCatalog.materialTypes,
-                                                    currentItem?.material_type,
-                                                    activeItemIndex
-                                                )
-                                            }
-                                            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Select Material Type (F4)"
-                                        >
-                                            <Search className="h-3.5 w-3.5" />
-                                        </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Material Type (ROH, ERSA, HIBE, etc.)
+                                        Purchasing Group (Key for a buyer or group of buyers responsible for procurement activities)
                                     </span>
                                 </div>
 
@@ -3626,8 +4109,7 @@ export default function PurchaseRequisitionForm({
 
                                 <div className="flex items-center gap-2">
                                     <button
-                                        type="button"
-                                        onClick={() => {
+                                                onClick={() => {
                                             updateCurrentItem({
                                                 desired_supplier: '',
                                                 fixed_vendor: '',
@@ -3636,7 +4118,9 @@ export default function PurchaseRequisitionForm({
                                                 agreement_number: '',
                                                 agreement_item: '',
                                                 supplying_plant: '',
-                                                issuing_storage_location: '',
+                                                purchasing_organization: '',
+                                                manufacturer_part_number: '',
+                                                supplier_material_number: '',
                                                 source_assigned: false,
                                             });
                                             setSuccessMessage(`Source of Supply cleared for Item ${currentItem?.item_number}.`);
@@ -3681,19 +4165,19 @@ export default function PurchaseRequisitionForm({
                                 </div>
                             )}
 
-                            {/* Section 1: Vendor & Supplier Specification */}
-                            <div className="space-y-3">
+                            {/* Source of Supply Parameters: Exactly 8 Fields */}
+                            <div className="space-y-4">
                                 <div className="flex items-center gap-2 text-xs font-semibold text-[#1c2d42]">
                                     <Building2 className="h-4 w-4 text-[#0070f2]" />
-                                    <span>Vendor & Supplier Determination</span>
+                                    <span>Source of Supply Parameters</span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    {/* Desired Supplier (F4) */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4.5">
+                                    {/* 1. Desired Vendor (F4) */}
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Desired Supplier (F4)
+                                                Desired Vendor (F4)
                                             </label>
                                             <span className="text-[10px] text-[#556b82]">Manual / F4</span>
                                         </div>
@@ -3716,7 +4200,7 @@ export default function PurchaseRequisitionForm({
                                                         e.preventDefault();
                                                         openSearchHelp(
                                                             'desired_supplier',
-                                                            'Select Desired Supplier (Search Help - F4)',
+                                                            'Select Desired Vendor (Search Help - F4)',
                                                             dataCatalog.desiredSuppliers || [],
                                                             currentItem?.desired_supplier,
                                                             activeItemIndex
@@ -3731,14 +4215,14 @@ export default function PurchaseRequisitionForm({
                                                 onClick={() =>
                                                     openSearchHelp(
                                                         'desired_supplier',
-                                                        'Select Desired Supplier (Search Help - F4)',
+                                                        'Select Desired Vendor (Search Help - F4)',
                                                         dataCatalog.desiredSuppliers || [],
                                                         currentItem?.desired_supplier,
                                                         activeItemIndex
                                                     )
                                                 }
                                                 className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Desired Supplier (Search Help - F4)"
+                                                title="Desired Vendor (Search Help - F4)"
                                             >
                                                 <Search className="h-3.5 w-3.5" />
                                             </button>
@@ -3748,7 +4232,7 @@ export default function PurchaseRequisitionForm({
                                         </span>
                                     </div>
 
-                                    {/* Fixed Vendor (F4) */}
+                                    {/* 2. Fixed Vendor (F4) */}
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-xs font-semibold text-[#1c2d42]">
@@ -3803,45 +4287,222 @@ export default function PurchaseRequisitionForm({
                                             </button>
                                         </div>
                                         <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Fixed vendor locked for automated Purchase Order creation (FLIEF)
+                                            Fixed vendor assigned for automatic PO creation (FLIEF)
                                         </span>
                                     </div>
 
-                                    {/* Supplier Name */}
+                                    {/* 3. Supplying Plant (F4) */}
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Supplier Name / Business Entity
+                                                Supplying Plant (F4)
                                             </label>
-                                            <span className="text-[10px] text-[#556b82]">Manual</span>
+                                            <span className="text-[10px] text-[#556b82]">Internal / STO</span>
                                         </div>
-                                        <input
-                                            type="text"
-                                            value={currentItem?.supplier_name || ''}
-                                            onChange={(e) => updateCurrentItem({ supplier_name: e.target.value })}
-                                            placeholder="e.g. Tata Chemicals Ltd"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.supplying_plant || ''}
+                                                onChange={(e) => updateCurrentItem({ supplying_plant: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'supplying_plant',
+                                                            'Select Supplying Plant (Search Help - F4)',
+                                                            dataCatalog.plants || [],
+                                                            currentItem?.supplying_plant,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 1200"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'supplying_plant',
+                                                        'Select Supplying Plant (Search Help - F4)',
+                                                        dataCatalog.plants || [],
+                                                        currentItem?.supplying_plant,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Supplying Plant (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
                                         <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Trading partner or legal corporate designation
+                                            Issuing plant for stock transport / internal supply (RESWK)
                                         </span>
                                     </div>
-                                </div>
-                            </div>
 
-                            {/* Section 2: Purchasing Info Records & Outline Agreements */}
-                            <div className="space-y-3 pt-2 border-t border-slate-100">
-                                <div className="flex items-center gap-2 text-xs font-semibold text-[#1c2d42]">
-                                    <FileText className="h-4 w-4 text-[#0070f2]" />
-                                    <span>Purchasing Agreements & Info Records</span>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    {/* Purchasing Info Record (F4) */}
+                                    {/* 4. Purchase Organisation (F4) */}
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Purchasing Info Record (F4)
+                                                Purchase Organisation (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.purchasing_organization || ''}
+                                                onChange={(e) => updateCurrentItem({ purchasing_organization: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'purchasing_organization',
+                                                            'Select Purchase Organisation (Search Help - F4)',
+                                                            dataCatalog.purchasingOrganizations || [],
+                                                            currentItem?.purchasing_organization,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 1100"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'purchasing_organization',
+                                                        'Select Purchase Organisation (Search Help - F4)',
+                                                        dataCatalog.purchasingOrganizations || [],
+                                                        currentItem?.purchasing_organization,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Purchase Organisation (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Procuring organizational unit (EKORG)
+                                        </span>
+                                    </div>
+
+                                    {/* 5. Outline Agreement (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Outline Agreement (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.agreement_number || ''}
+                                                onChange={(e) =>
+                                                    updateCurrentItem({
+                                                        agreement_number: e.target.value,
+                                                        source_assigned: Boolean(
+                                                            e.target.value || currentItem.desired_supplier || currentItem.fixed_vendor
+                                                        ),
+                                                    })
+                                                }
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'agreement_number',
+                                                            'Select Outline Agreement (Search Help - F4)',
+                                                            (dataCatalog as any).outlineAgreements || [],
+                                                            currentItem?.agreement_number,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 4600000110"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'agreement_number',
+                                                        'Select Outline Agreement (Search Help - F4)',
+                                                        (dataCatalog as any).outlineAgreements || [],
+                                                        currentItem?.agreement_number,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Outline Agreement / Contract (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Long-term framework agreement or contract (KONNR)
+                                        </span>
+                                    </div>
+
+                                    {/* 6. Agreement Item (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Agreement Item (F4)
+                                            </label>
+                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={currentItem?.agreement_item || ''}
+                                                onChange={(e) => updateCurrentItem({ agreement_item: e.target.value })}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'F4') {
+                                                        e.preventDefault();
+                                                        openSearchHelp(
+                                                            'agreement_item',
+                                                            'Select Agreement Item (Search Help - F4)',
+                                                            (dataCatalog as any).agreementItems || [],
+                                                            currentItem?.agreement_item,
+                                                            activeItemIndex
+                                                        );
+                                                    }
+                                                }}
+                                                placeholder="e.g. 00010"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    openSearchHelp(
+                                                        'agreement_item',
+                                                        'Select Agreement Item (Search Help - F4)',
+                                                        (dataCatalog as any).agreementItems || [],
+                                                        currentItem?.agreement_item,
+                                                        activeItemIndex
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Agreement Item (Search Help - F4)"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Line position number within outline agreement (KTPNR)
+                                        </span>
+                                    </div>
+
+                                    {/* 7. Info Record (F4) */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-[#1c2d42]">
+                                                Info Record (F4)
                                             </label>
                                             <span className="text-[10px] text-[#556b82]">Manual / F4</span>
                                         </div>
@@ -3894,326 +4555,37 @@ export default function PurchaseRequisitionForm({
                                         </span>
                                     </div>
 
-                                    {/* Outline Agreement / Contract (F4) */}
+                                    {/* 8. Manufacture Part Number */}
                                     <div>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Outline Agreement / Contract (F4)
+                                                Manufacture Part Number
                                             </label>
-                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                            <span className="text-[10px] text-[#556b82]">Catalog / MFR</span>
                                         </div>
                                         <div className="relative">
                                             <input
                                                 type="text"
-                                                value={currentItem?.agreement_number || ''}
-                                                onChange={(e) =>
+                                                value={currentItem?.manufacturer_part_number || currentItem?.supplier_material_number || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
                                                     updateCurrentItem({
-                                                        agreement_number: e.target.value,
-                                                        source_assigned: Boolean(
-                                                            e.target.value || currentItem.desired_supplier || currentItem.fixed_vendor
-                                                        ),
-                                                    })
-                                                }
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        openSearchHelp(
-                                                            'agreement_number',
-                                                            'Select Outline Agreement (Search Help - F4)',
-                                                            (dataCatalog as any).outlineAgreements || [],
-                                                            currentItem?.agreement_number,
-                                                            activeItemIndex
-                                                        );
-                                                    }
+                                                        manufacturer_part_number: val,
+                                                        supplier_material_number: val,
+                                                    });
                                                 }}
-                                                placeholder="e.g. 4600000110"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                placeholder="e.g. MFRPN-9842A"
+                                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openSearchHelp(
-                                                        'agreement_number',
-                                                        'Select Outline Agreement (Search Help - F4)',
-                                                        (dataCatalog as any).outlineAgreements || [],
-                                                        currentItem?.agreement_number,
-                                                        activeItemIndex
-                                                    )
-                                                }
-                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Outline Agreement / Contract (Search Help - F4)"
-                                            >
-                                                <Search className="h-3.5 w-3.5" />
-                                            </button>
                                         </div>
                                         <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Long-term framework agreement or rate contract (KONNR)
-                                        </span>
-                                    </div>
-
-                                    {/* Agreement Item (F4) */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Agreement Item (F4)
-                                            </label>
-                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={currentItem?.agreement_item || ''}
-                                                onChange={(e) => updateCurrentItem({ agreement_item: e.target.value })}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        openSearchHelp(
-                                                            'agreement_item',
-                                                            'Select Agreement Item (Search Help - F4)',
-                                                            (dataCatalog as any).agreementItems || [],
-                                                            currentItem?.agreement_item,
-                                                            activeItemIndex
-                                                        );
-                                                    }
-                                                }}
-                                                placeholder="e.g. 00010"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openSearchHelp(
-                                                        'agreement_item',
-                                                        'Select Agreement Item (Search Help - F4)',
-                                                        (dataCatalog as any).agreementItems || [],
-                                                        currentItem?.agreement_item,
-                                                        activeItemIndex
-                                                    )
-                                                }
-                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Agreement Item (Search Help - F4)"
-                                            >
-                                                <Search className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Line position number within outline agreement (KTPNR)
+                                            Manufacturer or vendor part catalog designation (MFRPN)
                                         </span>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Section 3: Organizational Sourcing & Internal Supply */}
-                            <div className="space-y-3 pt-2 border-t border-slate-100">
-                                <div className="flex items-center gap-2 text-xs font-semibold text-[#1c2d42]">
-                                    <Layers className="h-4 w-4 text-[#0070f2]" />
-                                    <span>Organizational Assignment & Internal Supply</span>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    {/* Purchasing Organization (F4) */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Purchasing Org (F4)
-                                            </label>
-                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={currentItem?.purchasing_organization || ''}
-                                                onChange={(e) => updateCurrentItem({ purchasing_organization: e.target.value })}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        openSearchHelp(
-                                                            'purchasing_organization',
-                                                            'Select Purchasing Organization (Search Help - F4)',
-                                                            dataCatalog.purchasingOrganizations || [],
-                                                            currentItem?.purchasing_organization,
-                                                            activeItemIndex
-                                                        );
-                                                    }
-                                                }}
-                                                placeholder="e.g. 1100"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openSearchHelp(
-                                                        'purchasing_organization',
-                                                        'Select Purchasing Organization (Search Help - F4)',
-                                                        dataCatalog.purchasingOrganizations || [],
-                                                        currentItem?.purchasing_organization,
-                                                        activeItemIndex
-                                                    )
-                                                }
-                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Purchasing Organization (Search Help - F4)"
-                                            >
-                                                <Search className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Procuring unit (EKORG)
-                                        </span>
-                                    </div>
-
-                                    {/* Purchasing Group (F4) */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Purchasing Group (F4)
-                                            </label>
-                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={currentItem?.purchasing_group || ''}
-                                                onChange={(e) => updateCurrentItem({ purchasing_group: e.target.value })}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        openSearchHelp(
-                                                            'purchasing_group',
-                                                            'Select Purchasing Group (Search Help - F4)',
-                                                            dataCatalog.purchasingGroups || [],
-                                                            currentItem?.purchasing_group,
-                                                            activeItemIndex
-                                                        );
-                                                    }
-                                                }}
-                                                placeholder="e.g. 103"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openSearchHelp(
-                                                        'purchasing_group',
-                                                        'Select Purchasing Group (Search Help - F4)',
-                                                        dataCatalog.purchasingGroups || [],
-                                                        currentItem?.purchasing_group,
-                                                        activeItemIndex
-                                                    )
-                                                }
-                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Purchasing Group (Search Help - F4)"
-                                            >
-                                                <Search className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Buyer group (EKGRP)
-                                        </span>
-                                    </div>
-
-                                    {/* Supplying Plant (F4) */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Supplying Plant (F4)
-                                            </label>
-                                            <span className="text-[10px] text-[#556b82]">Internal / STO</span>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={currentItem?.supplying_plant || ''}
-                                                onChange={(e) => updateCurrentItem({ supplying_plant: e.target.value })}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        openSearchHelp(
-                                                            'supplying_plant',
-                                                            'Select Supplying Plant (Search Help - F4)',
-                                                            dataCatalog.plants || [],
-                                                            currentItem?.supplying_plant,
-                                                            activeItemIndex
-                                                        );
-                                                    }
-                                                }}
-                                                placeholder="e.g. 1200"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openSearchHelp(
-                                                        'supplying_plant',
-                                                        'Select Supplying Plant (Search Help - F4)',
-                                                        dataCatalog.plants || [],
-                                                        currentItem?.supplying_plant,
-                                                        activeItemIndex
-                                                    )
-                                                }
-                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Supplying Plant (Search Help - F4)"
-                                            >
-                                                <Search className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Issuing plant for stock transport (RESWK)
-                                        </span>
-                                    </div>
-
-                                    {/* Issuing Storage Location (F4) */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="block text-xs font-semibold text-[#1c2d42]">
-                                                Issuing S.Loc (F4)
-                                            </label>
-                                            <span className="text-[10px] text-[#556b82]">Manual / F4</span>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={currentItem?.issuing_storage_location || ''}
-                                                onChange={(e) => updateCurrentItem({ issuing_storage_location: e.target.value })}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        openSearchHelp(
-                                                            'issuing_storage_location',
-                                                            'Select Issuing Storage Location (Search Help - F4)',
-                                                            dataCatalog.storageLocations || [],
-                                                            currentItem?.issuing_storage_location,
-                                                            activeItemIndex
-                                                        );
-                                                    }
-                                                }}
-                                                placeholder="e.g. SL01"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    openSearchHelp(
-                                                        'issuing_storage_location',
-                                                        'Select Issuing Storage Location (Search Help - F4)',
-                                                        dataCatalog.storageLocations || [],
-                                                        currentItem?.issuing_storage_location,
-                                                        activeItemIndex
-                                                    )
-                                                }
-                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                title="Issuing Storage Location (Search Help - F4)"
-                                            >
-                                                <Search className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Issuing storage location (RESLO)
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Section 4: Dynamic Live Determined Source Summary Card */}
+                            {/* Live Determined Source Summary Card */}
                             <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <div className="text-xs font-semibold text-[#1c2d42] flex items-center gap-1.5">
@@ -4221,7 +4593,7 @@ export default function PurchaseRequisitionForm({
                                         <span>Determined Source of Supply Overview</span>
                                     </div>
                                     <span className="text-[10px] text-[#556b82]">
-                                        SAP ME51N / S/4HANA Sourcing Specification
+                                        SAP S/4HANA Cloud Sourcing Specification
                                     </span>
                                 </div>
 
@@ -4237,34 +4609,32 @@ export default function PurchaseRequisitionForm({
                                     </div>
 
                                     <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Info Record / Contract</span>
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Agreement & Item</span>
                                         <strong className="text-[#1c2d42] block font-mono">
-                                            {currentItem?.info_record || currentItem?.agreement_number || 'None'}
+                                            {currentItem?.agreement_number || 'No agreement'}
                                         </strong>
                                         <span className="text-[11px] text-slate-500 block">
-                                            {currentItem?.agreement_item ? `Contract Item: ${currentItem.agreement_item}` : 'Standard conditions'}
+                                            {currentItem?.agreement_item ? `Agreement Item: ${currentItem.agreement_item}` : 'Standard conditions'}
                                         </span>
                                     </div>
 
                                     <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Plant & Sourcing</span>
-                                        <strong className="text-[#1c2d42] block">
-                                            Plant {currentItem?.plant || defaultPlant}
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Info Record & Part No</span>
+                                        <strong className="text-[#1c2d42] block font-mono">
+                                            {currentItem?.info_record || 'No info record'}
                                         </strong>
-                                        <span className="text-[11px] text-slate-500 block">
-                                            {currentItem?.supplying_plant
-                                                ? `Supplying Plant: ${currentItem.supplying_plant}`
-                                                : `Storage Loc: ${currentItem?.storage_location || 'Not set'}`}
+                                        <span className="text-[11px] text-slate-500 truncate block font-mono">
+                                            {currentItem?.manufacturer_part_number || currentItem?.supplier_material_number ? `MFR: ${currentItem?.manufacturer_part_number || currentItem?.supplier_material_number}` : 'No MFR part number'}
                                         </span>
                                     </div>
 
                                     <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Purchasing Units</span>
+                                        <span className="text-[#556b82] block text-[11px] mb-0.5">Plant & Purchasing Org</span>
                                         <strong className="text-[#1c2d42] block font-mono">
                                             Org: {currentItem?.purchasing_organization || '1100'}
                                         </strong>
-                                        <span className="text-[11px] text-slate-500 block font-mono">
-                                            Group: {currentItem?.purchasing_group || '103'}
+                                        <span className="text-[11px] text-slate-500 block">
+                                            Supplying Plant: {currentItem?.supplying_plant || 'None (Direct Vendor)'}
                                         </span>
                                     </div>
                                 </div>
@@ -4641,19 +5011,28 @@ export default function PurchaseRequisitionForm({
                         onClick={handleSaveDraft}
                         disabled={submitting || isDrafting}
                         className="flex items-center gap-1.5 rounded-md border border-[#0070f2] bg-white px-5 py-2 text-xs font-semibold text-[#0070f2] shadow-2xs transition-colors hover:bg-blue-50 active:bg-blue-100 disabled:opacity-50"
-                        title="Save as Draft in local database (is_draft = 1) without syncing to SAP"
+                        title={isEdit ? "Update draft changes in local database (is_draft = 1)" : "Save as Draft in local database (is_draft = 1) without syncing to SAP"}
                     >
                         <Save className={`h-3.5 w-3.5 ${isDrafting ? 'animate-spin' : ''}`} />
-                        <span>{isDrafting ? 'Saving Draft...' : 'Save as Draft'}</span>
+                        <span>
+                            {isDrafting
+                                ? (isEdit ? 'Updating Draft...' : 'Saving Draft...')
+                                : (isEdit ? 'Update Draft' : 'Save as Draft')}
+                        </span>
                     </button>
 
                     <button
                         type="submit"
                         disabled={submitting || isDrafting}
                         className="flex items-center gap-2 rounded-md bg-[#0070f2] px-6 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50"
+                        title="Finalize draft and sync with SAP S/4HANA Cloud"
                     >
                         <Send className={`h-3.5 w-3.5 ${submitting ? 'animate-spin' : ''}`} />
-                        <span>{submitting ? 'Creating & Syncing with SAP Cloud...' : 'Sync with SAP'}</span>
+                        <span>
+                            {submitting
+                                ? 'Syncing with SAP Cloud...'
+                                : (isEdit ? 'Save & Sync to SAP' : 'Sync with SAP')}
+                        </span>
                     </button>
                 </div>
             </div>

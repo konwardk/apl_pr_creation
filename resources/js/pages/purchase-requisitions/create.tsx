@@ -10,6 +10,7 @@ interface CreatePrPageProps {
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
+    defaultCrNo?: string;
 }
 
 export default function CreatePurchaseRequisitionPage({
@@ -17,6 +18,7 @@ export default function CreatePurchaseRequisitionPage({
     headerOptions = [],
     prDocumentTypes = [],
     itemCategories = [],
+    defaultCrNo,
 }: CreatePrPageProps) {
     return (
         <SapAppLayout
@@ -37,6 +39,7 @@ export default function CreatePurchaseRequisitionPage({
                     headerOptions={headerOptions}
                     prDocumentTypes={prDocumentTypes}
                     itemCategories={itemCategories}
+                    defaultCrNo={defaultCrNo}
                 />
             </div>
         </SapAppLayout>

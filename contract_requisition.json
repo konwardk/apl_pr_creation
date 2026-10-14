@@ -1,0 +1,480 @@
+{
+  "$Version": "4.0",
+  "$Reference": {
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_AGGREGATION',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "Org.OData.Aggregation.V1",
+          "$Alias": "SAP__aggregation"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_ANALYTICS',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.Analytics.v1",
+          "$Alias": "SAP__analytics"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_AUTHORIZATION',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "Org.OData.Authorization.V1",
+          "$Alias": "SAP__authorization"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_CAPABILITIES',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "Org.OData.Capabilities.V1",
+          "$Alias": "SAP__capabilities"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_CODELIST',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.CodeList.v1",
+          "$Alias": "SAP__CodeList"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_COMMON',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.Common.v1",
+          "$Alias": "SAP__common"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_COMMUNICATION',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.Communication.v1",
+          "$Alias": "SAP__communication"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_CORE',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "Org.OData.Core.V1",
+          "$Alias": "SAP__core"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_HIERARCHY',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.Hierarchy.v1",
+          "$Alias": "SAP__hierarchy"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_HTML5',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.HTML5.v1",
+          "$Alias": "SAP__HTML5"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_MEASURES',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "Org.OData.Measures.V1",
+          "$Alias": "SAP__measures"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_ODM',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.ODM.v1",
+          "$Alias": "SAP__ODM"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_PDF',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.PDF.v1",
+          "$Alias": "SAP__PDF"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_PERSONALDATA',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.PersonalData.v1",
+          "$Alias": "SAP__personalData"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_SESSION',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.Session.v1",
+          "$Alias": "SAP__session"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_SUPPORT',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.Support.v1",
+          "$Alias": "SAP__support"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_UI',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "com.sap.vocabularies.UI.v1",
+          "$Alias": "SAP__UI"
+        }
+      ]
+    },
+    "/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_VALIDATION',Version='0001',SAP__Origin='LOCAL')/$value": {
+      "$Include": [
+        {
+          "$Namespace": "Org.OData.Validation.V1",
+          "$Alias": "SAP__validation"
+        }
+      ]
+    }
+  },
+  "com.sap.gateway.srvd_a2x.yy1_api_contractrequisition.v0001": {
+    "$Alias": "SAP__self",
+    "@SAP__core.SchemaVersion": "1.0.0",
+    "ContractRequisitionType": {
+      "$Kind": "EntityType",
+      "$Key": [
+        "CRNo",
+        "PRNumber"
+      ],
+      "@SAP__common.Label": "CBO YY1_R_CONTRACTREQUISITIONTP / ContractRequisition",
+      "@SAP__common.Messages": {
+        "$Path": "SAP__Messages"
+      },
+      "@SAP__common.CreatedBy": {
+        "$Path": "SAPCreatedBy"
+      },
+      "@SAP__common.CreatedAt": {
+        "$Path": "SAPCreatedOn"
+      },
+      "@SAP__common.ChangedBy": {
+        "$Path": "SAPLastChangedBy"
+      },
+      "@SAP__common.ChangedAt": {
+        "$Path": "SAPLastChangedOn"
+      },
+      "CRNo": {
+        "$Type": "Edm.String",
+        "$MaxLength": 20,
+        "@SAP__common.Label": "CRNo",
+        "@SAP__common.QuickInfo": "CRNo"
+      },
+      "PRNumber": {
+        "$Type": "Edm.String",
+        "$MaxLength": 20,
+        "@SAP__common.Label": "PRNumber",
+        "@SAP__common.QuickInfo": "PRNumber"
+      },
+      "SAPUUID": {
+        "$Type": "Edm.Guid",
+        "$Nullable": true,
+        "@SAP__core.Computed": true,
+        "@SAP__common.Label": "UUID",
+        "@SAP__common.QuickInfo": "16 Byte UUID in 16 Bytes (Raw Format)"
+      },
+      "ContractTitle": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "ContractTitle",
+        "@SAP__common.QuickInfo": "ContractTitle"
+      },
+      "PaymentTerms": {
+        "$Type": "Edm.String",
+        "$MaxLength": 20,
+        "@SAP__common.Label": "PaymentTerms",
+        "@SAP__common.QuickInfo": "PaymentTerms"
+      },
+      "BiddersQualificationCriteria": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "BiddersQualificationCriteria",
+        "@SAP__common.QuickInfo": "BiddersQualificationCriteria"
+      },
+      "SpecialTermsCondition": {
+        "$Type": "Edm.String",
+        "$MaxLength": 20,
+        "@SAP__common.Label": "SpecialTermsCondition",
+        "@SAP__common.QuickInfo": "SpecialTermsCondition"
+      },
+      "GuaranteeWarrantyPeriod": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "GuaranteeWarrantyPeriod",
+        "@SAP__common.QuickInfo": "GuaranteeWarrantyPeriod"
+      },
+      "DefectLiabilityPeriod": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "DefectLiabilityPeriod",
+        "@SAP__common.QuickInfo": "DefectLiabilityPeriod"
+      },
+      "Others": {
+        "$Type": "Edm.String",
+        "$MaxLength": 20,
+        "@SAP__common.Label": "Others",
+        "@SAP__common.QuickInfo": "Others"
+      },
+      "RequisitionerName": {
+        "$Type": "Edm.String",
+        "$MaxLength": 100,
+        "@SAP__common.Label": "RequisitionerName",
+        "@SAP__common.QuickInfo": "RequisitionerName"
+      },
+      "ReqDesignation": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "ReqDesignation",
+        "@SAP__common.QuickInfo": "ReqDesignation"
+      },
+      "ReqDepartment": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "ReqDepartment",
+        "@SAP__common.QuickInfo": "ReqDepartment"
+      },
+      "TenderType": {
+        "$Type": "Edm.String",
+        "$MaxLength": 50,
+        "@SAP__common.Label": "TenderType",
+        "@SAP__common.QuickInfo": "TenderType"
+      },
+      "TenderEstimateValue": {
+        "$Type": "Edm.String",
+        "$MaxLength": 50,
+        "@SAP__common.Label": "TenderEstimateValue",
+        "@SAP__common.QuickInfo": "TenderEstimateValue"
+      },
+      "TotalPRValue": {
+        "$Type": "Edm.String",
+        "$MaxLength": 20,
+        "@SAP__common.Label": "TotalPRValue",
+        "@SAP__common.QuickInfo": "TotalPRValue"
+      },
+      "TotalPRValueInWord": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "TotalPRValueInWord",
+        "@SAP__common.QuickInfo": "TotalPRValueInWord"
+      },
+      "CustomField1": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField1",
+        "@SAP__common.QuickInfo": "CustomField1"
+      },
+      "CustomField2": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField2",
+        "@SAP__common.QuickInfo": "CustomField2"
+      },
+      "CustomField3": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField3",
+        "@SAP__common.QuickInfo": "CustomField3"
+      },
+      "CustomField4": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField4",
+        "@SAP__common.QuickInfo": "CustomField4"
+      },
+      "CustomField5": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField5",
+        "@SAP__common.QuickInfo": "CustomField5"
+      },
+      "CustomField6": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField6",
+        "@SAP__common.QuickInfo": "CustomField6"
+      },
+      "CustomField7": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField7",
+        "@SAP__common.QuickInfo": "CustomField7"
+      },
+      "CustomField8": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "CustomField8",
+        "@SAP__common.QuickInfo": "CustomField8"
+      },
+      "SAPLastChangedBy": {
+        "$Type": "Edm.String",
+        "$MaxLength": 12,
+        "@SAP__core.Computed": true,
+        "@SAP__common.IsUpperCase": true,
+        "@SAP__common.Label": "Last Changed By",
+        "@SAP__common.QuickInfo": "Last Changed By",
+        "@SAP__common.Heading": "Changed By",
+        "@SAP__common.DocumentationRef": "urn:sap-com:documentation:key?=type=DE&id=ABP_LASTCHANGE_USER"
+      },
+      "SAPLastChangedOn": {
+        "$Type": "Edm.DateTimeOffset",
+        "$Precision": 7,
+        "$Nullable": true,
+        "@SAP__core.Computed": true,
+        "@SAP__common.Label": "Last Changed On",
+        "@SAP__common.QuickInfo": "Last Changed On",
+        "@SAP__common.Heading": "Changed On",
+        "@SAP__common.DocumentationRef": "urn:sap-com:documentation:key?=type=DE&id=ABP_LASTCHANGE_TSTMPL"
+      },
+      "SAPCreatedBy": {
+        "$Type": "Edm.String",
+        "$MaxLength": 12,
+        "@SAP__core.Computed": true,
+        "@SAP__common.IsUpperCase": true,
+        "@SAP__common.Label": "Created By",
+        "@SAP__common.QuickInfo": "Created By",
+        "@SAP__common.Heading": "Created By",
+        "@SAP__common.DocumentationRef": "urn:sap-com:documentation:key?=type=DE&id=ABP_CREATION_USER"
+      },
+      "SAPCreatedOn": {
+        "$Type": "Edm.DateTimeOffset",
+        "$Precision": 7,
+        "$Nullable": true,
+        "@SAP__core.Computed": true,
+        "@SAP__common.Label": "Created On",
+        "@SAP__common.QuickInfo": "Created On",
+        "@SAP__common.Heading": "Created On",
+        "@SAP__common.DocumentationRef": "urn:sap-com:documentation:key?=type=DE&id=ABP_CREATION_TSTMPL"
+      },
+      "SAPDescription": {
+        "$Type": "Edm.String",
+        "$MaxLength": 80,
+        "@SAP__common.Label": "Description",
+        "@SAP__common.QuickInfo": "Description"
+      },
+      "SAP__Messages": {
+        "$Collection": true,
+        "$Type": "com.sap.gateway.srvd_a2x.yy1_api_contractrequisition.v0001.SAP__Message"
+      }
+    },
+    "SAP__Message": {
+      "$Kind": "ComplexType",
+      "code": {
+        "$Type": "Edm.String"
+      },
+      "message": {
+        "$Type": "Edm.String"
+      },
+      "target": {
+        "$Type": "Edm.String",
+        "$Nullable": true
+      },
+      "additionalTargets": {
+        "$Collection": true,
+        "$Type": "Edm.String"
+      },
+      "transition": {
+        "$Type": "Edm.Boolean"
+      },
+      "numericSeverity": {
+        "$Type": "Edm.Byte"
+      },
+      "longtextUrl": {
+        "$Type": "Edm.String",
+        "$Nullable": true
+      }
+    },
+    "Container": {
+      "$Kind": "EntityContainer",
+      "@SAP__common.ApplyMultiUnitBehaviorForSortingAndFiltering": true,
+      "@SAP__capabilities.FilterFunctions": [
+        "eq",
+        "ne",
+        "gt",
+        "ge",
+        "lt",
+        "le",
+        "and",
+        "or",
+        "contains",
+        "startswith",
+        "endswith",
+        "any",
+        "all"
+      ],
+      "@SAP__support.TechnicalInfoLinks": {
+        "Url": "../../../../default/iwbep/common/0001/$metadata",
+        "FunctionImport": "GetTechnicalInfoLinks"
+      },
+      "@SAP__capabilities.SupportedFormats": [
+        "application/json",
+        "application/pdf"
+      ],
+      "@SAP__PDF.Features": {
+        "DocumentDescriptionReference": "../../../../default/iwbep/common/0001/$metadata",
+        "DocumentDescriptionCollection": "MyDocumentDescriptions",
+        "ArchiveFormat": true,
+        "Border": true,
+        "CoverPage": true,
+        "FitToPage": true,
+        "FontName": true,
+        "FontSize": true,
+        "HeaderFooter": true,
+        "IANATimezoneFormat": true,
+        "Margin": true,
+        "Padding": true,
+        "ResultSizeDefault": 20000,
+        "ResultSizeMaximum": 20000,
+        "Signature": true,
+        "TextDirectionLayout": true,
+        "Treeview": true,
+        "UploadToFileShare": true
+      },
+      "@SAP__capabilities.BatchSupport": {
+        "SupportedFormats": [
+          "application/json",
+          "multipart/mixed"
+        ]
+      },
+      "@SAP__capabilities.KeyAsSegmentSupported": true,
+      "@SAP__capabilities.AsynchronousRequestsSupported": true,
+      "ContractRequisition": {
+        "$Type": "com.sap.gateway.srvd_a2x.yy1_api_contractrequisition.v0001.ContractRequisitionType",
+        "@SAP__capabilities.SearchRestrictions": {
+          "Searchable": false
+        },
+        "@SAP__capabilities.InsertRestrictions": {
+          "RequiredProperties": [
+            "CRNo",
+            "PRNumber"
+          ]
+        },
+        "@SAP__capabilities.UpdateRestrictions": {
+          "DeltaUpdateSupported": true,
+          "QueryOptions": {
+            "SelectSupported": true
+          }
+        },
+        "@SAP__capabilities.DeepUpdateSupport": {
+          "ContentIDSupported": true
+        }
+      }
+    }
+  }
+}

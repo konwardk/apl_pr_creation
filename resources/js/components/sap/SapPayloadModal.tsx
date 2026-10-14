@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { router } from '@inertiajs/react';
 import {
     X,
     Copy,
@@ -10,6 +11,7 @@ import {
     CheckCircle2,
     Clock,
     AlertTriangle,
+    Edit3,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
@@ -42,6 +44,7 @@ interface PurchaseRequisition {
     total_amount: number | string;
     currency: string;
     approval_status: string;
+    is_draft?: boolean | number;
     sap_sync_status: string;
     sap_sync_message?: string | null;
     sap_synced_at?: string | null;
@@ -103,7 +106,7 @@ export default function SapPayloadModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 overflow-y-auto">
-            <div className="relative w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-2xl my-8">
+            <div className="relative w-full max-w-5xl xl:max-w-6xl rounded-xl border border-slate-200 bg-white shadow-2xl my-8">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-[#d9e2ec] px-6 py-4 bg-[#f8fafc] rounded-t-xl">
                     <div className="flex items-center gap-3">
@@ -329,7 +332,22 @@ export default function SapPayloadModal({
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end border-t border-slate-100 px-6 py-3 bg-[#f8fafc] rounded-b-xl">
+                <div className="flex items-center justify-between border-t border-slate-100 px-6 py-3 bg-[#f8fafc] rounded-b-xl">
+                    <div>
+                        {Boolean(pr.is_draft) && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onClose();
+                                    router.visit(`/purchase-requisitions/${pr.id}/edit`);
+                                }}
+                                className="flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-[#0070f2] hover:bg-blue-100 transition-colors"
+                            >
+                                <Edit3 className="h-3.5 w-3.5" />
+                                <span>Edit Draft PR</span>
+                            </button>
+                        )}
+                    </div>
                     <button
                         type="button"
                         onClick={onClose}

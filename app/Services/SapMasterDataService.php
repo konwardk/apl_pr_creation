@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Attachment;
 use App\Models\PrDocumentType;
 use App\Models\PurchaseRequisition;
+use App\Models\ContractRequisition;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
 use Illuminate\Support\Facades\Http;
@@ -1561,6 +1562,132 @@ class SapMasterDataService
                 'success' => false,
                 'status' => 500,
                 'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Post/Sync Contract Requisition Custom Business Object to SAP S/4HANA Public Cloud via OData V4 API.
+     *
+     * @param ContractRequisition $contractRequisition
+     * @param string|null $sapPrNumber
+     * @return array
+     */
+    public function postContractRequisition(ContractRequisition $contractRequisition, ?string $sapPrNumber = null): array
+    {
+        $username = config('sap.auth.username', env('SAP_ODATA_USER'));
+        $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        $endpoint = config(
+            'sap.endpoints.contract_requisition',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/ContractRequisition'
+        );
+        $serviceRoot = config(
+            'sap.endpoints.contract_requisition_service_root',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/'
+        );
+
+        if (empty($username) || empty($password)) {
+            return [
+                'success' => false,
+                'status' => 400,
+                'message' => 'SAP Communication User credentials not configured in .env',
+                'response' => [],
+                'payload' => $contractRequisition->toSapODataV4Payload($sapPrNumber),
+            ];
+        }
+
+        $payload = $contractRequisition->toSapODataV4Payload($sapPrNumber);
+
+        try {
+            $client = new Client([
+                'verify' => config('sap.verify_ssl', false),
+                'timeout' => 30,
+                'http_errors' => false,
+            ]);
+            $cookieJar = new CookieJar();
+
+            // 1. Fetch CSRF Token
+            $tokenRes = $client->request('GET', $serviceRoot, [
+                'auth' => [$username, $password],
+                'headers' => [
+                    'x-csrf-token' => 'Fetch',
+                    'Accept' => 'application/json',
+                ],
+                'cookies' => $cookieJar,
+            ]);
+
+            $csrfToken = $tokenRes->getHeaderLine('x-csrf-token');
+            if (empty($csrfToken)) {
+                Log::error('SAP Contract Requisition CSRF Token fetch failed: HTTP ' . $tokenRes->getStatusCode());
+                return [
+                    'success' => false,
+                    'status' => $tokenRes->getStatusCode(),
+                    'message' => 'Failed to obtain CSRF token for Contract Requisition from SAP S/4HANA Cloud (HTTP ' . $tokenRes->getStatusCode() . ')',
+                    'response' => [],
+                    'payload' => $payload,
+                ];
+            }
+
+            // 2. Post to ContractRequisition
+            $startTime = microtime(true);
+            $postRes = $client->request('POST', $endpoint, [
+                'auth' => [$username, $password],
+                'headers' => [
+                    'x-csrf-token' => $csrfToken,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                ],
+                'cookies' => $cookieJar,
+                'json' => $payload,
+            ]);
+
+            $durationMs = round((microtime(true) - $startTime) * 1000);
+            $statusCode = $postRes->getStatusCode();
+            $body = (string) $postRes->getBody();
+            $resJson = json_decode($body, true) ?: [];
+
+            if ($statusCode === 201 || $statusCode === 200) {
+                return [
+                    'success' => true,
+                    'status' => $statusCode,
+                    'latency_ms' => $durationMs,
+                    'message' => "Successfully posted Contract Requisition {$contractRequisition->cr_no} to SAP S/4HANA Cloud in {$durationMs}ms.",
+                    'response' => $resJson,
+                    'payload' => $payload,
+                ];
+            }
+
+            // Parse SAP error message
+            $errorMessage = $resJson['error']['message'] ?? ("HTTP {$statusCode}: " . substr($body, 0, 300));
+            if (!empty($resJson['error']['details']) && is_array($resJson['error']['details'])) {
+                $detailMsgs = array_filter(array_column($resJson['error']['details'], 'message'));
+                if (!empty($detailMsgs)) {
+                    $errorMessage .= ' - ' . implode('; ', $detailMsgs);
+                }
+            }
+
+            Log::warning("SAP Contract Requisition POST failed with HTTP {$statusCode}: {$errorMessage}", [
+                'payload' => $payload,
+                'response' => $body,
+            ]);
+
+            return [
+                'success' => false,
+                'status' => $statusCode,
+                'latency_ms' => $durationMs,
+                'message' => $errorMessage,
+                'response' => $resJson,
+                'payload' => $payload,
+            ];
+        } catch (\Exception $e) {
+            Log::error('Exception posting Contract Requisition to SAP: ' . $e->getMessage());
+
+            return [
+                'success' => false,
+                'status' => 500,
+                'message' => 'Connection error: ' . $e->getMessage(),
+                'response' => [],
+                'payload' => $payload,
             ];
         }
     }

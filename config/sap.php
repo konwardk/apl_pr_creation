@@ -82,5 +82,16 @@ return [
             'SAP_ATTACHMENT_CONTENT_ENDPOINT',
             env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/AttachmentContentSet'
         ),
+
+        // SAP Custom Business Object API for Contract Requisition (YY1_API_CONTRACTREQUISITION)
+        'contract_requisition' => env(
+            'SAP_CONTRACT_REQUISITION_ENDPOINT',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/ContractRequisition'
+        ),
+
+        'contract_requisition_service_root' => env(
+            'SAP_CONTRACT_REQUISITION_SERVICE_ROOT',
+            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/'
+        ),
     ],
 ];

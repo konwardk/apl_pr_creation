@@ -201,6 +201,7 @@ export default function PurchaseRequisitionForm({
         cr_no: initialCr.cr_no || defaultCrNo || '',
         pr_number_sap: initialCr.pr_number_sap || initialData?.sap_pr_number || '',
         contract_title: initialCr.contract_title || '',
+        scope_of_work: initialCr.scope_of_work || '',
         payment_terms: initialCr.payment_terms || '0001',
         bidders_qualification_criteria: initialCr.bidders_qualification_criteria || '',
         special_terms_condition: initialCr.special_terms_condition || '',
@@ -236,13 +237,23 @@ export default function PurchaseRequisitionForm({
             rows: 3,
         },
         {
+            id: 'scope_of_work',
+            label: 'Scope of Work',
+            field: 'scope_of_work',
+            title: 'Scope of Work (ScopeOfWork)',
+            placeholder: 'Enter detailed scope of work, technical specifications, project boundaries, or deliverables...',
+            maxLength: 500,
+            helpText: 'Detailed description of work to be performed, deliverables, or services (SAP: ScopeOfWork, max 500 chars).',
+            rows: 4,
+        },
+        {
             id: 'payment_terms',
             label: 'Payment Terms',
             field: 'payment_terms',
             title: 'Payment Terms (PaymentTerms)',
             placeholder: 'e.g. 0001 (Immediate Payment) or Net 30 days upon submission of verified invoice...',
-            maxLength: 20,
-            helpText: 'Standard payment term key or description (SAP: PaymentTerms, max 20 chars).',
+            maxLength: 500,
+            helpText: 'Standard payment term key or description (SAP: PaymentTerms, max 500 chars).',
             rows: 3,
         },
         {
@@ -498,6 +509,7 @@ export default function PurchaseRequisitionForm({
                     cr_no: icr.cr_no || defaultCrNo || '',
                     pr_number_sap: icr.pr_number_sap || initialData.sap_pr_number || '',
                     contract_title: icr.contract_title || '',
+                    scope_of_work: icr.scope_of_work || '',
                     payment_terms: icr.payment_terms || '0001',
                     bidders_qualification_criteria: icr.bidders_qualification_criteria || '',
                     special_terms_condition: icr.special_terms_condition || '',
@@ -555,6 +567,8 @@ export default function PurchaseRequisitionForm({
     const [sapAccountAssignmentCategoriesCache, setSapAccountAssignmentCategoriesCache] = useState<SearchHelpOption[]>([]);
     const [sapPlantsCache, setSapPlantsCache] = useState<SearchHelpOption[]>([]);
     const [sapMaterialGroupsCache, setSapMaterialGroupsCache] = useState<SearchHelpOption[]>([]);
+    const [sapGlAccountsCache, setSapGlAccountsCache] = useState<SearchHelpOption[]>([]);
+    const [sapCostCentersCache, setSapCostCentersCache] = useState<SearchHelpOption[]>([]);
 
     // Valuation lookup tracking & debouncing
     const [fetchingValuation, setFetchingValuation] = useState<Record<string, boolean>>({});
@@ -1091,6 +1105,140 @@ export default function PurchaseRequisitionForm({
         }
     };
 
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_I_GLACCOUNTINCOMPANYCO_CDS) API for G/L Account F4 Search Help.
+     * Uses GLAccount, CompanyCode, and GLAccountName.
+     */
+    const handleOpenGlAccountSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+        const targetCompanyCode = companyCode || '1000';
+
+        if (sapGlAccountsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select G/L Account - SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS)',
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS • ${sapGlAccountsCache.length} accounts)`,
+                options: sapGlAccountsCache,
+                selectedCode: currentCode || '',
+                field: 'gl_account',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select G/L Account - SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS)...',
+            options: dataCatalog.glAccounts || [],
+            selectedCode: currentCode || '',
+            field: 'gl_account',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch(`/sap-gl-accounts?companyCode=${encodeURIComponent(targetCompanyCode)}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapGlAccountsCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS • ${data.items.length} accounts)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No G/L accounts returned from SAP CDS View',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch G/L accounts from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud G/L Account CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_COSTCENTER_CDS) API for Cost Center F4 Search Help.
+     * Uses CostCenter, ControllingArea, CompanyCode, ProfitCenter, and Plant.
+     */
+    const handleOpenCostCenterSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+        const targetCompanyCode = companyCode || '1000';
+
+        if (sapCostCentersCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Cost Center - SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS)',
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS • ${sapCostCentersCache.length} cost centers)`,
+                options: sapCostCentersCache,
+                selectedCode: currentCode || '',
+                field: 'cost_center',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Cost Center - SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS)...',
+            options: dataCatalog.costCenters || [],
+            selectedCode: currentCode || '',
+            field: 'cost_center',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch(`/sap-cost-centers?companyCode=${encodeURIComponent(targetCompanyCode)}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapCostCentersCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS • ${data.items.length} cost centers)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No cost centers returned from SAP CDS View',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch cost centers from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud Cost Center CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
     const handleSelectSearchHelp = (opt: SearchHelpOption) => {
         const { field, targetIndex } = searchHelpState;
         const targetIdx = targetIndex !== undefined ? targetIndex : activeItemIndex;
@@ -1144,6 +1292,36 @@ export default function PurchaseRequisitionForm({
                     return {
                         ...item,
                         account_assignment_category: catCode,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting G/L Account:
+        if (field === 'gl_account') {
+            const glCode = opt.GLAccount || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        gl_account: glCode,
+                    };
+                })
+            );
+            return;
+        }
+
+        // Special handling when selecting Cost Center:
+        if (field === 'cost_center') {
+            const ccCode = opt.CostCenter || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        cost_center: ccCode,
                     };
                 })
             );
@@ -4001,29 +4179,15 @@ export default function PurchaseRequisitionForm({
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'gl_account',
-                                                        'Select G/L Account (Search Help)',
-                                                        dataCatalog.glAccounts,
-                                                        currentItem?.gl_account,
-                                                        activeItemIndex
-                                                    );
+                                                    handleOpenGlAccountSearchHelp(activeItemIndex, currentItem?.gl_account);
                                                 }
                                             }}
-                                            placeholder="40000000"
+                                            placeholder="12545200"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
                                             type="button"
-                                            onClick={() =>
-                                                openSearchHelp(
-                                                    'gl_account',
-                                                    'Select G/L Account (Search Help)',
-                                                    dataCatalog.glAccounts,
-                                                    currentItem?.gl_account,
-                                                    activeItemIndex
-                                                )
-                                            }
+                                            onClick={() => handleOpenGlAccountSearchHelp(activeItemIndex, currentItem?.gl_account)}
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
                                             title="G/L Account (Search Help - F4)"
                                         >
@@ -4031,7 +4195,19 @@ export default function PurchaseRequisitionForm({
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        General Ledger account for expenditure or consumption posting
+                                        {(() => {
+                                            const selectedGl = (sapGlAccountsCache.length > 0 ? sapGlAccountsCache : (dataCatalog.glAccounts || [])).find(
+                                                (g: any) => (g.GLAccount || g.code) === currentItem?.gl_account
+                                            );
+                                            if (selectedGl) {
+                                                return (
+                                                    <span className="font-semibold text-blue-700">
+                                                        {selectedGl.GLAccountName || selectedGl.name} {selectedGl.CompanyCode ? `(${selectedGl.CompanyCode})` : ''}
+                                                    </span>
+                                                );
+                                            }
+                                            return 'General Ledger account (YY1_I_GLACCOUNTINCOMPANYCO_CDS)';
+                                        })()}
                                     </span>
                                 </div>
 
@@ -4048,37 +4224,35 @@ export default function PurchaseRequisitionForm({
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'cost_center',
-                                                        'Select Cost Center (Search Help)',
-                                                        dataCatalog.costCenters,
-                                                        currentItem?.cost_center,
-                                                        activeItemIndex
-                                                    );
+                                                    handleOpenCostCenterSearchHelp(activeItemIndex, currentItem?.cost_center);
                                                 }
                                             }}
-                                            placeholder="12001101"
+                                            placeholder="10101PCC01"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
                                             type="button"
-                                            onClick={() =>
-                                                openSearchHelp(
-                                                    'cost_center',
-                                                    'Select Cost Center (Search Help)',
-                                                    dataCatalog.costCenters,
-                                                    currentItem?.cost_center,
-                                                    activeItemIndex
-                                                )
-                                            }
+                                            onClick={() => handleOpenCostCenterSearchHelp(activeItemIndex, currentItem?.cost_center)}
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Cost Center (Search Help - F4)"
+                                            title="F4 Search Help - Cost Center (SAP CDS: YY1_COSTCENTER_CDS)"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Controlling area cost center for cost allocation
+                                        {(() => {
+                                            const selectedCc = (sapCostCentersCache.length > 0 ? sapCostCentersCache : (dataCatalog.costCenters || [])).find(
+                                                (c: any) => (c.CostCenter || c.code) === currentItem?.cost_center
+                                            );
+                                            if (selectedCc) {
+                                                return (
+                                                    <span className="text-[#0070f2] font-medium">
+                                                        ✓ CoCode: {selectedCc.CompanyCode || '1000'} • Area: {selectedCc.ControllingArea || 'A000'} {selectedCc.ProfitCenter ? `• PC: ${selectedCc.ProfitCenter}` : ''}
+                                                    </span>
+                                                );
+                                            }
+                                            return 'Controlling area cost center for cost allocation (YY1_COSTCENTER_CDS)';
+                                        })()}
                                     </span>
                                 </div>
                             </div>

@@ -18,6 +18,7 @@ class ContractRequisition extends Model
         'purchase_requisition_id',
         'sap_uuid',
         'contract_title',
+        'scope_of_work',
         'payment_terms',
         'bidders_qualification_criteria',
         'special_terms_condition',
@@ -80,7 +81,7 @@ class ContractRequisition extends Model
 
     /**
      * Convert this Contract Requisition record into the exact SAP S/4HANA OData V4 CBO Payload
-     * based on YY1_API_CONTRACTREQUISITION specification.
+     * based on YY1_API_CONTRACTREQUISITION specification (v2).
      */
     public function toSapODataV4Payload(?string $sapPrNumber = null): array
     {
@@ -90,12 +91,13 @@ class ContractRequisition extends Model
             'CRNo' => (string) substr((string) ($this->cr_no ?: ''), 0, 20),
             'PRNumber' => (string) substr((string) $prNum, 0, 20),
             'ContractTitle' => (string) substr((string) ($this->contract_title ?? ''), 0, 500),
-            'PaymentTerms' => (string) substr((string) ($this->payment_terms ?? ''), 0, 20),
+            'ScopeOfWork' => (string) substr((string) ($this->scope_of_work ?? ''), 0, 500),
+            'PaymentTerms' => (string) substr((string) ($this->payment_terms ?? ''), 0, 500),
             'BiddersQualificationCriteria' => (string) substr((string) ($this->bidders_qualification_criteria ?? ''), 0, 500),
-            'SpecialTermsCondition' => (string) substr((string) ($this->special_terms_condition ?? ''), 0, 20),
+            'SpecialTermsCondition' => (string) substr((string) ($this->special_terms_condition ?? ''), 0, 500),
             'GuaranteeWarrantyPeriod' => (string) substr((string) ($this->guarantee_warranty_period ?? ''), 0, 500),
             'DefectLiabilityPeriod' => (string) substr((string) ($this->defect_liability_period ?? ''), 0, 50),
-            'Others' => (string) substr((string) ($this->others ?? ''), 0, 20),
+            'Others' => (string) substr((string) ($this->others ?? ''), 0, 500),
             'RequisitionerName' => (string) substr((string) ($this->requisitioner_name ?? ''), 0, 100),
             'ReqDesignation' => (string) substr((string) ($this->req_designation ?? ''), 0, 500),
             'ReqDepartment' => (string) substr((string) ($this->req_department ?? ''), 0, 500),
@@ -107,10 +109,6 @@ class ContractRequisition extends Model
             'CustomField2' => (string) substr((string) ($this->custom_field_2 ?? ''), 0, 500),
             'CustomField3' => (string) substr((string) ($this->custom_field_3 ?? ''), 0, 500),
             'CustomField4' => (string) substr((string) ($this->custom_field_4 ?? ''), 0, 500),
-            'CustomField5' => (string) substr((string) ($this->custom_field_5 ?? ''), 0, 500),
-            'CustomField6' => (string) substr((string) ($this->custom_field_6 ?? ''), 0, 500),
-            'CustomField7' => (string) substr((string) ($this->custom_field_7 ?? ''), 0, 500),
-            'CustomField8' => (string) substr((string) ($this->custom_field_8 ?? ''), 0, 500),
             'SAPDescription' => (string) substr((string) ($this->sap_description ?: ($this->contract_title ?: 'Contract Requisition')), 0, 80),
         ];
     }

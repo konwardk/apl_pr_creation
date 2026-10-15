@@ -79,6 +79,31 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Fetch G/L Accounts from SAP S/4HANA Cloud CDS View (YY1_I_GLACCOUNTINCOMPANYCO_CDS)
+     */
+    public function getGlAccounts(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $companyCode = $request->query('companyCode') ?? $request->query('company_code') ?? '1000';
+        $result = $this->sapService->fetchGlAccountsFromCdsView($search, $companyCode);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch Cost Centers from SAP S/4HANA Cloud CDS View (YY1_COSTCENTER_CDS)
+     */
+    public function getCostCenters(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $companyCode = $request->query('companyCode') ?? $request->query('company_code') ?? '1000';
+        $controllingArea = $request->query('controllingArea') ?? $request->query('controlling_area');
+        $result = $this->sapService->fetchCostCentersFromCdsView($search, $companyCode, $controllingArea);
+
+        return response()->json($result);
+    }
+
+    /**
      * Display the purchase requisition creation page.
      */
     public function create(Request $request): Response
@@ -326,16 +351,15 @@ class PurchaseRequisitionController extends Controller
             ['code' => 'SL01', 'name' => 'SL01 - General Warehouse 1'],
         ];
 
-        $costCenters = [
-            ['code' => '10101PCC01', 'name' => '10101PCC01 - Plant Cost Center 01'],
-            ['code' => '12001101', 'name' => '12001101 - Chemical Processing Plant 1200'],
-        ];
+        $ccResult = $this->sapService->fetchCostCentersFromCdsView();
+        $costCenters = ($ccResult['success'] ?? false && !empty($ccResult['items']))
+            ? $ccResult['items']
+            : $this->sapService->getFormattedFallbackCostCenters();
 
-        $glAccounts = [
-            ['code' => '65301000', 'name' => '65301000 - Consumed Materials'],
-            ['code' => '410100001', 'name' => '410100001 - Raw Material Consumption'],
-            ['code' => '410100006', 'name' => '410100006 - Operating Supplies Expense'],
-        ];
+        $glResult = $this->sapService->fetchGlAccountsFromCdsView();
+        $glAccounts = ($glResult['success'] ?? false && !empty($glResult['items']))
+            ? $glResult['items']
+            : $this->sapService->getFormattedFallbackGlAccounts();
 
         return [
             'headerOptions' => $headerOptions,
@@ -458,12 +482,13 @@ class PurchaseRequisitionController extends Controller
             'contract_requisition' => 'nullable|array',
             'contract_requisition.cr_no' => 'nullable|string|max:20',
             'contract_requisition.contract_title' => 'nullable|string|max:500',
-            'contract_requisition.payment_terms' => 'nullable|string|max:50',
-            'contract_requisition.bidders_qualification_criteria' => 'nullable|string',
-            'contract_requisition.special_terms_condition' => 'nullable|string',
+            'contract_requisition.scope_of_work' => 'nullable|string|max:500',
+            'contract_requisition.payment_terms' => 'nullable|string|max:500',
+            'contract_requisition.bidders_qualification_criteria' => 'nullable|string|max:500',
+            'contract_requisition.special_terms_condition' => 'nullable|string|max:500',
             'contract_requisition.guarantee_warranty_period' => 'nullable|string|max:500',
-            'contract_requisition.defect_liability_period' => 'nullable|string|max:500',
-            'contract_requisition.others' => 'nullable|string',
+            'contract_requisition.defect_liability_period' => 'nullable|string|max:50',
+            'contract_requisition.others' => 'nullable|string|max:500',
             'contract_requisition.requisitioner_name' => 'nullable|string|max:100',
             'contract_requisition.req_designation' => 'nullable|string|max:500',
             'contract_requisition.req_department' => 'nullable|string|max:500',
@@ -647,13 +672,14 @@ class PurchaseRequisitionController extends Controller
 
             // Create Contract Requisition if submitted
             $crData = $request->input('contract_requisition');
-            if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']))) {
+            if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
                 $crNo = !empty($crData['cr_no']) ? $crData['cr_no'] : ('CR-' . date('Y') . '-' . str_pad($nextSeq, 5, '0', STR_PAD_LEFT));
                 ContractRequisition::create([
                     'cr_no' => $crNo,
                     'pr_number_sap' => $pr->sap_pr_number,
                     'purchase_requisition_id' => $pr->id,
                     'contract_title' => $crData['contract_title'] ?? null,
+                    'scope_of_work' => $crData['scope_of_work'] ?? null,
                     'payment_terms' => $crData['payment_terms'] ?? null,
                     'bidders_qualification_criteria' => $crData['bidders_qualification_criteria'] ?? null,
                     'special_terms_condition' => $crData['special_terms_condition'] ?? null,
@@ -926,12 +952,13 @@ class PurchaseRequisitionController extends Controller
             'contract_requisition' => 'nullable|array',
             'contract_requisition.cr_no' => 'nullable|string|max:20',
             'contract_requisition.contract_title' => 'nullable|string|max:500',
-            'contract_requisition.payment_terms' => 'nullable|string|max:50',
-            'contract_requisition.bidders_qualification_criteria' => 'nullable|string',
-            'contract_requisition.special_terms_condition' => 'nullable|string',
+            'contract_requisition.scope_of_work' => 'nullable|string|max:500',
+            'contract_requisition.payment_terms' => 'nullable|string|max:500',
+            'contract_requisition.bidders_qualification_criteria' => 'nullable|string|max:500',
+            'contract_requisition.special_terms_condition' => 'nullable|string|max:500',
             'contract_requisition.guarantee_warranty_period' => 'nullable|string|max:500',
-            'contract_requisition.defect_liability_period' => 'nullable|string|max:500',
-            'contract_requisition.others' => 'nullable|string',
+            'contract_requisition.defect_liability_period' => 'nullable|string|max:50',
+            'contract_requisition.others' => 'nullable|string|max:500',
             'contract_requisition.requisitioner_name' => 'nullable|string|max:100',
             'contract_requisition.req_designation' => 'nullable|string|max:500',
             'contract_requisition.req_department' => 'nullable|string|max:500',
@@ -1130,13 +1157,14 @@ class PurchaseRequisitionController extends Controller
 
             // Update or create Contract Requisition
             $crData = $request->input('contract_requisition');
-            if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']))) {
+            if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
                 $cr = $purchaseRequisition->contractRequisition ?? $purchaseRequisition->contractRequisitionLocal;
                 $crFields = [
                     'cr_no' => !empty($crData['cr_no']) ? $crData['cr_no'] : ($cr?->cr_no ?? ('CR-' . date('Y') . '-' . str_pad($purchaseRequisition->id, 5, '0', STR_PAD_LEFT))),
                     'pr_number_sap' => $purchaseRequisition->sap_pr_number,
                     'purchase_requisition_id' => $purchaseRequisition->id,
                     'contract_title' => $crData['contract_title'] ?? null,
+                    'scope_of_work' => $crData['scope_of_work'] ?? null,
                     'payment_terms' => $crData['payment_terms'] ?? null,
                     'bidders_qualification_criteria' => $crData['bidders_qualification_criteria'] ?? null,
                     'special_terms_condition' => $crData['special_terms_condition'] ?? null,

@@ -53,6 +53,18 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_MATERIALGROUP_CDS/YY1_MATERIALGROUP?$format=json'
         ),
 
+        // CDS View for G/L Accounts in Company Code (YY1_I_GLACCOUNTINCOMPANYCO_CDS)
+        'gl_accounts' => env(
+            'SAP_GL_ACCOUNT_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_I_GLACCOUNTINCOMPANYCO_CDS/YY1_I_GLACCOUNTINCOMPANYCO?$format=json'
+        ),
+
+        // CDS View for Cost Centers (YY1_COSTCENTER_CDS)
+        'cost_centers' => env(
+            'SAP_COST_CENTER_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_COSTCENTER_CDS/YY1_COSTCENTER?$format=json'
+        ),
+
         // OData V4 PR Service Root (for CSRF Token Fetch)
         'service_root' => env(
             'SAP_SERVICE_ROOT_ENDPOINT',

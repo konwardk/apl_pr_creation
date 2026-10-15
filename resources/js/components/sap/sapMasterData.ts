@@ -121,8 +121,12 @@ export const defaultSapMasterData: SapMasterDataConfig = {
         { code: 'SL01', name: 'SL01 - General Warehouse 1', extra: 'Plant 1300 Warehouse' },
     ],
     costCenters: [
-        { code: '10101PCC01', name: '10101PCC01 - Plant Cost Center 01', extra: 'Default Manufacturing Cost Center' },
-        { code: '12001101', name: '12001101 - Chemical Processing Plant 1200', extra: 'APL Main Manufacturing Division' },
+        { code: '10101PCC01', name: '10101PCC01', CostCenter: '10101PCC01', ControllingArea: 'A000', CompanyCode: '1000', ProfitCenter: '1010PC0010', Plant: '', extra: 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010' },
+        { code: '10102PCC02', name: '10102PCC02', CostCenter: '10102PCC02', ControllingArea: 'A000', CompanyCode: '1000', ProfitCenter: '1010PC0010', Plant: '', extra: 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010' },
+        { code: '10102PCC03', name: '10102PCC03', CostCenter: '10102PCC03', ControllingArea: 'A000', CompanyCode: '1000', ProfitCenter: '1010PC0010', Plant: '', extra: 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010' },
+        { code: '10702ACC02', name: '10702ACC02', CostCenter: '10702ACC02', ControllingArea: 'A000', CompanyCode: '1000', ProfitCenter: '1070PC0010', Plant: '', extra: 'Area: A000 • Company: 1000 • Profit Center: 1070PC0010' },
+        { code: '10705ACC05', name: '10705ACC05', CostCenter: '10705ACC05', ControllingArea: 'A000', CompanyCode: '1000', ProfitCenter: '1070PC0010', Plant: '', extra: 'Area: A000 • Company: 1000 • Profit Center: 1070PC0010' },
+        { code: '12001101', name: '12001101', CostCenter: '12001101', ControllingArea: 'A000', CompanyCode: '1000', ProfitCenter: '1200PC0001', Plant: '1200', extra: 'Area: A000 • Company: 1000 • Profit Center: 1200PC0001' },
     ],
     glAccounts: [
         { code: '65301000', name: '65301000 - Consumed Materials', extra: 'Chart of Accounts YCOA - Consumables Expense' },

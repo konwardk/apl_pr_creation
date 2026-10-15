@@ -20,14 +20,15 @@ return new class extends Migration
             $table->foreignId('purchase_requisition_id')->nullable()->constrained('purchase_requisitions')->cascadeOnDelete();
             $table->uuid('sap_uuid')->nullable(); // SAP UUID (Edm.Guid)
 
-            // Header & Contract Specifications
-            $table->string('contract_title', 500)->nullable(); // ContractTitle
-            $table->string('payment_terms', 50)->nullable(); // PaymentTerms
-            $table->text('bidders_qualification_criteria')->nullable(); // BiddersQualificationCriteria (max 500 in SAP)
-            $table->text('special_terms_condition')->nullable(); // SpecialTermsCondition
-            $table->string('guarantee_warranty_period', 500)->nullable(); // GuaranteeWarrantyPeriod
-            $table->string('defect_liability_period', 500)->nullable(); // DefectLiabilityPeriod
-            $table->text('others')->nullable(); // Others
+            // Header & Contract Specifications (YY1_API_CONTRACTREQUISITION v2)
+            $table->string('contract_title', 500)->nullable(); // ContractTitle (max 500)
+            $table->string('scope_of_work', 500)->nullable(); // ScopeOfWork (max 500)
+            $table->string('payment_terms', 500)->nullable(); // PaymentTerms (max 500)
+            $table->string('bidders_qualification_criteria', 500)->nullable(); // BiddersQualificationCriteria (max 500)
+            $table->string('special_terms_condition', 500)->nullable(); // SpecialTermsCondition (max 500)
+            $table->string('guarantee_warranty_period', 500)->nullable(); // GuaranteeWarrantyPeriod (max 500)
+            $table->string('defect_liability_period', 50)->nullable(); // DefectLiabilityPeriod (max 50)
+            $table->string('others', 500)->nullable(); // Others (max 500)
 
             // Requisitioner Information
             $table->string('requisitioner_name', 100)->nullable(); // RequisitionerName

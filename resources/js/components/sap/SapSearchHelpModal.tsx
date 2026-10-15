@@ -35,8 +35,12 @@ export default function SapSearchHelpModal({
         const q = searchQuery.toLowerCase().trim();
         if (!q) return options;
         return options.filter((opt) => {
-            const product = (opt.Product || opt.MaterialGroup || opt.code || '').toLowerCase();
-            const productName = (opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.name || '').toLowerCase();
+            const product = (opt.Product || opt.MaterialGroup || opt.GLAccount || opt.CostCenter || opt.code || '').toLowerCase();
+            const productName = (opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.GLAccountName || opt.name || '').toLowerCase();
+            const companyCode = (opt.CompanyCode || opt.companyCode || '').toLowerCase();
+            const controllingArea = (opt.ControllingArea || opt.controllingArea || '').toLowerCase();
+            const profitCenter = (opt.ProfitCenter || opt.profitCenter || '').toLowerCase();
+            const longName = (opt.GLAccountLongName || '').toLowerCase();
             const plant = (opt.Plant || opt.plant || opt.ValuationArea || '').toLowerCase();
             const extra = (opt.extra || '').toLowerCase();
             const uom = (opt.BaseUnit || opt.UnitOfMeasure || opt.uom || '').toLowerCase();
@@ -50,6 +54,10 @@ export default function SapSearchHelpModal({
             return (
                 product.includes(q) ||
                 productName.includes(q) ||
+                companyCode.includes(q) ||
+                controllingArea.includes(q) ||
+                profitCenter.includes(q) ||
+                longName.includes(q) ||
                 plant.includes(q) ||
                 supplier.includes(q) ||
                 extra.includes(q) ||
@@ -70,11 +78,20 @@ export default function SapSearchHelpModal({
         filteredOptions.some((o) => o.MaterialGroup || o.MaterialGroupName) ||
         title.toLowerCase().includes('material group')
     );
-    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || filteredOptions.some((o) => o.materialType);
+    const isGlAccountSearch = !isMaterialSearch && !isMaterialGroupSearch && (
+        filteredOptions.some((o) => o.GLAccount || o.GLAccountName) ||
+        title.toLowerCase().includes('g/l account') ||
+        title.toLowerCase().includes('gl account')
+    );
+    const isCostCenterSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && (
+        filteredOptions.some((o) => o.CostCenter || o.ControllingArea) ||
+        title.toLowerCase().includes('cost center')
+    );
+    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || filteredOptions.some((o) => o.materialType);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className={`relative w-full ${isMaterialSearch ? 'max-w-5xl' : (isMaterialGroupSearch || hasExtendedColumns) ? 'max-w-3xl' : 'max-w-xl'} rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}>
+            <div className={`relative w-full ${isMaterialSearch ? 'max-w-5xl' : (isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || hasExtendedColumns) ? 'max-w-4xl' : 'max-w-xl'} rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}>
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-[#d9e2ec] px-5 py-3.5 bg-[#f8fafc]">
                     <div className="flex items-center gap-2.5">
@@ -103,7 +120,17 @@ export default function SapSearchHelpModal({
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder={isMaterialSearch ? "Search by Product (Material #), Plant, ProductType, UoM, or Price Control..." : isMaterialGroupSearch ? "Search by Material Group code (e.g. 100001, 110001) or description (e.g. Acids, Pipes)..." : "Type to search code or description..."}
+                            placeholder={
+                                isMaterialSearch
+                                    ? "Search by Product (Material #), Plant, ProductType, UoM, or Price Control..."
+                                    : isMaterialGroupSearch
+                                    ? "Search by Material Group code (e.g. 100001, 110001) or description (e.g. Acids, Pipes)..."
+                                    : isGlAccountSearch
+                                    ? "Search by G/L Account # (e.g. 12545200), Company Code (e.g. 1000), or Account Name..."
+                                    : isCostCenterSearch
+                                    ? "Search by Cost Center (e.g. 10101PCC01), Profit Center (e.g. 1010PC0010), Area (e.g. A000)..."
+                                    : "Type to search code or description..."
+                            }
                             autoFocus
                             className="h-8.5 w-full rounded-md border border-[#d9e2ec] pl-9 pr-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                         />
@@ -154,6 +181,21 @@ export default function SapSearchHelpModal({
                                             <th className="py-2.5 px-4">Group Name / Description</th>
                                             <th className="py-2.5 px-4 w-44">SAP Classification</th>
                                         </>
+                                    ) : isGlAccountSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-36 font-mono">G/L Account</th>
+                                            <th className="py-2.5 px-3 w-28 text-center">Company Code</th>
+                                            <th className="py-2.5 px-4">G/L Account Name</th>
+                                            <th className="py-2.5 px-4">Long Description</th>
+                                        </>
+                                    ) : isCostCenterSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-36 font-mono">Cost Center</th>
+                                            <th className="py-2.5 px-3 w-28 text-center">Company Code</th>
+                                            <th className="py-2.5 px-3 w-32 text-center">Controlling Area</th>
+                                            <th className="py-2.5 px-3.5 w-32">Profit Center</th>
+                                            <th className="py-2.5 px-4">Scope / Description</th>
+                                        </>
                                     ) : (
                                         <>
                                             <th className="py-2.5 px-4 w-32">Code / ID</th>
@@ -168,8 +210,8 @@ export default function SapSearchHelpModal({
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt, idx) => {
-                                    const optCode = opt.MaterialGroup ?? opt.Product ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
-                                    const optName = opt.MaterialGroupName ?? opt.ProductName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
+                                    const optCode = opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
+                                    const optName = opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
                                     const isSelected = selectedCode === optCode;
 
                                     return (
@@ -297,6 +339,55 @@ export default function SapSearchHelpModal({
                                                         <span className="inline-flex items-center gap-1 rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-700">
                                                             {opt.extra || 'SAP Material Group'}
                                                         </span>
+                                                    </td>
+                                                </>
+                                            ) : isGlAccountSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-mono">
+                                                            {opt.GLAccount || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span className="inline-flex rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-[11px] font-bold text-[#0070f2]">
+                                                            {opt.CompanyCode || opt.companyCode || '1000'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-semibold text-[#1c2d42]">
+                                                        {opt.GLAccountName || opt.name}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-[11px] text-[#556b82]">
+                                                        {opt.GLAccountLongName || opt.extra || '-'}
+                                                    </td>
+                                                </>
+                                            ) : isCostCenterSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-mono">
+                                                            {opt.CostCenter || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span className="inline-flex rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-[11px] font-bold text-[#0070f2]">
+                                                            {opt.CompanyCode || opt.companyCode || '1000'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span className="inline-flex rounded-md bg-purple-50 border border-purple-200 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                                                            {opt.ControllingArea || 'A000'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3.5 font-mono text-xs">
+                                                        {opt.ProfitCenter ? (
+                                                            <span className="inline-flex items-center gap-1 rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                                                                {opt.ProfitCenter}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-[11px] text-[#556b82]">
+                                                        {opt.Plant ? `Plant ${opt.Plant} • ` : ''}{opt.extra || 'Cost Center'}
                                                     </td>
                                                 </>
                                             ) : (

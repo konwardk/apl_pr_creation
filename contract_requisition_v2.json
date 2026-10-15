@@ -196,21 +196,9 @@
         "@SAP__common.Label": "ContractTitle",
         "@SAP__common.QuickInfo": "ContractTitle"
       },
-      "PaymentTerms": {
-        "$Type": "Edm.String",
-        "$MaxLength": 20,
-        "@SAP__common.Label": "PaymentTerms",
-        "@SAP__common.QuickInfo": "PaymentTerms"
-      },
-      "BiddersQualificationCriteria": {
-        "$Type": "Edm.String",
-        "$MaxLength": 500,
-        "@SAP__common.Label": "BiddersQualificationCriteria",
-        "@SAP__common.QuickInfo": "BiddersQualificationCriteria"
-      },
       "SpecialTermsCondition": {
         "$Type": "Edm.String",
-        "$MaxLength": 20,
+        "$MaxLength": 500,
         "@SAP__common.Label": "SpecialTermsCondition",
         "@SAP__common.QuickInfo": "SpecialTermsCondition"
       },
@@ -222,13 +210,13 @@
       },
       "DefectLiabilityPeriod": {
         "$Type": "Edm.String",
-        "$MaxLength": 500,
+        "$MaxLength": 50,
         "@SAP__common.Label": "DefectLiabilityPeriod",
         "@SAP__common.QuickInfo": "DefectLiabilityPeriod"
       },
       "Others": {
         "$Type": "Edm.String",
-        "$MaxLength": 20,
+        "$MaxLength": 500,
         "@SAP__common.Label": "Others",
         "@SAP__common.QuickInfo": "Others"
       },
@@ -249,18 +237,6 @@
         "$MaxLength": 500,
         "@SAP__common.Label": "ReqDepartment",
         "@SAP__common.QuickInfo": "ReqDepartment"
-      },
-      "TenderType": {
-        "$Type": "Edm.String",
-        "$MaxLength": 50,
-        "@SAP__common.Label": "TenderType",
-        "@SAP__common.QuickInfo": "TenderType"
-      },
-      "TenderEstimateValue": {
-        "$Type": "Edm.String",
-        "$MaxLength": 50,
-        "@SAP__common.Label": "TenderEstimateValue",
-        "@SAP__common.QuickInfo": "TenderEstimateValue"
       },
       "TotalPRValue": {
         "$Type": "Edm.String",
@@ -298,29 +274,35 @@
         "@SAP__common.Label": "CustomField4",
         "@SAP__common.QuickInfo": "CustomField4"
       },
-      "CustomField5": {
+      "TenderType": {
         "$Type": "Edm.String",
-        "$MaxLength": 500,
-        "@SAP__common.Label": "CustomField5",
-        "@SAP__common.QuickInfo": "CustomField5"
+        "$MaxLength": 50,
+        "@SAP__common.Label": "TenderType",
+        "@SAP__common.QuickInfo": "TenderType"
       },
-      "CustomField6": {
+      "TenderEstimateValue": {
         "$Type": "Edm.String",
-        "$MaxLength": 500,
-        "@SAP__common.Label": "CustomField6",
-        "@SAP__common.QuickInfo": "CustomField6"
+        "$MaxLength": 50,
+        "@SAP__common.Label": "TenderEstimateValue",
+        "@SAP__common.QuickInfo": "TenderEstimateValue"
       },
-      "CustomField7": {
+      "ScopeOfWork": {
         "$Type": "Edm.String",
         "$MaxLength": 500,
-        "@SAP__common.Label": "CustomField7",
-        "@SAP__common.QuickInfo": "CustomField7"
+        "@SAP__common.Label": "ScopeOfWork",
+        "@SAP__common.QuickInfo": "ScopeOfWork"
       },
-      "CustomField8": {
+      "PaymentTerms": {
         "$Type": "Edm.String",
         "$MaxLength": 500,
-        "@SAP__common.Label": "CustomField8",
-        "@SAP__common.QuickInfo": "CustomField8"
+        "@SAP__common.Label": "PaymentTerms",
+        "@SAP__common.QuickInfo": "PaymentTerms"
+      },
+      "BiddersQualificationCriteria": {
+        "$Type": "Edm.String",
+        "$MaxLength": 500,
+        "@SAP__common.Label": "BiddersQualificationCriteria",
+        "@SAP__common.QuickInfo": "BiddersQualificationCriteria"
       },
       "SAPLastChangedBy": {
         "$Type": "Edm.String",
@@ -478,3 +460,4 @@
     }
   }
 }
+```[cite: 3]

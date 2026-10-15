@@ -1691,4 +1691,529 @@ class SapMasterDataService
             ];
         }
     }
+
+    /**
+     * Fetch G/L Accounts from SAP S/4HANA Cloud CDS View
+     * YY1_I_GLACCOUNTINCOMPANYCO_CDS / YY1_I_GLACCOUNTINCOMPANYCO
+     */
+    public function fetchGlAccountsFromCdsView(
+        ?string $search = null,
+        ?string $companyCode = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.gl_accounts',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_I_GLACCOUNTINCOMPANYCO_CDS/YY1_I_GLACCOUNTINCOMPANYCO?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                $url = $baseUri . '?$format=json';
+
+                $response = $request->get($url);
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parseGlAccountODataItems($json);
+
+                    // Filter by company code if requested
+                    if (!empty($companyCode)) {
+                        $comp = strtoupper(trim($companyCode));
+                        $items = array_values(array_filter($items, function ($it) use ($comp) {
+                            return empty($it['CompanyCode']) || strtoupper($it['CompanyCode']) === $comp;
+                        }));
+                    }
+
+                    // Filter by search query if requested
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['name']), $term)
+                                || str_contains(strtolower($it['CompanyCode'] ?? ''), $term)
+                                || str_contains(strtolower($it['GLAccountLongName'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " G/L accounts live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP GL Account CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => $this->getFormattedFallbackGlAccounts($search, $companyCode),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP GL Account CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackGlAccounts($search, $companyCode),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (G/L Accounts)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackGlAccounts($search, $companyCode)),
+            'items' => $this->getFormattedFallbackGlAccounts($search, $companyCode),
+            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback G/L accounts.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized G/L Account items.
+     * Uses GLAccount, CompanyCode, and GLAccountName from YY1_I_GLACCOUNTINCOMPANYCO_CDS.
+     */
+    public function parseGlAccountODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        $seen = [];
+
+        foreach ($rawRecords as $rec) {
+            $glAccount = trim((string)($rec['GLAccount'] ?? $rec['gl_account'] ?? $rec['code'] ?? ''));
+            $companyCode = trim((string)($rec['CompanyCode'] ?? $rec['company_code'] ?? ''));
+            $glAccountName = trim((string)($rec['GLAccountName'] ?? $rec['gl_account_name'] ?? $rec['name'] ?? ''));
+            $glAccountLongName = trim((string)($rec['GLAccountLongName'] ?? $rec['gl_account_long_name'] ?? ''));
+            $language = trim((string)($rec['Language'] ?? 'EN'));
+
+            if (empty($glAccount)) {
+                continue;
+            }
+
+            $key = "{$companyCode}-{$glAccount}";
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $parsed[] = [
+                'code' => $glAccount,
+                'name' => $glAccountName ?: $glAccount,
+                'extra' => trim("Company: {$companyCode}" . ($glAccountLongName ? " • {$glAccountLongName}" : "")),
+                'GLAccount' => $glAccount,
+                'CompanyCode' => $companyCode,
+                'GLAccountName' => $glAccountName ?: $glAccount,
+                'GLAccountLongName' => $glAccountLongName ?: $glAccountName,
+                'Language' => $language,
+            ];
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Fallback G/L accounts formatted for search help and master data.
+     */
+    public function getFormattedFallbackGlAccounts(?string $search = null, ?string $companyCode = null): array
+    {
+        $fallbacks = [
+            [
+                'code' => '12545200',
+                'name' => 'Adj. Sold Recv. ARF',
+                'extra' => 'Company: 1000 • Adjustment of Sold Receivables (ARF Funder)',
+                'GLAccount' => '12545200',
+                'CompanyCode' => '1000',
+                'GLAccountName' => 'Adj. Sold Recv. ARF',
+                'GLAccountLongName' => 'Adjustment of Sold Receivables (ARF Funder)',
+                'Language' => 'EN',
+            ],
+            [
+                'code' => '65301000',
+                'name' => 'Consumed Materials',
+                'extra' => 'Company: 1000 • Consumed Materials & Components',
+                'GLAccount' => '65301000',
+                'CompanyCode' => '1000',
+                'GLAccountName' => 'Consumed Materials',
+                'GLAccountLongName' => 'Consumed Materials & Components',
+                'Language' => 'EN',
+            ],
+            [
+                'code' => '410100001',
+                'name' => 'Raw Material Consumption',
+                'extra' => 'Company: 1000 • Raw Material Consumption Expense',
+                'GLAccount' => '410100001',
+                'CompanyCode' => '1000',
+                'GLAccountName' => 'Raw Material Consumption',
+                'GLAccountLongName' => 'Raw Material Consumption Expense',
+                'Language' => 'EN',
+            ],
+            [
+                'code' => '410100006',
+                'name' => 'Operating Supplies Expense',
+                'extra' => 'Company: 1000 • Operating Supplies & Maintenance',
+                'GLAccount' => '410100006',
+                'CompanyCode' => '1000',
+                'GLAccountName' => 'Operating Supplies Expense',
+                'GLAccountLongName' => 'Operating Supplies & Maintenance',
+                'Language' => 'EN',
+            ],
+        ];
+
+        if (!empty($companyCode)) {
+            $comp = strtoupper(trim($companyCode));
+            $fallbacks = array_values(array_filter($fallbacks, fn($it) => strtoupper($it['CompanyCode']) === $comp));
+        }
+
+        if (!empty($search)) {
+            $term = strtolower(trim($search));
+            $fallbacks = array_values(array_filter($fallbacks, fn($it) =>
+                str_contains(strtolower($it['code']), $term) ||
+                str_contains(strtolower($it['name']), $term) ||
+                str_contains(strtolower($it['CompanyCode']), $term) ||
+                str_contains(strtolower($it['GLAccountLongName']), $term)
+            ));
+        }
+
+        return $fallbacks;
+    }
+
+    /**
+     * Fetch Cost Centers from SAP S/4HANA Cloud CDS View
+     * YY1_COSTCENTER_CDS / YY1_COSTCENTER
+     */
+    public function fetchCostCentersFromCdsView(
+        ?string $search = null,
+        ?string $companyCode = null,
+        ?string $controllingArea = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.cost_centers',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_COSTCENTER_CDS/YY1_COSTCENTER?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                $url = $baseUri . '?$format=json';
+
+                $response = $request->get($url);
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parseCostCenterODataItems($json);
+
+                    // Filter by company code if requested
+                    if (!empty($companyCode)) {
+                        $comp = strtoupper(trim($companyCode));
+                        $items = array_values(array_filter($items, function ($it) use ($comp) {
+                            return empty($it['CompanyCode']) || strtoupper($it['CompanyCode']) === $comp;
+                        }));
+                    }
+
+                    // Filter by controlling area if requested
+                    if (!empty($controllingArea)) {
+                        $ctrl = strtoupper(trim($controllingArea));
+                        $items = array_values(array_filter($items, function ($it) use ($ctrl) {
+                            return empty($it['ControllingArea']) || strtoupper($it['ControllingArea']) === $ctrl;
+                        }));
+                    }
+
+                    // Filter by search query if requested
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['CostCenter'] ?? ''), $term)
+                                || str_contains(strtolower($it['ProfitCenter'] ?? ''), $term)
+                                || str_contains(strtolower($it['CompanyCode'] ?? ''), $term)
+                                || str_contains(strtolower($it['ControllingArea'] ?? ''), $term)
+                                || str_contains(strtolower($it['extra'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_COSTCENTER_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " cost centers live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Cost Center CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => $this->getFormattedFallbackCostCenters($search, $companyCode),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Cost Center CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackCostCenters($search, $companyCode),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (Cost Centers)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackCostCenters($search, $companyCode)),
+            'items' => $this->getFormattedFallbackCostCenters($search, $companyCode),
+            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback cost centers.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Cost Center items.
+     * Uses CostCenter, ControllingArea, CompanyCode, ProfitCenter, and Plant from YY1_COSTCENTER_CDS.
+     */
+    public function parseCostCenterODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        $seen = [];
+
+        foreach ($rawRecords as $rec) {
+            $costCenter = trim((string)($rec['CostCenter'] ?? $rec['cost_center'] ?? $rec['code'] ?? ''));
+            $companyCode = trim((string)($rec['CompanyCode'] ?? $rec['company_code'] ?? ''));
+            $controllingArea = trim((string)($rec['ControllingArea'] ?? $rec['controlling_area'] ?? ''));
+            $profitCenter = trim((string)($rec['ProfitCenter'] ?? $rec['profit_center'] ?? ''));
+            $plant = trim((string)($rec['Plant'] ?? $rec['plant'] ?? ''));
+
+            if (empty($costCenter)) {
+                continue;
+            }
+
+            // Deduplicate by CostCenter + ControllingArea + CompanyCode
+            $key = "{$controllingArea}-{$companyCode}-{$costCenter}";
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $extraParts = [];
+            if (!empty($controllingArea)) {
+                $extraParts[] = "Area: {$controllingArea}";
+            }
+            if (!empty($companyCode)) {
+                $extraParts[] = "Company: {$companyCode}";
+            }
+            if (!empty($profitCenter)) {
+                $extraParts[] = "Profit Center: {$profitCenter}";
+            }
+            if (!empty($plant)) {
+                $extraParts[] = "Plant: {$plant}";
+            }
+
+            $parsed[] = [
+                'code' => $costCenter,
+                'name' => $costCenter,
+                'extra' => implode(' • ', $extraParts),
+                'CostCenter' => $costCenter,
+                'ControllingArea' => $controllingArea,
+                'CompanyCode' => $companyCode,
+                'ProfitCenter' => $profitCenter,
+                'Plant' => $plant,
+                'ValidityEndDate' => $rec['ValidityEndDate'] ?? null,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Fallback Cost Centers matching SAP YY1_COSTCENTER_CDS schema.
+     */
+    public function getFormattedFallbackCostCenters(?string $search = null, ?string $companyCode = null): array
+    {
+        $fallbacks = [
+            [
+                'code' => '10101PCC01',
+                'name' => '10101PCC01',
+                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010',
+                'CostCenter' => '10101PCC01',
+                'ControllingArea' => 'A000',
+                'CompanyCode' => '1000',
+                'ProfitCenter' => '1010PC0010',
+                'Plant' => '',
+            ],
+            [
+                'code' => '10102PCC02',
+                'name' => '10102PCC02',
+                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010',
+                'CostCenter' => '10102PCC02',
+                'ControllingArea' => 'A000',
+                'CompanyCode' => '1000',
+                'ProfitCenter' => '1010PC0010',
+                'Plant' => '',
+            ],
+            [
+                'code' => '10102PCC03',
+                'name' => '10102PCC03',
+                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010',
+                'CostCenter' => '10102PCC03',
+                'ControllingArea' => 'A000',
+                'CompanyCode' => '1000',
+                'ProfitCenter' => '1010PC0010',
+                'Plant' => '',
+            ],
+            [
+                'code' => '10702ACC02',
+                'name' => '10702ACC02',
+                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1070PC0010',
+                'CostCenter' => '10702ACC02',
+                'ControllingArea' => 'A000',
+                'CompanyCode' => '1000',
+                'ProfitCenter' => '1070PC0010',
+                'Plant' => '',
+            ],
+            [
+                'code' => '10705ACC05',
+                'name' => '10705ACC05',
+                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1070PC0010',
+                'CostCenter' => '10705ACC05',
+                'ControllingArea' => 'A000',
+                'CompanyCode' => '1000',
+                'ProfitCenter' => '1070PC0010',
+                'Plant' => '',
+            ],
+            [
+                'code' => '12001101',
+                'name' => '12001101',
+                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1200PC0001',
+                'CostCenter' => '12001101',
+                'ControllingArea' => 'A000',
+                'CompanyCode' => '1000',
+                'ProfitCenter' => '1200PC0001',
+                'Plant' => '1200',
+            ],
+        ];
+
+        if (!empty($companyCode)) {
+            $comp = strtoupper(trim($companyCode));
+            $fallbacks = array_values(array_filter($fallbacks, fn($it) => strtoupper($it['CompanyCode']) === $comp));
+        }
+
+        if (!empty($search)) {
+            $term = strtolower(trim($search));
+            $fallbacks = array_values(array_filter($fallbacks, fn($it) =>
+                str_contains(strtolower($it['code']), $term) ||
+                str_contains(strtolower($it['CostCenter']), $term) ||
+                str_contains(strtolower($it['CompanyCode']), $term) ||
+                str_contains(strtolower($it['ControllingArea']), $term) ||
+                str_contains(strtolower($it['ProfitCenter']), $term)
+            ));
+        }
+
+        return $fallbacks;
+    }
 }

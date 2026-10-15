@@ -29,6 +29,8 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('sap-account-assignment-categories', [PurchaseRequisitionController::class, 'getAccountAssignmentCategories'])->name('sap-account-assignment-categories.index');
     Route::get('sap-plants', [PurchaseRequisitionController::class, 'getPlants'])->name('sap-plants.index');
     Route::get('sap-material-groups', [PurchaseRequisitionController::class, 'getMaterialGroups'])->name('sap-material-groups.index');
+    Route::get('sap-gl-accounts', [PurchaseRequisitionController::class, 'getGlAccounts'])->name('sap-gl-accounts.index');
+    Route::get('sap-cost-centers', [PurchaseRequisitionController::class, 'getCostCenters'])->name('sap-cost-centers.index');
 
     // Super Administrator only: System Configuration (User Management & Department Management) & PR Configuration
     Route::middleware(['role:superadmin'])->group(function () {

@@ -81,6 +81,7 @@ interface ContractRequisition {
     cr_no?: string;
     pr_number_sap?: string;
     contract_title?: string;
+    scope_of_work?: string;
     payment_terms?: string;
     bidders_qualification_criteria?: string;
     special_terms_condition?: string;
@@ -144,6 +145,7 @@ interface ShowPrPageProps {
 
 const CR_TABS = [
     { id: 'contract_title', label: 'Contract Title', field: 'contract_title' },
+    { id: 'scope_of_work', label: 'Scope of Work', field: 'scope_of_work' },
     { id: 'payment_terms', label: 'Payment Terms', field: 'payment_terms' },
     { id: 'bidders_qualification_criteria', label: "Bidder's Qualification", field: 'bidders_qualification_criteria' },
     { id: 'special_terms_condition', label: 'Special Terms & Conditions', field: 'special_terms_condition' },

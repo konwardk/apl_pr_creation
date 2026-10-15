@@ -8,6 +8,7 @@ export interface ContractRequisitionData {
     purchase_requisition_id?: number;
     sap_uuid?: string;
     contract_title?: string;
+    scope_of_work?: string;
     payment_terms?: string;
     bidders_qualification_criteria?: string;
     special_terms_condition?: string;

@@ -23,6 +23,9 @@ import {
     X,
 } from 'lucide-react';
 
+import type { PurchasingOrganization } from '@/types';
+import PurchasingOrganizationsManager from './PurchasingOrganizationsManager';
+
 export interface SapPlantItem {
     code: string;
     name: string;
@@ -56,11 +59,19 @@ export interface SapPlantApiResponse {
 
 interface PlantsManagerProps {
     isSuperAdmin?: boolean;
+    initialPurchasingOrganizations?: PurchasingOrganization[];
+    defaultSection?: 'purchasing-orgs' | 'plants';
 }
 
-export default function PlantsManager({ isSuperAdmin = true }: PlantsManagerProps) {
+export default function PlantsManager({
+    isSuperAdmin = true,
+    initialPurchasingOrganizations = [],
+    defaultSection = 'purchasing-orgs',
+}: PlantsManagerProps) {
+    const [activeSection, setActiveSection] = useState<'purchasing-orgs' | 'plants'>(defaultSection);
     const [plants, setPlants] = useState<SapPlantItem[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+
     const [apiMeta, setApiMeta] = useState<Partial<SapPlantApiResponse>>({
         is_live: true,
         status: 200,
@@ -180,27 +191,89 @@ export default function PlantsManager({ isSuperAdmin = true }: PlantsManagerProp
 
     return (
         <div className="space-y-6">
-            {/* Top Overview & Action Header */}
-            <div className="rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-xs">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#0070f2] to-[#0057c2] text-white shadow-xs">
-                            <Building2 className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-base font-bold text-[#1c2d42]">
-                                    Plants & Purchasing Organizations
-                                </h2>
-                                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-[#0070f2]">
-                                    SAP Master Data
-                                </span>
+            {/* Top Sub-Navigation Switcher: Purchasing Organizations vs Operational Plants */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-[#d9e2ec] bg-white p-2.5 shadow-xs">
+                <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg w-full sm:w-auto">
+                    <button
+                        type="button"
+                        onClick={() => setActiveSection('purchasing-orgs')}
+                        className={`flex flex-1 sm:flex-initial items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-bold transition-all ${
+                            activeSection === 'purchasing-orgs'
+                                ? 'bg-white text-[#0070f2] shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                        <Building2 className="h-4 w-4 text-emerald-600" />
+                        <span>Purchasing Organizations</span>
+                        <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold ${
+                            activeSection === 'purchasing-orgs' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                            {initialPurchasingOrganizations.length > 0 ? initialPurchasingOrganizations.length : '3'} Orgs
+                        </span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveSection('plants')}
+                        className={`flex flex-1 sm:flex-initial items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-bold transition-all ${
+                            activeSection === 'plants'
+                                ? 'bg-white text-[#0070f2] shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                        <Boxes className="h-4 w-4 text-[#0070f2]" />
+                        <span>Operational Plants</span>
+                        <span className={`rounded-full px-2 py-0.2 text-[10px] font-bold ${
+                            activeSection === 'plants' ? 'bg-blue-100 text-[#0070f2]' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                            {plants.length > 0 ? plants.length : '4'} Live
+                        </span>
+                    </button>
+                </div>
+
+                <div className="hidden sm:flex items-center gap-2 px-3 text-[11px] text-[#556b82]">
+                    <span>SAP S/4HANA Source:</span>
+                    <strong className="font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                        {activeSection === 'purchasing-orgs'
+                            ? 'YY1_PURCHASEORGANIZATION_CDS'
+                            : 'ZUI_TMS_DESPATCH_04 / PlantVH'}
+                    </strong>
+                </div>
+            </div>
+
+            {/* TAB 1: PURCHASING ORGANIZATIONS (DATABASE & SAP CDS SYNC) */}
+            {activeSection === 'purchasing-orgs' && (
+                <PurchasingOrganizationsManager
+                    initialPurchasingOrganizations={initialPurchasingOrganizations}
+                    isSuperAdmin={isSuperAdmin}
+                />
+            )}
+
+            {/* TAB 2: OPERATIONAL PLANTS (SAP LIVE SERVICE) */}
+            {activeSection === 'plants' && (
+                <div className="space-y-6">
+                    {/* Top Overview & Action Header */}
+                    <div className="rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-xs">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex items-start gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#0070f2] to-[#0057c2] text-white shadow-xs">
+                                    <Building2 className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-base font-bold text-[#1c2d42]">
+                                            Manufacturing & Operational Plants
+                                        </h2>
+                                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-[#0070f2]">
+                                            SAP Master Data
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-[#556b82]">
+                                        Operational manufacturing plants, corporate facilities, and storage hubs retrieved dynamically from SAP S/4HANA Cloud OData service.
+                                    </p>
+                                </div>
                             </div>
-                            <p className="mt-1 text-xs text-[#556b82]">
-                                Operational manufacturing plants, corporate facilities, and purchasing organizations retrieved dynamically from SAP S/4HANA Cloud OData service.
-                            </p>
-                        </div>
-                    </div>
+
 
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Live Status Indicator */}
@@ -679,9 +752,13 @@ export default function PlantsManager({ isSuperAdmin = true }: PlantsManagerProp
                     </div>
                 </div>
             </div>
+        </div>
+    )}
+
 
             {/* Modal: View Raw SAP OData Entity JSON */}
             {inspectPlant && (
+
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="w-full max-w-2xl rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-2xl space-y-4">
                         <div className="flex items-center justify-between border-b border-[#d9e2ec] pb-3">
@@ -745,3 +822,4 @@ export default function PlantsManager({ isSuperAdmin = true }: PlantsManagerProp
         </div>
     );
 }
+

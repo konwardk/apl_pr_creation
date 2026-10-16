@@ -89,14 +89,19 @@ export default function SapShellBar({
                     <button
                         type="button"
                         onClick={isSuperAdmin ? onOpenSapConfig : undefined}
-                        className={`hidden items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/70 px-2.5 py-0.5 text-[11px] font-medium text-[#0057c2] transition-colors lg:flex ${isSuperAdmin ? 'hover:bg-blue-100/70 cursor-pointer' : 'cursor-default'}`}
+                        className={`hidden items-center gap-2 rounded-full border border-blue-200 bg-blue-50/70 px-3 py-1 text-[11px] font-medium text-[#0057c2] transition-colors lg:flex ${isSuperAdmin ? 'hover:bg-blue-100/70 cursor-pointer' : 'cursor-default'}`}
                         title={isSuperAdmin ? 'Click to view SAP Public Cloud Integration details' : 'Connected to SAP Cloud'}
                     >
+                        <img
+                            src="/images/SAP Logo.png"
+                            alt="SAP"
+                            className="h-3.5 w-auto object-contain"
+                        />
                         <span className="relative flex h-2 w-2">
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                         </span>
-                        <span>SAP S/4HANA Cloud Connected</span>
+                        <span className="font-semibold">SAP S/4HANA Cloud Connected</span>
                     </button>
                 </div>
 

@@ -5,6 +5,7 @@ use App\Http\Controllers\DeptManagementController;
 use App\Http\Controllers\HeaderOptionController;
 use App\Http\Controllers\ItemCategoryController;
 use App\Http\Controllers\PrDocumentTypeController;
+use App\Http\Controllers\PurchasingOrganizationController;
 use App\Http\Controllers\PurchaseRequisitionController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +32,8 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('sap-material-groups', [PurchaseRequisitionController::class, 'getMaterialGroups'])->name('sap-material-groups.index');
     Route::get('sap-gl-accounts', [PurchaseRequisitionController::class, 'getGlAccounts'])->name('sap-gl-accounts.index');
     Route::get('sap-cost-centers', [PurchaseRequisitionController::class, 'getCostCenters'])->name('sap-cost-centers.index');
+    Route::get('sap-suppliers', [PurchaseRequisitionController::class, 'getSuppliers'])->name('sap-suppliers.index');
+    Route::get('sap-purchasing-organizations', [PurchasingOrganizationController::class, 'getForPr'])->name('sap-purchasing-organizations.index');
 
     // Super Administrator only: System Configuration (User Management & Department Management) & PR Configuration
     Route::middleware(['role:superadmin'])->group(function () {
@@ -83,7 +86,18 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
         Route::put('item-categories/{itemCategory}', [ItemCategoryController::class, 'update'])->name('item-categories.update');
         Route::delete('item-categories/{itemCategory}', [ItemCategoryController::class, 'destroy'])->name('item-categories.destroy');
         Route::post('item-categories/{itemCategory}/toggle-status', [ItemCategoryController::class, 'toggleStatus'])->name('item-categories.toggle-status');
+ 
+        // Purchasing Organizations Management (SAP CDS View YY1_PURCHASEORGANIZATION_CDS)
+        Route::get('purchasing-organizations', [PurchasingOrganizationController::class, 'index'])->name('purchasing-organizations.index');
+        Route::post('purchasing-organizations/fetch-sap', [PurchasingOrganizationController::class, 'fetchSap'])->name('purchasing-organizations.fetch-sap');
+        Route::post('purchasing-organizations/save-sap', [PurchasingOrganizationController::class, 'saveSap'])->name('purchasing-organizations.save-sap');
+        Route::post('purchasing-organizations/sync-sap', [PurchasingOrganizationController::class, 'syncSap'])->name('purchasing-organizations.sync-sap');
+        Route::post('purchasing-organizations', [PurchasingOrganizationController::class, 'store'])->name('purchasing-organizations.store');
+        Route::put('purchasing-organizations/{purchasingOrganization}', [PurchasingOrganizationController::class, 'update'])->name('purchasing-organizations.update');
+        Route::delete('purchasing-organizations/{purchasingOrganization}', [PurchasingOrganizationController::class, 'destroy'])->name('purchasing-organizations.destroy');
+        Route::post('purchasing-organizations/{purchasingOrganization}/toggle-status', [PurchasingOrganizationController::class, 'toggleStatus'])->name('purchasing-organizations.toggle-status');
     });
+
 });
 
 require __DIR__.'/settings.php';

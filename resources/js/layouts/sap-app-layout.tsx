@@ -486,7 +486,14 @@ export default function SapAppLayout({
                         <span>•</span>
                         <span>Purchase Requisition Portal</span>
                         <span>•</span>
-                        <span className="text-slate-500">Connected to SAP S/4HANA Cloud</span>
+                        <span className="inline-flex items-center gap-1.5 text-slate-500">
+                            <img
+                                src="/images/SAP Logo.png"
+                                alt="SAP"
+                                className="h-3.5 w-auto object-contain inline-block"
+                            />
+                            <span>Connected to SAP S/4HANA Cloud</span>
+                        </span>
                     </div>
                     {isSuperAdmin && (
                         <div className="flex items-center gap-4 text-[11px]">
@@ -508,9 +515,13 @@ export default function SapAppLayout({
                     <div className="relative w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
                         {/* Header */}
                         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                            <div className="flex items-center gap-2.5">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-[#0070f2]">
-                                    <Server className="h-5 w-5" />
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-14 items-center justify-center rounded-lg bg-blue-50/80 border border-blue-100 p-1">
+                                    <img
+                                        src="/images/SAP Logo.png"
+                                        alt="SAP"
+                                        className="h-6 w-auto object-contain"
+                                    />
                                 </div>
                                 <div>
                                     <h3 className="text-base font-bold text-[#1c2d42]">SAP Public Cloud Integration Settings</h3>

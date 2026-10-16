@@ -6,6 +6,7 @@ use App\Models\Attachment;
 use App\Models\HeaderOption;
 use App\Models\ItemCategory;
 use App\Models\PrDocumentType;
+use App\Models\PurchasingOrganization;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\ContractRequisition;
@@ -99,6 +100,17 @@ class PurchaseRequisitionController extends Controller
         $companyCode = $request->query('companyCode') ?? $request->query('company_code') ?? '1000';
         $controllingArea = $request->query('controllingArea') ?? $request->query('controlling_area');
         $result = $this->sapService->fetchCostCentersFromCdsView($search, $companyCode, $controllingArea);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch Suppliers from SAP S/4HANA Cloud CDS View (YY1_SUPPLIER_CDS)
+     */
+    public function getSuppliers(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchSuppliersFromCdsView($search);
 
         return response()->json($result);
     }
@@ -327,11 +339,34 @@ class PurchaseRequisitionController extends Controller
             ], $plantsResult['items'])
             : $this->sapService->getFormattedFallbackPlants();
 
-        // Purchasing organizations and groups for APL
-        $purchasingOrganizations = [
-            ['code' => '1100', 'name' => '1100 - Purchasing Org 1100'],
-            ['code' => '1200', 'name' => '1200 - APL Domestic Sourcing Org'],
-        ];
+        // Purchasing organizations retrieved from MySQL database (synced from SAP YY1_PURCHASEORGANIZATION_CDS)
+        $dbPurchasingOrgs = PurchasingOrganization::active()->orderBy('code')->get();
+        if ($dbPurchasingOrgs->isNotEmpty()) {
+            $purchasingOrganizations = $dbPurchasingOrgs->map(function ($org) {
+                $plantsStr = !empty($org->plants) ? implode(', ', $org->plants) : '';
+                return [
+                    'code' => $org->code,
+                    'name' => "{$org->code} - {$org->name}",
+                    'purchasingOrgName' => $org->name,
+                    'PurchasingOrganization' => $org->code,
+                    'PurchasingOrganizationName' => $org->name,
+                    'plants' => $org->plants ?? [],
+                    'extra' => $plantsStr ? "Mapped Plants: {$plantsStr}" : ($org->description ?: 'Company Code: 1000'),
+                ];
+            })->toArray();
+        } else {
+            $purchasingOrganizations = array_map(function ($org) {
+                return [
+                    'code' => $org['code'],
+                    'name' => "{$org['code']} - {$org['name']}",
+                    'purchasingOrgName' => $org['name'],
+                    'PurchasingOrganization' => $org['code'],
+                    'PurchasingOrganizationName' => $org['name'],
+                    'plants' => $org['plants'] ?? [],
+                    'extra' => $org['extra'] ?? '',
+                ];
+            }, $this->sapService->getFormattedFallbackPurchasingOrganizations());
+        }
 
         $purchasingGroups = [
             ['code' => '103', 'name' => '103 - Purchasing Group 103'],
@@ -360,6 +395,11 @@ class PurchaseRequisitionController extends Controller
         $glAccounts = ($glResult['success'] ?? false && !empty($glResult['items']))
             ? $glResult['items']
             : $this->sapService->getFormattedFallbackGlAccounts();
+
+        $supResult = $this->sapService->fetchSuppliersFromCdsView();
+        $suppliers = ($supResult['success'] ?? false && !empty($supResult['items']))
+            ? $supResult['items']
+            : $this->sapService->getFormattedFallbackSuppliers();
 
         return [
             'headerOptions' => $headerOptions,
@@ -404,7 +444,7 @@ class PurchaseRequisitionController extends Controller
                 'glAccounts' => $glAccounts,
                 'batches' => [],
                 'revisionLevels' => [],
-                'desiredSuppliers' => [],
+                'desiredSuppliers' => $suppliers,
                 'attachmentDocTypes' => [
                     ['code' => 'SL1', 'name' => 'For External Use (SL1)'],
                     ['code' => 'SL9', 'name' => 'For Internal Use (SL9)'],

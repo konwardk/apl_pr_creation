@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import { Form, Head } from '@inertiajs/react';
 import { Mail } from 'lucide-react';
 import InputError from '@/components/input-error';
@@ -19,91 +18,9 @@ type Props = {
 };
 
 export default function Login({ status, canResetPassword }: Props) {
-    const [selectedRole, setSelectedRole] = useState<'superadmin' | 'admin' | 'employee'>('superadmin');
-    const [demoEmail, setDemoEmail] = useState('test@example.com');
-    const [demoPassword, setDemoPassword] = useState('password');
-
-    const handleSelectRole = (role: 'superadmin' | 'admin' | 'employee') => {
-        setSelectedRole(role);
-        const email =
-            role === 'superadmin'
-                ? 'test@example.com'
-                : role === 'admin'
-                ? 'admin@example.com'
-                : 'employee@example.com';
-        const password = 'password';
-
-        setDemoEmail(email);
-        setDemoPassword(password);
-
-        const emailInput = document.getElementById('email') as HTMLInputElement | null;
-        const passInput = document.getElementById('password') as HTMLInputElement | null;
-        if (emailInput) {
-            emailInput.value = email;
-            emailInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        if (passInput) {
-            passInput.value = password;
-            passInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-    };
-
     return (
         <>
             <Head title="Sign In - Purchase Requisition Portal" />
-
-            {/* Quick Demo Credentials Switcher */}
-            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50/90 p-2.5 text-xs">
-                <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-semibold text-slate-700">Quick Test Credentials:</span>
-                    <span className="text-[10px] text-slate-500 font-mono">Password: password</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                        type="button"
-                        onClick={() => handleSelectRole('superadmin')}
-                        className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
-                            selectedRole === 'superadmin'
-                                ? 'bg-purple-600 text-white shadow-2xs font-semibold'
-                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                    >
-                        Superadmin
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleSelectRole('admin')}
-                        className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
-                            selectedRole === 'admin'
-                                ? 'bg-[#0070f2] text-white shadow-2xs font-semibold'
-                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                    >
-                        Admin
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleSelectRole('employee')}
-                        className={`rounded px-2 py-1 text-[11px] font-medium transition-all ${
-                            selectedRole === 'employee'
-                                ? 'bg-teal-700 text-white shadow-2xs font-semibold'
-                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
-                    >
-                        Employee
-                    </button>
-                </div>
-                <div className="mt-2 text-center text-[10px] text-slate-500">
-                    Active login:{' '}
-                    <strong className="text-slate-800 font-mono">
-                        {selectedRole === 'superadmin'
-                            ? 'test@example.com (Full Access)'
-                            : selectedRole === 'admin'
-                            ? 'admin@example.com (SAP & PRs)'
-                            : 'employee@example.com (PR Requester)'}
-                    </strong>
-                </div>
-            </div>
 
             <Form
                 {...store.form()}
@@ -123,7 +40,6 @@ export default function Login({ status, canResetPassword }: Props) {
                                         id="email"
                                         type="email"
                                         name="email"
-                                        defaultValue={demoEmail}
                                         required
                                         autoFocus
                                         tabIndex={1}
@@ -140,7 +56,7 @@ export default function Login({ status, canResetPassword }: Props) {
                                     <Label htmlFor="password" className="text-xs font-semibold text-[#1c2d42]">
                                         Password
                                     </Label>
-                                    {canResetPassword && (
+                                    {/* {canResetPassword && (
                                         <TextLink
                                             href={request()}
                                             className="ml-auto text-xs text-[#0070f2] hover:underline"
@@ -148,13 +64,12 @@ export default function Login({ status, canResetPassword }: Props) {
                                         >
                                             Forgot password?
                                         </TextLink>
-                                    )}
+                                    )} */}
                                 </div>
                                 <div className="relative">
                                     <PasswordInput
                                         id="password"
                                         name="password"
-                                        defaultValue={demoPassword}
                                         required
                                         tabIndex={2}
                                         autoComplete="current-password"
@@ -195,12 +110,12 @@ export default function Login({ status, canResetPassword }: Props) {
                             </Button>
                         </div>
 
-                        <div className="mt-2 text-center text-xs text-[#556b82]">
+                        {/* <div className="mt-2 text-center text-xs text-[#556b82]">
                             Don't have an account?{' '}
                             <TextLink href={register()} tabIndex={5} className="font-semibold text-[#0070f2] hover:underline">
-                                Request Access
+                                Create an account
                             </TextLink>
-                        </div>
+                        </div> */}
                     </>
                 )}
             </Form>

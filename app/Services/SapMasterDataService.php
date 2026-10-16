@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Attachment;
 use App\Models\PrDocumentType;
+use App\Models\PurchasingOrganization;
 use App\Models\PurchaseRequisition;
 use App\Models\ContractRequisition;
 use GuzzleHttp\Client;
@@ -2215,5 +2216,551 @@ class SapMasterDataService
         }
 
         return $fallbacks;
+    }
+
+    /**
+     * Fetch Suppliers / Vendors from SAP S/4HANA Cloud CDS View
+     * YY1_SUPPLIER_CDS / YY1_Supplier
+     */
+    public function fetchSuppliersFromCdsView(
+        ?string $search = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.suppliers',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_SUPPLIER_CDS/YY1_Supplier?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                $url = $baseUri . '?$format=json';
+
+                $response = $request->get($url);
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parseSupplierODataItems($json);
+
+                    // Filter by search query if requested
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['Supplier'] ?? ''), $term)
+                                || str_contains(strtolower($it['SupplierName'] ?? ''), $term)
+                                || str_contains(strtolower($it['SupplierFullName'] ?? ''), $term)
+                                || str_contains(strtolower($it['code'] ?? ''), $term)
+                                || str_contains(strtolower($it['name'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_SUPPLIER_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " suppliers live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Supplier CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => $this->getFormattedFallbackSuppliers($search),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Supplier CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackSuppliers($search),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (Suppliers)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackSuppliers($search)),
+            'items' => $this->getFormattedFallbackSuppliers($search),
+            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback suppliers.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Supplier items.
+     * Uses Supplier, SupplierName, SupplierFullName, and BPSupplierName from YY1_SUPPLIER_CDS.
+     */
+    public function parseSupplierODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        $seen = [];
+
+        foreach ($rawRecords as $rec) {
+            $supplier = trim((string)($rec['Supplier'] ?? $rec['supplier'] ?? $rec['code'] ?? ''));
+            $supplierName = trim((string)($rec['SupplierName'] ?? $rec['supplier_name'] ?? $rec['BPSupplierName'] ?? $rec['name'] ?? ''));
+            $supplierFullName = trim((string)($rec['SupplierFullName'] ?? $rec['supplier_full_name'] ?? ''));
+            $bpSupplierName = trim((string)($rec['BPSupplierName'] ?? ''));
+
+            if (empty($supplier)) {
+                continue;
+            }
+
+            if (isset($seen[$supplier])) {
+                continue;
+            }
+            $seen[$supplier] = true;
+
+            $parsed[] = [
+                'code' => $supplier,
+                'name' => $supplierName ?: $supplier,
+                'extra' => $supplierFullName ?: "Supplier {$supplier}",
+                'Supplier' => $supplier,
+                'SupplierName' => $supplierName ?: $supplier,
+                'SupplierFullName' => $supplierFullName,
+                'BPSupplierName' => $bpSupplierName,
+                'supplierName' => $supplierName ?: $supplier,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Fallback Suppliers matching SAP YY1_SUPPLIER_CDS schema.
+     */
+    public function getFormattedFallbackSuppliers(?string $search = null): array
+    {
+        $fallbacks = [
+            [
+                'code' => 'V-10029',
+                'name' => 'Tata Chemicals Ltd',
+                'extra' => 'Vendor 10029 • Industrial & Inorganic Chemicals • Active',
+                'Supplier' => 'V-10029',
+                'SupplierName' => 'Tata Chemicals Ltd',
+                'SupplierFullName' => 'Tata Chemicals Ltd - Industrial & Inorganic Chemicals',
+                'BPSupplierName' => 'Tata Chemicals Ltd',
+                'supplierName' => 'Tata Chemicals Ltd',
+            ],
+            [
+                'code' => 'V-10034',
+                'name' => 'Gujarat Fluorochemicals Ltd',
+                'extra' => 'Vendor 10034 • Specialty Fluoropolymers & Reagents • Active',
+                'Supplier' => 'V-10034',
+                'SupplierName' => 'Gujarat Fluorochemicals Ltd',
+                'SupplierFullName' => 'Gujarat Fluorochemicals Ltd - Specialty Fluoropolymers & Reagents',
+                'BPSupplierName' => 'Gujarat Fluorochemicals Ltd',
+                'supplierName' => 'Gujarat Fluorochemicals Ltd',
+            ],
+            [
+                'code' => 'V-10045',
+                'name' => 'Reliance Industries Ltd',
+                'extra' => 'Vendor 10045 • Petrochemicals & Polymers • Active',
+                'Supplier' => 'V-10045',
+                'SupplierName' => 'Reliance Industries Ltd',
+                'SupplierFullName' => 'Reliance Industries Ltd - Petrochemicals & Polymers',
+                'BPSupplierName' => 'Reliance Industries Ltd',
+                'supplierName' => 'Reliance Industries Ltd',
+            ],
+            [
+                'code' => 'V-10052',
+                'name' => 'BASF India Limited',
+                'extra' => 'Vendor 10052 • Catalysts, Dispersions & Resins • Active',
+                'Supplier' => 'V-10052',
+                'SupplierName' => 'BASF India Limited',
+                'SupplierFullName' => 'BASF India Limited - Catalysts, Dispersions & Resins',
+                'BPSupplierName' => 'BASF India Limited',
+                'supplierName' => 'BASF India Limited',
+            ],
+            [
+                'code' => 'V-10061',
+                'name' => 'Linde India Limited',
+                'extra' => 'Vendor 10061 • Cryogenic & Industrial Gases • Active',
+                'Supplier' => 'V-10061',
+                'SupplierName' => 'Linde India Limited',
+                'SupplierFullName' => 'Linde India Limited - Cryogenic & Industrial Gases',
+                'BPSupplierName' => 'Linde India Limited',
+                'supplierName' => 'Linde India Limited',
+            ],
+            [
+                'code' => 'V-10080',
+                'name' => 'Siemens Energy India Ltd',
+                'extra' => 'Vendor 10080 • Turbines, Drives & High-Voltage Spares • Active',
+                'Supplier' => 'V-10080',
+                'SupplierName' => 'Siemens Energy India Ltd',
+                'SupplierFullName' => 'Siemens Energy India Ltd - Turbines, Drives & High-Voltage Spares',
+                'BPSupplierName' => 'Siemens Energy India Ltd',
+                'supplierName' => 'Siemens Energy India Ltd',
+            ],
+            [
+                'code' => 'V-10095',
+                'name' => 'Thermax Limited',
+                'extra' => 'Vendor 10095 • Boilers, Heat Exchangers & Water Solutions • Active',
+                'Supplier' => 'V-10095',
+                'SupplierName' => 'Thermax Limited',
+                'SupplierFullName' => 'Thermax Limited - Boilers, Heat Exchangers & Water Solutions',
+                'BPSupplierName' => 'Thermax Limited',
+                'supplierName' => 'Thermax Limited',
+            ],
+            [
+                'code' => 'V-10110',
+                'name' => 'Bharat Heavy Electricals Ltd (BHEL)',
+                'extra' => 'Vendor 10110 • Heavy Engineering & Pressure Vessels • Active',
+                'Supplier' => 'V-10110',
+                'SupplierName' => 'Bharat Heavy Electricals Ltd (BHEL)',
+                'SupplierFullName' => 'Bharat Heavy Electricals Ltd (BHEL) - Heavy Engineering & Pressure Vessels',
+                'BPSupplierName' => 'Bharat Heavy Electricals Ltd (BHEL)',
+                'supplierName' => 'Bharat Heavy Electricals Ltd (BHEL)',
+            ],
+            [
+                'code' => 'V-10125',
+                'name' => 'Indian Oil Corporation Ltd (IOCL)',
+                'extra' => 'Vendor 10125 • Fuel & Specialty Base Oils • Active',
+                'Supplier' => 'V-10125',
+                'SupplierName' => 'Indian Oil Corporation Ltd (IOCL)',
+                'SupplierFullName' => 'Indian Oil Corporation Ltd (IOCL) - Fuel & Specialty Base Oils',
+                'BPSupplierName' => 'Indian Oil Corporation Ltd (IOCL)',
+                'supplierName' => 'Indian Oil Corporation Ltd (IOCL)',
+            ],
+        ];
+
+        if (!empty($search)) {
+            $term = strtolower(trim($search));
+            $fallbacks = array_values(array_filter($fallbacks, fn($it) =>
+                str_contains(strtolower($it['code']), $term) ||
+                str_contains(strtolower($it['name']), $term) ||
+                str_contains(strtolower($it['Supplier']), $term) ||
+                str_contains(strtolower($it['SupplierName']), $term) ||
+                str_contains(strtolower($it['extra']), $term)
+            ));
+        }
+
+        return $fallbacks;
+    }
+
+    /**
+     * Fetch Purchasing Organizations from SAP S/4HANA Cloud CDS View
+     * YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION
+     */
+    public function fetchPurchasingOrganizationsFromCdsView(
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.purchasing_organizations',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                $url = $baseUri . '?$format=json';
+
+                $response = $request->get($url);
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parsePurchasingOrganizationODataItems($json);
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_PURCHASEORGANIZATION_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " purchasing organizations live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Purchasing Org CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => $this->getFormattedFallbackPurchasingOrganizations(),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Purchasing Org CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackPurchasingOrganizations(),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (Purchasing Organizations)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackPurchasingOrganizations()),
+            'items' => $this->getFormattedFallbackPurchasingOrganizations(),
+            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback purchasing organizations.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Purchasing Organization items.
+     * Aggregates by PurchasingOrganization and collects associated Plants.
+     */
+    public function parsePurchasingOrganizationODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $grouped = [];
+
+        foreach ($rawRecords as $rec) {
+            $code = trim((string)($rec['PurchasingOrganization'] ?? $rec['purchasing_organization'] ?? $rec['code'] ?? ''));
+            if (empty($code)) {
+                continue;
+            }
+
+            $name = trim((string)($rec['PurchasingOrganizationName'] ?? $rec['purchasing_organization_name'] ?? $rec['name'] ?? $code));
+            $plant = trim((string)($rec['Plant'] ?? $rec['plant'] ?? ''));
+
+            if (!isset($grouped[$code])) {
+                $grouped[$code] = [
+                    'code' => $code,
+                    'name' => $name,
+                    'PurchasingOrganization' => $code,
+                    'PurchasingOrganizationName' => $name,
+                    'plants' => [],
+                    'raw_data' => $rec,
+                ];
+            }
+
+            if (!empty($plant) && !in_array($plant, $grouped[$code]['plants'])) {
+                $grouped[$code]['plants'][] = $plant;
+            }
+        }
+
+        $parsed = [];
+        foreach ($grouped as $code => $data) {
+            sort($data['plants']);
+            $plantsStr = implode(', ', $data['plants']);
+            $parsed[] = [
+                'code' => $code,
+                'name' => $data['name'],
+                'PurchasingOrganization' => $code,
+                'PurchasingOrganizationName' => $data['name'],
+                'company_code' => '1000',
+                'plants' => $data['plants'],
+                'extra' => $plantsStr ? "Mapped Plants: {$plantsStr}" : 'Company Code: 1000',
+                'description' => "SAP S/4HANA Purchasing Organization {$code} ({$data['name']})" . ($plantsStr ? " for Plant(s) {$plantsStr}" : ""),
+                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
+                'raw_data' => $data['raw_data'],
+            ];
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * Save/upsert selected Purchasing Organizations into MySQL database (apl_pr_db).
+     *
+     * @param array $items Array of purchasing org items to persist
+     * @param int|null $userId ID of user performing sync
+     * @return array Summary of created and updated records
+     */
+    public function savePurchasingOrganizations(array $items, ?int $userId = null): array
+    {
+        $created = 0;
+        $updated = 0;
+
+        foreach ($items as $item) {
+            $code = trim($item['code'] ?? $item['PurchasingOrganization'] ?? '');
+            if (empty($code)) {
+                continue;
+            }
+
+            $existing = PurchasingOrganization::where('code', $code)->first();
+
+            $plants = [];
+            if (!empty($item['plants'])) {
+                $plants = is_array($item['plants']) ? $item['plants'] : explode(',', (string)$item['plants']);
+                $plants = array_values(array_filter(array_map('trim', $plants)));
+            } elseif (!empty($item['Plant'])) {
+                $plants = [trim((string)$item['Plant'])];
+            }
+
+            $attributes = [
+                'name' => trim($item['name'] ?? $item['PurchasingOrganizationName'] ?? $code),
+                'company_code' => trim($item['company_code'] ?? '1000'),
+                'plants' => $plants,
+                'description' => $item['description'] ?? null,
+                'is_active' => $item['is_active'] ?? true,
+                'sap_source' => $item['sap_source'] ?? 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
+                'is_synced' => true,
+                'synced_at' => now(),
+                'raw_data' => $item['raw_data'] ?? null,
+                'created_by' => $userId,
+            ];
+
+            if ($existing) {
+                // If plants already exist, merge new plants
+                if (!empty($attributes['plants'])) {
+                    $mergedPlants = array_values(array_unique(array_merge($existing->plants ?? [], $attributes['plants'])));
+                    $attributes['plants'] = $mergedPlants;
+                }
+                $existing->update($attributes);
+                $updated++;
+            } else {
+                PurchasingOrganization::create(array_merge(['code' => $code], $attributes));
+                $created++;
+            }
+        }
+
+        return [
+            'created' => $created,
+            'updated' => $updated,
+            'total' => $created + $updated,
+        ];
+    }
+
+    /**
+     * Fallback Purchasing Organizations matching SAP YY1_PURCHASEORGANIZATION_CDS schema.
+     */
+    public function getFormattedFallbackPurchasingOrganizations(): array
+    {
+        return [
+            [
+                'code' => '1100',
+                'name' => 'Central Purchase Org',
+                'PurchasingOrganization' => '1100',
+                'PurchasingOrganizationName' => 'Central Purchase Org',
+                'company_code' => '1000',
+                'plants' => ['1100', '1200', '1300', '1400'],
+                'extra' => 'Mapped Plants: 1100, 1200, 1300, 1400',
+                'description' => 'SAP S/4HANA Purchasing Organization 1100 (Central Purchase Org) for Plant(s) 1100, 1200, 1300, 1400',
+                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
+                'is_active' => true,
+            ],
+            [
+                'code' => '1200',
+                'name' => 'Local Purchase Org',
+                'PurchasingOrganization' => '1200',
+                'PurchasingOrganizationName' => 'Local Purchase Org',
+                'company_code' => '1000',
+                'plants' => ['1100', '1200', '1300', '1400'],
+                'extra' => 'Mapped Plants: 1100, 1200, 1300, 1400',
+                'description' => 'SAP S/4HANA Purchasing Organization 1200 (Local Purchase Org) for Plant(s) 1100, 1200, 1300, 1400',
+                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
+                'is_active' => true,
+            ],
+            [
+                'code' => '9000',
+                'name' => 'STO',
+                'PurchasingOrganization' => '9000',
+                'PurchasingOrganizationName' => 'STO',
+                'company_code' => '1000',
+                'plants' => ['1100', '1200', '1300', '1400'],
+                'extra' => 'Mapped Plants: 1100, 1200, 1300, 1400',
+                'description' => 'SAP S/4HANA Purchasing Organization 9000 (STO) for Plant(s) 1100, 1200, 1300, 1400',
+                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
+                'is_active' => true,
+            ],
+        ];
     }
 }

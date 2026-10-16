@@ -23,6 +23,12 @@ export default function AuthSimpleLayout({
                     href={home()}
                     className="flex items-center gap-3 transition-opacity hover:opacity-90"
                 >
+                    <img
+                        src="/images/APL_Logo.jpg"
+                        alt="Assam Petro-Chemicals Ltd."
+                        className="h-8 w-auto rounded object-contain bg-white px-1.5 py-0.5 shadow-2xs"
+                    />
+                    <div className="hidden h-5 w-[1px] bg-white/20 sm:block" />
                     <SapLogo variant="white" showText={true} subtext="Public Cloud Edition" />
                 </Link>
 
@@ -48,7 +54,15 @@ export default function AuthSimpleLayout({
                             {/* Card Header with Logo & System Context */}
                             <div className="mb-6 flex flex-col items-center text-center">
                                 <div className="mb-3 flex items-center justify-center">
-                                    <SapLogo showText={false} className="h-9" />
+                                    <img
+                                        src="/images/APL_Logo.jpg"
+                                        alt="Assam Petro-Chemicals Ltd."
+                                        className="h-20 w-auto object-contain"
+                                    />
+                                </div>
+                                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50/90 px-3 py-1 text-[11px] font-medium text-slate-600">
+                                    <SapLogo showText={false} className="h-3.5" />
+                                    <span className="text-[11px] font-semibold text-slate-700">SAP S/4HANA Cloud</span>
                                 </div>
                                 <h1 className="text-xl font-bold tracking-tight text-[#1c2d42]">
                                     {title || 'Purchase Requisition Portal'}

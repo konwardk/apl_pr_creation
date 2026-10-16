@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import SapAppLayout from '@/layouts/sap-app-layout';
 import SapPayloadModal from '@/components/sap/SapPayloadModal';
+import PurchaseRequisitionPrintModal from '@/components/sap/PurchaseRequisitionPrintModal';
 import {
     ArrowLeft,
     CheckCircle2,
@@ -11,6 +12,7 @@ import {
     FileText,
     Send,
     Edit3,
+    Printer,
     Package,
     Building2,
     Calendar,
@@ -169,6 +171,7 @@ export default function ShowPurchaseRequisitionPage({
     const [activeCrTab, setActiveCrTab] = useState<string>('contract_title');
     const [selectedItemIndex, setSelectedItemIndex] = useState<number>(0);
     const [showPayloadModal, setShowPayloadModal] = useState<boolean>(false);
+    const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
     const [isSyncing, setIsSyncing] = useState<boolean>(false);
     const [expandedItemDetails, setExpandedItemDetails] = useState<boolean>(true);
 
@@ -268,6 +271,17 @@ export default function ShowPurchaseRequisitionPage({
 
                         {/* Top Action Buttons */}
                         <div className="flex flex-wrap items-center gap-2">
+                            {/* Print Indent Form (F-2) Button */}
+                            <button
+                                type="button"
+                                onClick={() => setShowPrintModal(true)}
+                                className="flex items-center gap-1.5 rounded-md border border-[#d9e2ec] bg-white px-3 py-2 text-xs font-semibold text-[#1c2d42] shadow-2xs hover:border-slate-400 hover:bg-slate-50 transition-colors"
+                                title="Print APL Materials Indent Form (F-2)"
+                            >
+                                <Printer className="h-4 w-4 text-slate-600" />
+                                <span>Print PR</span>
+                            </button>
+
                             {/* Inspect Payload Button */}
                             <button
                                 type="button"
@@ -875,6 +889,13 @@ export default function ShowPurchaseRequisitionPage({
                 pr={pr as any}
                 isOpen={showPayloadModal}
                 onClose={() => setShowPayloadModal(false)}
+            />
+
+            {/* APL Materials Indent Form (F-2) Print Modal */}
+            <PurchaseRequisitionPrintModal
+                pr={pr as any}
+                isOpen={showPrintModal}
+                onClose={() => setShowPrintModal(false)}
             />
         </SapAppLayout>
     );

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import SapAppLayout from '@/layouts/sap-app-layout';
 import SapPayloadModal from '@/components/sap/SapPayloadModal';
+import PurchaseRequisitionPrintModal from '@/components/sap/PurchaseRequisitionPrintModal';
 import {
     Plus,
     RefreshCw,
@@ -11,6 +12,7 @@ import {
     Clock,
     AlertTriangle,
     Eye,
+    Printer,
     FileCode,
     Send,
     Database,
@@ -28,7 +30,7 @@ import {
     Edit3,
 } from 'lucide-react';
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
-import type { User, HeaderOption, PrDocumentType, ItemCategory } from '@/types';
+import type { User, HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
 interface PrItem {
@@ -93,6 +95,7 @@ interface DashboardProps {
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
+    purchasingOrganizations?: PurchasingOrganization[];
     stats?: {
         total_count: number;
         total_amount: number;
@@ -121,7 +124,9 @@ export default function Dashboard({
     headerOptions = [],
     prDocumentTypes = [],
     itemCategories = [],
+    purchasingOrganizations = [],
     stats = {
+
         total_count: 0,
         total_amount: 0,
         draft_count: 0,
@@ -185,6 +190,7 @@ export default function Dashboard({
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'synced' | 'pending' | 'failed'>('all');
     const [selectedPrForPayload, setSelectedPrForPayload] = useState<PurchaseRequisition | null>(null);
+    const [selectedPrForPrint, setSelectedPrForPrint] = useState<PurchaseRequisition | null>(null);
     const [syncingId, setSyncingId] = useState<number | null>(null);
     const [finalizingId, setFinalizingId] = useState<number | null>(null);
 
@@ -711,6 +717,16 @@ export default function Dashboard({
 
                                                         <button
                                                             type="button"
+                                                            onClick={() => setSelectedPrForPrint(pr)}
+                                                            className="flex items-center gap-1 rounded border border-[#d9e2ec] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c2d42] hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                                                            title="Print APL Materials Indent Form (F-2)"
+                                                        >
+                                                            <Printer className="h-3 w-3 text-slate-600" />
+                                                            <span>Print</span>
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
                                                             onClick={() => setSelectedPrForPayload(pr)}
                                                             className="flex items-center gap-1 rounded border border-[#d9e2ec] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c2d42] hover:bg-slate-50 transition-colors"
                                                             title="Inspect SAP OData V4 Payload & Items"
@@ -940,10 +956,12 @@ export default function Dashboard({
                     headerOptions={headerOptions}
                     prDocumentTypes={prDocumentTypes}
                     itemCategories={itemCategories}
+                    purchasingOrganizations={purchasingOrganizations}
                     isSuperAdmin={isSuperAdmin}
                     activeSubTab={activeSubTab}
                     onSubTabChange={(sub) => handleTabChange('pr-configuration', sub)}
                 />
+
             )}
 
 
@@ -953,6 +971,13 @@ export default function Dashboard({
                 pr={selectedPrForPayload}
                 isOpen={selectedPrForPayload !== null}
                 onClose={() => setSelectedPrForPayload(null)}
+            />
+
+            {/* Modal: APL Materials Indent Form (F-2) Printout */}
+            <PurchaseRequisitionPrintModal
+                pr={selectedPrForPrint as any}
+                isOpen={selectedPrForPrint !== null}
+                onClose={() => setSelectedPrForPrint(null)}
             />
         </SapAppLayout>
     );

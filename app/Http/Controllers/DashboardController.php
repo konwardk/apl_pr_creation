@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\HeaderOption;
 use App\Models\ItemCategory;
 use App\Models\PrDocumentType;
+use App\Models\PurchasingOrganization;
 use App\Models\PurchaseRequisition;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -22,6 +23,7 @@ class DashboardController extends Controller
         $query = PurchaseRequisition::with([
             'items',
             'user',
+            'user.department',
             'headerOption',
             'attachments',
             'contractRequisition',
@@ -60,6 +62,11 @@ class DashboardController extends Controller
             ->orderBy('code')
             ->get();
 
+        $purchasingOrganizations = PurchasingOrganization::with('creator:id,name,email')
+            ->orderBy('is_active', 'desc')
+            ->orderBy('code')
+            ->get();
+
         $tenantUrl = config('sap.tenant_url', env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap'));
         $serviceRoot = config('sap.endpoints.service_root', rtrim($tenantUrl, '/') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/');
 
@@ -81,7 +88,9 @@ class DashboardController extends Controller
             'headerOptions' => $headerOptions,
             'prDocumentTypes' => $prDocumentTypes,
             'itemCategories' => $itemCategories,
+            'purchasingOrganizations' => $purchasingOrganizations,
             'sapConfig' => $sapConfig,
         ]);
+
     }
 }

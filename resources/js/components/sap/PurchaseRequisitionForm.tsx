@@ -569,6 +569,8 @@ export default function PurchaseRequisitionForm({
     const [sapMaterialGroupsCache, setSapMaterialGroupsCache] = useState<SearchHelpOption[]>([]);
     const [sapGlAccountsCache, setSapGlAccountsCache] = useState<SearchHelpOption[]>([]);
     const [sapCostCentersCache, setSapCostCentersCache] = useState<SearchHelpOption[]>([]);
+    const [sapSuppliersCache, setSapSuppliersCache] = useState<SearchHelpOption[]>([]);
+    const [sapPurchasingOrgsCache, setSapPurchasingOrgsCache] = useState<SearchHelpOption[]>([]);
 
     // Valuation lookup tracking & debouncing
     const [fetchingValuation, setFetchingValuation] = useState<Record<string, boolean>>({});
@@ -1239,7 +1241,155 @@ export default function PurchaseRequisitionForm({
         }
     };
 
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_SUPPLIER_CDS) API for Supplier / Vendor F4 Search Help.
+     * Uses Supplier (code), SupplierName (name), SupplierFullName, and BPSupplierName.
+     * Applicable for Desired Vendor (desired_supplier) and Fixed Vendor (fixed_vendor).
+     */
+    const handleOpenSupplierSearchHelp = async (
+        field: 'desired_supplier' | 'fixed_vendor',
+        targetIndex: number,
+        currentCode?: string
+    ) => {
+        setActiveItemIndex(targetIndex);
+        const fieldLabel = field === 'desired_supplier' ? 'Desired Vendor' : 'Fixed Vendor';
+
+        if (sapSuppliersCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: `Select ${fieldLabel} - SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS)`,
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS • ${sapSuppliersCache.length} suppliers)`,
+                options: sapSuppliersCache,
+                selectedCode: currentCode || '',
+                field,
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: `Select ${fieldLabel} - SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS)`,
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS)...',
+            options: dataCatalog.desiredSuppliers || [],
+            selectedCode: currentCode || '',
+            field,
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-suppliers', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapSuppliersCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS • ${data.items.length} suppliers)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No suppliers returned from SAP CDS View',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch suppliers from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud Supplier CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_PURCHASEORGANIZATION_CDS) API for Purchase Organisation F4 Search Help.
+     * Uses PurchasingOrganization (code), PurchasingOrganizationName (name), and mapped plants.
+     */
+    const handleOpenPurchasingOrgSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+
+        if (sapPurchasingOrgsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Purchase Organisation - SAP S/4HANA Cloud (CDS: YY1_PURCHASEORGANIZATION_CDS)',
+                subtitle: `SAP Purchasing Organizations (${sapPurchasingOrgsCache.length} organizations)`,
+                options: sapPurchasingOrgsCache,
+                selectedCode: currentCode || '',
+                field: 'purchasing_organization',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback from dataCatalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Purchase Organisation - SAP S/4HANA Cloud (CDS: YY1_PURCHASEORGANIZATION_CDS)',
+            subtitle: 'Loading Purchasing Organizations from Database / SAP Cloud...',
+            options: dataCatalog.purchasingOrganizations || [],
+            selectedCode: currentCode || '',
+            field: 'purchasing_organization',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-purchasing-organizations', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapPurchasingOrgsCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP Purchasing Organizations (${data.items.length} organizations)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: dataCatalog.purchasingOrganizations || [],
+                    subtitle: 'Loaded Purchasing Organizations',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch purchasing organizations:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                options: dataCatalog.purchasingOrganizations || [],
+                subtitle: 'Loaded Cached Purchasing Organizations',
+                isLoading: false,
+            }));
+        }
+    };
+
+    const getPurchasingOrgLabel = (code?: string) => {
+        if (!code) return '';
+        const allOrgs = sapPurchasingOrgsCache.length > 0 ? sapPurchasingOrgsCache : (dataCatalog.purchasingOrganizations || []);
+        const found = allOrgs.find((o) => (o.PurchasingOrganization || o.code) === code);
+        return found ? (found.PurchasingOrganizationName || found.purchasingOrgName || found.name || '') : '';
+    };
+
     const handleSelectSearchHelp = (opt: SearchHelpOption) => {
+
         const { field, targetIndex } = searchHelpState;
         const targetIdx = targetIndex !== undefined ? targetIndex : activeItemIndex;
 
@@ -1351,8 +1501,6 @@ export default function PurchaseRequisitionForm({
                     return {
                         ...item,
                         [field]: supplierCode,
-                        ...(field === 'desired_supplier' && !item.fixed_vendor ? { fixed_vendor: supplierCode } : {}),
-                        ...(field === 'fixed_vendor' && !item.desired_supplier ? { desired_supplier: supplierCode } : {}),
                         supplier_name: supplierName || item.supplier_name,
                         source_assigned: true,
                     };
@@ -1421,10 +1569,26 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
+        // Special handling when selecting Purchasing Organization:
+        if (field === 'purchasing_organization') {
+            const orgCode = opt.PurchasingOrganization || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        purchasing_organization: orgCode,
+                    };
+                })
+            );
+            return;
+        }
+
         // Other fields: plant, item_category, account_assignment_category, material_type, material_group, unit_of_measure, storage_location, cost_center, gl_account, etc.
         setItems((prev) =>
             prev.map((item, idx) => (idx === targetIdx ? { ...item, [field]: opt.code } : item))
         );
+
     };
 
     const updateCurrentItem = (updates: Partial<PrItemData>) => {
@@ -3491,31 +3655,37 @@ export default function PurchaseRequisitionForm({
                                         <input
                                             type="text"
                                             value={currentItem?.desired_supplier || ''}
-                                            onChange={(e) => updateCurrentItem({ desired_supplier: e.target.value })}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const matched = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                    (s: any) => (s.Supplier || s.code) === val
+                                                );
+                                                updateCurrentItem({
+                                                    desired_supplier: val,
+                                                    ...(matched ? { supplier_name: matched.SupplierName || matched.name || matched.supplierName } : {}),
+                                                    source_assigned: Boolean(val),
+                                                });
+                                            }}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
+                                                    handleOpenSupplierSearchHelp(
                                                         'desired_supplier',
-                                                        'Select Desired Supplier (Search Help)',
-                                                        dataCatalog.desiredSuppliers,
-                                                        currentItem?.desired_supplier,
-                                                        activeItemIndex
+                                                        activeItemIndex,
+                                                        currentItem?.desired_supplier
                                                     );
                                                 }
                                             }}
-                                            placeholder="V-10029"
+                                            placeholder="e.g. 1000011"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openSearchHelp(
+                                                handleOpenSupplierSearchHelp(
                                                     'desired_supplier',
-                                                    'Select Desired Supplier (Search Help)',
-                                                    dataCatalog.desiredSuppliers,
-                                                    currentItem?.desired_supplier,
-                                                    activeItemIndex
+                                                    activeItemIndex,
+                                                    currentItem?.desired_supplier
                                                 )
                                             }
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
@@ -3525,7 +3695,19 @@ export default function PurchaseRequisitionForm({
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Vendor suggestion from requesting user department
+                                        {(() => {
+                                            const selectedSupplier = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                (s: any) => (s.Supplier || s.code) === currentItem?.desired_supplier
+                                            );
+                                            if (selectedSupplier) {
+                                                return (
+                                                    <span className="font-semibold text-blue-700">
+                                                        {selectedSupplier.SupplierName || selectedSupplier.name}
+                                                    </span>
+                                                );
+                                            }
+                                            return 'Vendor suggestion from requesting user department';
+                                        })()}
                                     </span>
                                 </div>
 
@@ -4310,9 +4492,11 @@ export default function PurchaseRequisitionForm({
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            const vendorCode = currentItem.fixed_vendor || currentItem.desired_supplier || 'V-10029';
-                                            const matched = (dataCatalog.desiredSuppliers || []).find((s) => s.code === vendorCode);
-                                            const vendorName = currentItem.supplier_name || (matched ? (matched.name || matched.supplierName) : 'Tata Chemicals Ltd');
+                                            const vendorCode = currentItem.fixed_vendor || currentItem.desired_supplier || '1000011';
+                                            const matched = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                (s: any) => (s.Supplier || s.code) === vendorCode
+                                            );
+                                            const vendorName = currentItem.supplier_name || (matched ? (matched.SupplierName || matched.name || matched.supplierName) : 'Aarbee Enterprises');
                                             updateCurrentItem({
                                                 desired_supplier: vendorCode,
                                                 fixed_vendor: vendorCode,
@@ -4361,38 +4545,35 @@ export default function PurchaseRequisitionForm({
                                                 value={currentItem?.desired_supplier || ''}
                                                 onChange={(e) => {
                                                     const val = e.target.value.toUpperCase();
-                                                    const matched = (dataCatalog.desiredSuppliers || []).find((s) => s.code === val);
+                                                    const matched = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                        (s: any) => (s.Supplier || s.code) === val
+                                                    );
                                                     updateCurrentItem({
                                                         desired_supplier: val,
-                                                        ...(matched ? { supplier_name: matched.name || matched.supplierName } : {}),
-                                                        ...(!currentItem.fixed_vendor ? { fixed_vendor: val } : {}),
+                                                        ...(matched ? { supplier_name: matched.SupplierName || matched.name || matched.supplierName } : {}),
                                                         source_assigned: Boolean(val),
                                                     });
                                                 }}
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'F4') {
                                                         e.preventDefault();
-                                                        openSearchHelp(
+                                                        handleOpenSupplierSearchHelp(
                                                             'desired_supplier',
-                                                            'Select Desired Vendor (Search Help - F4)',
-                                                            dataCatalog.desiredSuppliers || [],
-                                                            currentItem?.desired_supplier,
-                                                            activeItemIndex
+                                                            activeItemIndex,
+                                                            currentItem?.desired_supplier
                                                         );
                                                     }
                                                 }}
-                                                placeholder="e.g. V-10029"
+                                                placeholder="e.g. 1000011"
                                                 className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                             />
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    openSearchHelp(
+                                                    handleOpenSupplierSearchHelp(
                                                         'desired_supplier',
-                                                        'Select Desired Vendor (Search Help - F4)',
-                                                        dataCatalog.desiredSuppliers || [],
-                                                        currentItem?.desired_supplier,
-                                                        activeItemIndex
+                                                        activeItemIndex,
+                                                        currentItem?.desired_supplier
                                                     )
                                                 }
                                                 className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
@@ -4402,7 +4583,19 @@ export default function PurchaseRequisitionForm({
                                             </button>
                                         </div>
                                         <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Suggested vendor proposed by requesting department (LIFNR)
+                                            {(() => {
+                                                const selectedSupplier = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                    (s: any) => (s.Supplier || s.code) === currentItem?.desired_supplier
+                                                );
+                                                if (selectedSupplier) {
+                                                    return (
+                                                        <span className="font-semibold text-blue-700">
+                                                            {selectedSupplier.SupplierName || selectedSupplier.name}
+                                                        </span>
+                                                    );
+                                                }
+                                                return 'Suggested vendor proposed by requesting department (LIFNR)';
+                                            })()}
                                         </span>
                                     </div>
 
@@ -4420,38 +4613,35 @@ export default function PurchaseRequisitionForm({
                                                 value={currentItem?.fixed_vendor || ''}
                                                 onChange={(e) => {
                                                     const val = e.target.value.toUpperCase();
-                                                    const matched = (dataCatalog.desiredSuppliers || []).find((s) => s.code === val);
+                                                    const matched = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                        (s: any) => (s.Supplier || s.code) === val
+                                                    );
                                                     updateCurrentItem({
                                                         fixed_vendor: val,
-                                                        ...(!currentItem.desired_supplier ? { desired_supplier: val } : {}),
-                                                        ...(matched ? { supplier_name: matched.name || matched.supplierName } : {}),
+                                                        ...(matched ? { supplier_name: matched.SupplierName || matched.name || matched.supplierName } : {}),
                                                         source_assigned: Boolean(val),
                                                     });
                                                 }}
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'F4') {
                                                         e.preventDefault();
-                                                        openSearchHelp(
+                                                        handleOpenSupplierSearchHelp(
                                                             'fixed_vendor',
-                                                            'Select Fixed Vendor (Search Help - F4)',
-                                                            dataCatalog.desiredSuppliers || [],
-                                                            currentItem?.fixed_vendor,
-                                                            activeItemIndex
+                                                            activeItemIndex,
+                                                            currentItem?.fixed_vendor
                                                         );
                                                     }
                                                 }}
-                                                placeholder="e.g. V-10029"
+                                                placeholder="e.g. 1000011"
                                                 className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                             />
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    openSearchHelp(
+                                                    handleOpenSupplierSearchHelp(
                                                         'fixed_vendor',
-                                                        'Select Fixed Vendor (Search Help - F4)',
-                                                        dataCatalog.desiredSuppliers || [],
-                                                        currentItem?.fixed_vendor,
-                                                        activeItemIndex
+                                                        activeItemIndex,
+                                                        currentItem?.fixed_vendor
                                                     )
                                                 }
                                                 className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
@@ -4461,7 +4651,19 @@ export default function PurchaseRequisitionForm({
                                             </button>
                                         </div>
                                         <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Fixed vendor assigned for automatic PO creation (FLIEF)
+                                            {(() => {
+                                                const selectedSupplier = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
+                                                    (s: any) => (s.Supplier || s.code) === currentItem?.fixed_vendor
+                                                );
+                                                if (selectedSupplier) {
+                                                    return (
+                                                        <span className="font-semibold text-blue-700">
+                                                            {selectedSupplier.SupplierName || selectedSupplier.name}
+                                                        </span>
+                                                    );
+                                                }
+                                                return 'Fixed vendor assigned for automatic PO creation (FLIEF)';
+                                            })()}
                                         </span>
                                     </div>
 
@@ -4531,13 +4733,7 @@ export default function PurchaseRequisitionForm({
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'F4') {
                                                         e.preventDefault();
-                                                        openSearchHelp(
-                                                            'purchasing_organization',
-                                                            'Select Purchase Organisation (Search Help - F4)',
-                                                            dataCatalog.purchasingOrganizations || [],
-                                                            currentItem?.purchasing_organization,
-                                                            activeItemIndex
-                                                        );
+                                                        handleOpenPurchasingOrgSearchHelp(activeItemIndex, currentItem?.purchasing_organization);
                                                     }
                                                 }}
                                                 placeholder="e.g. 1100"
@@ -4546,13 +4742,7 @@ export default function PurchaseRequisitionForm({
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    openSearchHelp(
-                                                        'purchasing_organization',
-                                                        'Select Purchase Organisation (Search Help - F4)',
-                                                        dataCatalog.purchasingOrganizations || [],
-                                                        currentItem?.purchasing_organization,
-                                                        activeItemIndex
-                                                    )
+                                                    handleOpenPurchasingOrgSearchHelp(activeItemIndex, currentItem?.purchasing_organization)
                                                 }
                                                 className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
                                                 title="Purchase Organisation (Search Help - F4)"
@@ -4560,10 +4750,18 @@ export default function PurchaseRequisitionForm({
                                                 <Search className="h-3.5 w-3.5" />
                                             </button>
                                         </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            Procuring organizational unit (EKORG)
-                                        </span>
+                                        {getPurchasingOrgLabel(currentItem?.purchasing_organization) ? (
+                                            <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                                                {getPurchasingOrgLabel(currentItem?.purchasing_organization)}
+                                            </span>
+                                        ) : (
+                                            <span className="mt-1 block text-[10px] text-[#556b82]">
+                                                Procuring organizational unit (EKORG)
+                                            </span>
+                                        )}
                                     </div>
+
 
                                     {/* 5. Outline Agreement (F4) */}
                                     <div>
@@ -4859,9 +5057,12 @@ export default function PurchaseRequisitionForm({
 
                                 {/* Purchasing Organization (Search help) */}
                                 <div>
-                                    <label className="block text-xs font-semibold text-[#1c2d42] mb-1">
-                                        Purchasing Organization
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-semibold text-[#1c2d42]">
+                                            Purchasing Organization (F4)
+                                        </label>
+                                        <span className="text-[10px] text-[#556b82]">Manual / F4</span>
+                                    </div>
                                     <div className="relative">
                                         <input
                                             type="text"
@@ -4869,25 +5070,34 @@ export default function PurchaseRequisitionForm({
                                             onChange={(e) =>
                                                 updateCurrentItem({ purchasing_organization: e.target.value })
                                             }
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'F4') {
+                                                    e.preventDefault();
+                                                    handleOpenPurchasingOrgSearchHelp(activeItemIndex, currentItem?.purchasing_organization);
+                                                }
+                                            }}
                                             placeholder="1200"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openSearchHelp(
-                                                    'purchasing_organization',
-                                                    'Select Purchasing Organization (Search Help)',
-                                                    dataCatalog.purchasingOrganizations,
-                                                    currentItem?.purchasing_organization
-                                                )
+                                                handleOpenPurchasingOrgSearchHelp(activeItemIndex, currentItem?.purchasing_organization)
                                             }
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                            title="Purchasing Organization (Search Help - F4)"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {getPurchasingOrgLabel(currentItem?.purchasing_organization) && (
+                                        <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                                            {getPurchasingOrgLabel(currentItem?.purchasing_organization)}
+                                        </span>
+                                    )}
                                 </div>
+
 
                                 {/* Purchasing Group * (Search help) */}
                                 <div>

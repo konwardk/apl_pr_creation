@@ -22,7 +22,7 @@ import {
     Globe,
     Lock,
 } from 'lucide-react';
-import type { HeaderOption, PrDocumentType, ItemCategory } from '@/types';
+import type { HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization } from '@/types';
 import HeaderOptionsManager from './HeaderOptionsManager';
 import DocumentTypesManager from './DocumentTypesManager';
 import ItemCategoriesManager from './ItemCategoriesManager';
@@ -43,6 +43,7 @@ interface PrConfigurationDashboardProps {
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
+    purchasingOrganizations?: PurchasingOrganization[];
     isSuperAdmin?: boolean;
     activeSubTab?: string;
     onSubTabChange?: (subTab: string) => void;
@@ -52,10 +53,12 @@ export default function PrConfigurationDashboard({
     headerOptions = [],
     prDocumentTypes = [],
     itemCategories = [],
+    purchasingOrganizations = [],
     isSuperAdmin = true,
     activeSubTab: controlledSubTab,
     onSubTabChange,
 }: PrConfigurationDashboardProps) {
+
     // Read subtab from URL query param if present, default to 'header-options'
     const [internalSubTab, setInternalSubTab] = useState<string>(() => {
         if (typeof window !== 'undefined') {
@@ -113,9 +116,9 @@ export default function PrConfigurationDashboard({
             {
                 id: 'plants-sourcing',
                 label: 'Plants & Purchasing Organizations',
-                description: 'SAP S/4HANA Cloud Plants (ZUI_TMS_DESPATCH_04 / PlantVH) and buyer orgs',
+                description: 'SAP S/4HANA Cloud Plants (ZUI_TMS_DESPATCH_04) & Purchasing Orgs (YY1_PURCHASEORGANIZATION_CDS)',
                 icon: Building2,
-                badge: '4 Plants',
+                badge: `${purchasingOrganizations.length > 0 ? purchasingOrganizations.length : 3} Orgs`,
                 badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
                 category: 'Master Data',
                 isReady: true,
@@ -141,8 +144,9 @@ export default function PrConfigurationDashboard({
                 isReady: true,
             },
         ],
-        [headerOptions.length, prDocumentTypes.length, itemCategories.length]
+        [headerOptions.length, prDocumentTypes.length, itemCategories.length, purchasingOrganizations.length]
     );
+
 
     // Filter sub-tabs based on sidebar search
     const filteredSubTabs = useMemo(() => {
@@ -334,8 +338,12 @@ export default function PrConfigurationDashboard({
 
                     {/* SUB-TAB 3: PLANTS & PURCHASING ORGANIZATIONS */}
                     {(activeSubTab === 'plants-sourcing' || activeSubTab === 'plants-organizations' || activeSubTab === 'plants') && (
-                        <PlantsManager isSuperAdmin={isSuperAdmin} />
+                        <PlantsManager
+                            isSuperAdmin={isSuperAdmin}
+                            initialPurchasingOrganizations={purchasingOrganizations}
+                        />
                     )}
+
 
                     {/* SUB-TAB 4: ACCOUNT ASSIGNMENT */}
                     {activeSubTab === 'account-assignment' && (

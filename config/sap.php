@@ -65,6 +65,18 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_COSTCENTER_CDS/YY1_COSTCENTER?$format=json'
         ),
 
+        // CDS View for Suppliers / Vendors (YY1_SUPPLIER_CDS)
+        'suppliers' => env(
+            'SAP_SUPPLIERS_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_SUPPLIER_CDS/YY1_Supplier?$format=json'
+        ),
+
+        // CDS View for Purchasing Organizations (YY1_PURCHASEORGANIZATION_CDS)
+        'purchasing_organizations' => env(
+            'SAP_PURCHASING_ORG_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION?$format=json'
+        ),
+
         // OData V4 PR Service Root (for CSRF Token Fetch)
         'service_root' => env(
             'SAP_SERVICE_ROOT_ENDPOINT',

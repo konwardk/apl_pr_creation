@@ -4,4 +4,6 @@ export type * from './ui';
 export type * from './header-option';
 export type * from './pr-document-type';
 export type * from './item-category';
+export type * from './purchasing-organization';
 export type * from './contract-requisition';
+

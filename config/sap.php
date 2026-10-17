@@ -47,6 +47,12 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
         ),
 
+        // Value Help Service for Storage Locations (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+        'storage_locations' => env(
+            'SAP_STORAGE_LOCATIONS_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
+        ),
+
         // CDS View for Material Groups (YY1_MATERIALGROUP_CDS)
         'material_groups' => env(
             'SAP_MATERIAL_GROUP_ENDPOINT',

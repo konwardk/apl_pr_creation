@@ -1079,6 +1079,194 @@ class SapMasterDataService
     }
 
     /**
+     * Fetch Storage Locations from SAP S/4HANA Cloud Value Help Service:
+     * ZUI_TMS_DESPATCH_04 / StorageLocationVH
+     */
+    public function fetchStorageLocationsFromSap(
+        ?string $search = null,
+        ?string $plant = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.storage_locations',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                $targetUrl = $baseUri . '?$format=json';
+                if (!empty($plant)) {
+                    $targetUrl .= "&\$filter=" . urlencode("Plant eq '{$plant}'");
+                }
+
+                $response = $request->get($targetUrl);
+
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parseStorageLocationODataItems($json);
+
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $items = array_values(array_filter($items, function ($it) use ($term) {
+                            return str_contains(strtolower($it['code']), $term)
+                                || str_contains(strtolower($it['name']), $term)
+                                || str_contains(strtolower($it['StorageLocation'] ?? ''), $term)
+                                || str_contains(strtolower($it['StorageLocationName'] ?? ''), $term)
+                                || str_contains(strtolower($it['Plant'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live Service: ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
+                        'endpoint' => $targetUrl,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " storage locations live from SAP in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP StorageLocationVH fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $targetUrl,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}",
+                    'items' => $this->getFormattedFallbackStorageLocations($plant),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP StorageLocationVH: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackStorageLocations($plant),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (StorageLocationVH)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackStorageLocations($plant)),
+            'items' => $this->getFormattedFallbackStorageLocations($plant),
+            'message' => 'Returning fallback storage location data.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 payload into standardized storage location items.
+     */
+    protected function parseStorageLocationODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $code = $rec['StorageLocation'] ?? $rec['code'] ?? null;
+            if ($code === null || trim((string)$code) === '') {
+                continue;
+            }
+
+            $code = trim((string)$code);
+            $plant = trim((string)($rec['Plant'] ?? $rec['plant'] ?? ''));
+            $name = trim((string)($rec['StorageLocationName'] ?? $rec['name'] ?? ''));
+            if ($name === '') {
+                $name = "Storage Location {$code}";
+            }
+
+            $extra = "Plant {$plant} • {$name}";
+
+            $parsed[] = [
+                'code' => $code,
+                'name' => "{$code} - {$name}",
+                'StorageLocation' => $code,
+                'StorageLocationName' => $name,
+                'Plant' => $plant,
+                'extra' => $extra,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackStorageLocations();
+    }
+
+    /**
+     * Get fallback storage locations matching live SAP StorageLocationVH service data.
+     */
+    public function getFormattedFallbackStorageLocations(?string $plant = null): array
+    {
+        $all = [
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1100', 'extra' => 'Plant 1100 • Store'],
+            ['code' => 'F125', 'name' => 'F125 - 125 TPD Formalin', 'StorageLocation' => 'F125', 'StorageLocationName' => '125 TPD Formalin', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Formalin'],
+            ['code' => 'M100', 'name' => 'M100 - 100 TPD Methanol', 'StorageLocation' => 'M100', 'StorageLocationName' => '100 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Methanol'],
+            ['code' => 'M500', 'name' => 'M500 - 500 TPD Methanol', 'StorageLocation' => 'M500', 'StorageLocationName' => '500 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Methanol'],
+            ['code' => 'ISST', 'name' => 'ISST - ISGEC Store', 'StorageLocation' => 'ISST', 'StorageLocationName' => 'ISGEC Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • ISGEC Store'],
+            ['code' => 'SLCH', 'name' => 'SLCH - Chemical', 'StorageLocation' => 'SLCH', 'StorageLocationName' => 'Chemical', 'Plant' => '1200', 'extra' => 'Plant 1200 • Chemical'],
+            ['code' => 'SSM2', 'name' => 'SSM2 - Mech Sub-Stre M2', 'StorageLocation' => 'SSM2', 'StorageLocationName' => 'Mech Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M2'],
+            ['code' => 'SSM3', 'name' => 'SSM3 - Mech Sub-Stre M3', 'StorageLocation' => 'SSM3', 'StorageLocationName' => 'Mech Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M3'],
+            ['code' => 'F200', 'name' => 'F200 - 200 TPD Formalin', 'StorageLocation' => 'F200', 'StorageLocationName' => '200 TPD Formalin', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Formalin'],
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1300', 'extra' => 'Plant 1300 • Store'],
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1400', 'extra' => 'Plant 1400 • Store'],
+        ];
+
+        if (!empty($plant)) {
+            $filtered = array_values(array_filter($all, fn($it) => $it['Plant'] === $plant));
+            return !empty($filtered) ? $filtered : $all;
+        }
+
+        return $all;
+    }
+
+    /**
      * Default realistic fallback material groups representing SAP S/4HANA Cloud
      * YY1_MATERIALGROUP_CDS / YY1_MATERIALGROUP CDS view release data.
      */

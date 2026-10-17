@@ -553,6 +553,7 @@ export default function PurchaseRequisitionForm({
         field: keyof PrItemData | 'documentType';
         targetIndex?: number;
         isLoading?: boolean;
+        targetPlant?: string;
     }>({
         isOpen: false,
         title: '',
@@ -561,11 +562,13 @@ export default function PurchaseRequisitionForm({
         field: 'plant',
         targetIndex: 0,
         isLoading: false,
+        targetPlant: undefined,
     });
 
     const [sapMaterialsCache, setSapMaterialsCache] = useState<SearchHelpOption[]>([]);
     const [sapAccountAssignmentCategoriesCache, setSapAccountAssignmentCategoriesCache] = useState<SearchHelpOption[]>([]);
     const [sapPlantsCache, setSapPlantsCache] = useState<SearchHelpOption[]>([]);
+    const [sapStorageLocationsCache, setSapStorageLocationsCache] = useState<SearchHelpOption[]>([]);
     const [sapMaterialGroupsCache, setSapMaterialGroupsCache] = useState<SearchHelpOption[]>([]);
     const [sapGlAccountsCache, setSapGlAccountsCache] = useState<SearchHelpOption[]>([]);
     const [sapCostCentersCache, setSapCostCentersCache] = useState<SearchHelpOption[]>([]);
@@ -1041,6 +1044,89 @@ export default function PurchaseRequisitionForm({
     };
 
     /**
+     * Hit SAP S/4HANA Cloud Value Help Service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+     * API for Storage Location F4 Search Help.
+     * Shows StorageLocation (code), StorageLocationName (description), and Plant.
+     */
+    const handleOpenStorageLocationSearchHelp = async (
+        targetIndex: number,
+        currentCode?: string,
+        plantCode?: string
+    ) => {
+        setActiveItemIndex(targetIndex);
+        const targetPlant = (plantCode || items[targetIndex]?.plant || defaultPlant || '').trim();
+
+        if (sapStorageLocationsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
+                subtitle: targetPlant
+                    ? `SAP S/4HANA Cloud (StorageLocationVH • Plant ${targetPlant} • ${sapStorageLocationsCache.length} locations)`
+                    : `SAP S/4HANA Cloud (StorageLocationVH • ${sapStorageLocationsCache.length} locations)`,
+                options: sapStorageLocationsCache,
+                selectedCode: currentCode || '',
+                field: 'storage_location',
+                targetIndex,
+                isLoading: false,
+                targetPlant,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
+            subtitle: targetPlant
+                ? `Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH for Plant ${targetPlant})...`
+                : 'Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)...',
+            options: (dataCatalog.storageLocations && dataCatalog.storageLocations.length > 0)
+                ? dataCatalog.storageLocations
+                : [],
+            selectedCode: currentCode || '',
+            field: 'storage_location',
+            targetIndex,
+            isLoading: true,
+            targetPlant,
+        });
+
+        try {
+            const res = await fetch('/sap-storage-locations', {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapStorageLocationsCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: targetPlant
+                        ? `SAP S/4HANA Cloud (StorageLocationVH • Plant ${targetPlant} • ${data.items.length} locations)`
+                        : `SAP S/4HANA Cloud (StorageLocationVH • ${data.items.length} locations)`,
+                    isLoading: false,
+                    targetPlant,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No storage locations returned from SAP StorageLocationVH',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch storage locations from SAP StorageLocationVH service:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud StorageLocationVH Service',
+                isLoading: false,
+            }));
+        }
+    };
+
+    /**
      * Hit SAP S/4HANA Cloud CDS View (YY1_MATERIALGROUP_CDS) API for Material Group F4 Search Help.
      * Shows MaterialGroup (Code) and MaterialGroupName (Description).
      * Used for Service line items (for Material items, the group is auto-selected).
@@ -1430,6 +1516,23 @@ export default function PurchaseRequisitionForm({
             if (currentLine && currentLine.material_code) {
                 triggerMaterialValuationLookup(targetIdx, currentLine.material_code, plantCode);
             }
+            return;
+        }
+
+        // Special handling when selecting Storage Location:
+        if (field === 'storage_location') {
+            const storLocCode = opt.StorageLocation || opt.code;
+            const storLocPlant = opt.Plant || opt.plant;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        storage_location: storLocCode,
+                        plant: item.plant || storLocPlant || item.plant,
+                    };
+                })
+            );
             return;
         }
 
@@ -3609,37 +3712,33 @@ export default function PurchaseRequisitionForm({
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'storage_location',
-                                                        'Select Storage Location (Search Help)',
-                                                        dataCatalog.storageLocations,
+                                                    handleOpenStorageLocationSearchHelp(
+                                                        activeItemIndex,
                                                         currentItem?.storage_location,
-                                                        activeItemIndex
+                                                        currentItem?.plant
                                                     );
                                                 }
                                             }}
-                                            placeholder="101A"
+                                            placeholder="e.g. SL01, M100"
                                             className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                         />
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openSearchHelp(
-                                                    'storage_location',
-                                                    'Select Storage Location (Search Help)',
-                                                    dataCatalog.storageLocations,
+                                                handleOpenStorageLocationSearchHelp(
+                                                    activeItemIndex,
                                                     currentItem?.storage_location,
-                                                    activeItemIndex
+                                                    currentItem?.plant
                                                 )
                                             }
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                            title="Storage Location (Search Help - F4)"
+                                            title="Storage Location Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / StorageLocationVH"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Warehouse/bin location in plant
+                                        Warehouse/bin location in plant (SAP Service: StorageLocationVH)
                                     </span>
                                 </div>
 
@@ -5431,6 +5530,7 @@ export default function PurchaseRequisitionForm({
                 isLoading={searchHelpState.isLoading}
                 onClose={() => setSearchHelpState((prev) => ({ ...prev, isOpen: false }))}
                 onSelect={handleSelectSearchHelp}
+                initialPlant={searchHelpState.targetPlant || currentItem?.plant}
             />
         </form>
     );

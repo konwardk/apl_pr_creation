@@ -69,6 +69,18 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Fetch Storage Locations from SAP S/4HANA Cloud Value Help Service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+     */
+    public function getStorageLocations(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $plant = $request->query('plant');
+        $result = $this->sapService->fetchStorageLocationsFromSap($search, $plant);
+
+        return response()->json($result);
+    }
+
+    /**
      * Fetch Material Groups from SAP S/4HANA Cloud CDS View (YY1_MATERIALGROUP_CDS)
      */
     public function getMaterialGroups(Request $request): JsonResponse
@@ -379,12 +391,11 @@ class PurchaseRequisitionController extends Controller
             ['code' => '119', 'name' => '119 - Services Purchasing'],
         ];
 
-        $storageLocations = [
-            ['code' => 'M100', 'name' => 'M100 - Main Raw Material Store'],
-            ['code' => 'SSM2', 'name' => 'SSM2 - Safety & Spares Store 2'],
-            ['code' => 'SSM3', 'name' => 'SSM3 - Spares Store 3'],
-            ['code' => 'SL01', 'name' => 'SL01 - General Warehouse 1'],
-        ];
+        // 10. Storage Locations from live SAP S/4HANA Cloud service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+        $storageLocationsResult = $this->sapService->fetchStorageLocationsFromSap();
+        $storageLocations = ($storageLocationsResult['success'] ?? false && !empty($storageLocationsResult['items']))
+            ? $storageLocationsResult['items']
+            : $this->sapService->getFormattedFallbackStorageLocations();
 
         $ccResult = $this->sapService->fetchCostCentersFromCdsView();
         $costCenters = ($ccResult['success'] ?? false && !empty($ccResult['items']))

@@ -17,6 +17,7 @@ interface SapSearchHelpModalProps {
     selectedCode?: string;
     onSelect: (option: SearchHelpOption) => void;
     isLoading?: boolean;
+    initialPlant?: string;
 }
 
 export default function SapSearchHelpModal({
@@ -28,15 +29,56 @@ export default function SapSearchHelpModal({
     selectedCode = '',
     onSelect,
     isLoading = false,
+    initialPlant,
 }: SapSearchHelpModalProps) {
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedPlantFilter, setSelectedPlantFilter] = useState<string>('ALL');
+
+    const isStorageLocationSearch = useMemo(() => {
+        return (
+            title.toLowerCase().includes('storage location') ||
+            options.some((o) => o.StorageLocation || o.StorageLocationName)
+        );
+    }, [title, options]);
+
+    const availablePlants = useMemo(() => {
+        if (!isStorageLocationSearch) return [];
+        const plantsSet = new Set<string>();
+        options.forEach((o) => {
+            const p = o.Plant || o.plant;
+            if (p) plantsSet.add(String(p).trim());
+        });
+        return Array.from(plantsSet).sort();
+    }, [options, isStorageLocationSearch]);
+
+    // When modal opens, initialize plant filter to initialPlant if available
+    React.useEffect(() => {
+        if (isOpen) {
+            setSearchQuery('');
+            if (initialPlant && initialPlant.trim() && availablePlants.includes(initialPlant.trim())) {
+                setSelectedPlantFilter(initialPlant.trim());
+            } else {
+                setSelectedPlantFilter('ALL');
+            }
+        }
+    }, [isOpen, initialPlant, availablePlants]);
 
     const filteredOptions = useMemo(() => {
+        let base = options;
+        if (isStorageLocationSearch && selectedPlantFilter !== 'ALL') {
+            const matchingPlant = base.filter((o) => String(o.Plant || o.plant).trim() === selectedPlantFilter);
+            if (matchingPlant.length > 0) {
+                base = matchingPlant;
+            }
+        }
+
         const q = searchQuery.toLowerCase().trim();
-        if (!q) return options;
-        return options.filter((opt) => {
+        if (!q) return base;
+        return base.filter((opt) => {
             const product = (opt.Product || opt.MaterialGroup || opt.GLAccount || opt.CostCenter || opt.code || '').toLowerCase();
             const productName = (opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.GLAccountName || opt.name || '').toLowerCase();
+            const storLoc = (opt.StorageLocation || '').toLowerCase();
+            const storLocName = (opt.StorageLocationName || '').toLowerCase();
             const companyCode = (opt.CompanyCode || opt.companyCode || '').toLowerCase();
             const controllingArea = (opt.ControllingArea || opt.controllingArea || '').toLowerCase();
             const profitCenter = (opt.ProfitCenter || opt.profitCenter || '').toLowerCase();
@@ -57,6 +99,8 @@ export default function SapSearchHelpModal({
             return (
                 product.includes(q) ||
                 productName.includes(q) ||
+                storLoc.includes(q) ||
+                storLocName.includes(q) ||
                 companyCode.includes(q) ||
                 controllingArea.includes(q) ||
                 profitCenter.includes(q) ||
@@ -75,7 +119,7 @@ export default function SapSearchHelpModal({
                 extId.includes(q)
             );
         });
-    }, [options, searchQuery]);
+    }, [options, searchQuery, isStorageLocationSearch, selectedPlantFilter]);
 
     if (!isOpen) return null;
 
@@ -104,7 +148,7 @@ export default function SapSearchHelpModal({
         title.toLowerCase().includes('purchase organisation') ||
         title.toLowerCase().includes('purchasing org')
     );
-    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isSupplierSearch || isPurchasingOrgSearch || filteredOptions.some((o) => o.materialType);
+    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isSupplierSearch || isPurchasingOrgSearch || isStorageLocationSearch || filteredOptions.some((o) => o.materialType);
 
 
     return (
@@ -149,6 +193,8 @@ export default function SapSearchHelpModal({
                                     ? "Search by Cost Center (e.g. 10101PCC01), Profit Center (e.g. 1010PC0010), Area (e.g. A000)..."
                                     : isSupplierSearch
                                     ? "Search by Supplier Code (e.g. 1000011, V-10029) or Supplier Name (e.g. Aarbee Enterprises, Tata Chemicals)..."
+                                    : isStorageLocationSearch
+                                    ? "Search by Storage Location (e.g. SL01, M100), Plant (e.g. 1200), or description..."
                                     : "Type to search code or description..."
                             }
                             autoFocus
@@ -164,6 +210,42 @@ export default function SapSearchHelpModal({
                             </button>
                         )}
                     </div>
+
+                    {/* Plant filter pills for Storage Location search */}
+                    {isStorageLocationSearch && availablePlants.length > 0 && (
+                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
+                            <span className="text-[10px] font-semibold text-[#556b82] mr-1">Filter by Plant:</span>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedPlantFilter('ALL')}
+                                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                                    selectedPlantFilter === 'ALL'
+                                        ? 'bg-[#0070f2] text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                            >
+                                All Plants ({options.length})
+                            </button>
+                            {availablePlants.map((plantCode) => {
+                                const count = options.filter((o) => String(o.Plant || o.plant).trim() === plantCode).length;
+                                const isCurrent = selectedPlantFilter === plantCode;
+                                return (
+                                    <button
+                                        key={plantCode}
+                                        type="button"
+                                        onClick={() => setSelectedPlantFilter(plantCode)}
+                                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                                            isCurrent
+                                                ? 'bg-[#0070f2] text-white shadow-xs'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        Plant {plantCode} ({count})
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
                 {/* Options Table */}
@@ -229,6 +311,13 @@ export default function SapSearchHelpModal({
                                             <th className="py-2.5 px-4 w-64">Mapped Operational Plants</th>
                                             <th className="py-2.5 px-3 w-28 text-center">Company Code</th>
                                         </>
+                                    ) : isStorageLocationSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-36 font-mono">Storage Location</th>
+                                            <th className="py-2.5 px-3 w-28 text-center">Plant</th>
+                                            <th className="py-2.5 px-4">Location Name / Description</th>
+                                            <th className="py-2.5 px-4 w-64">Details / SAP Spec</th>
+                                        </>
                                     ) : (
                                         <>
                                             <th className="py-2.5 px-4 w-32">Code / ID</th>
@@ -243,8 +332,8 @@ export default function SapSearchHelpModal({
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt, idx) => {
-                                    const optCode = opt.PurchasingOrganization ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
-                                    const optName = opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
+                                    const optCode = opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
+                                    const optName = opt.StorageLocationName ?? opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
                                     const isSelected = selectedCode === optCode;
 
 
@@ -462,6 +551,25 @@ export default function SapSearchHelpModal({
                                                     </td>
                                                     <td className="py-2.5 px-3 text-center font-mono text-xs text-slate-600">
                                                         {opt.CompanyCode || opt.company_code || '1000'}
+                                                    </td>
+                                                </>
+                                            ) : isStorageLocationSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-mono text-[#0070f2]">
+                                                            {opt.StorageLocation || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-700">
+                                                            Plant {opt.Plant || opt.plant || '-'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-semibold text-[#1c2d42]">
+                                                        {opt.StorageLocationName || opt.name}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-[11px] text-[#556b82]">
+                                                        {opt.extra || `Plant ${opt.Plant || opt.plant || ''} • Warehouse/Bin`}
                                                     </td>
                                                 </>
                                             ) : (

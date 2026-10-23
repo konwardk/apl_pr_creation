@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Attachment;
 use App\Models\PrDocumentType;
 use App\Models\PurchasingOrganization;
+use App\Models\PurchasingGroup;
 use App\Models\PurchaseRequisition;
 use App\Models\ContractRequisition;
 use GuzzleHttp\Client;
@@ -2951,4 +2952,441 @@ class SapMasterDataService
             ],
         ];
     }
+
+    /**
+     * Fetch Purchasing Groups from SAP S/4HANA Cloud CDS View:
+     * YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI
+     */
+    public function fetchPurchasingGroupsFromCdsView(
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.purchasing_groups',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $baseUri = explode('?', $endpoint)[0];
+                $url = $baseUri . '?$format=json';
+
+                $response = $request->get($url);
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $items = $this->parsePurchasingGroupODataItems($json);
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_PURCHASINGGROUPAPI_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($items),
+                        'items' => $items,
+                        'message' => "Successfully fetched " . count($items) . " purchasing groups live from SAP CDS View in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Purchasing Group CDS View fetch non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                    'endpoint' => $endpoint,
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                        ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'items' => $this->getFormattedFallbackPurchasingGroups(),
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Purchasing Group CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackPurchasingGroups(),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Local Fallback Master Data (Purchasing Groups)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackPurchasingGroups()),
+            'items' => $this->getFormattedFallbackPurchasingGroups(),
+            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback purchasing groups.',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Purchasing Group items.
+     */
+    public function parsePurchasingGroupODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+
+        foreach ($rawRecords as $rec) {
+            $code = trim((string)($rec['PurchasingGroup'] ?? $rec['purchasing_group'] ?? $rec['code'] ?? ''));
+            if (empty($code)) {
+                continue;
+            }
+
+            $name = trim((string)($rec['PurchasingGroupName'] ?? $rec['purchasing_group_name'] ?? $rec['name'] ?? $rec['Description'] ?? $code));
+            $description = trim((string)($rec['description'] ?? $rec['Description'] ?? $name));
+
+            $parsed[] = [
+                'code' => $code,
+                'name' => $name,
+                'description' => $description ?: $name,
+                'PurchasingGroup' => $code,
+                'PurchasingGroupName' => $name,
+                'extra' => $description ?: $name,
+                'is_active' => true,
+                'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI',
+                'raw_data' => $rec,
+            ];
+        }
+
+        usort($parsed, fn($a, $b) => strcmp($a['code'], $b['code']));
+
+        return $parsed;
+    }
+
+    /**
+     * Save/upsert selected Purchasing Groups into MySQL database (apl_pr_db).
+     *
+     * @param array $items Array of purchasing group items to persist
+     * @param int|null $userId ID of user performing sync
+     * @return array Summary of created and updated records
+     */
+    public function savePurchasingGroups(array $items, ?int $userId = null): array
+    {
+        $created = 0;
+        $updated = 0;
+
+        foreach ($items as $item) {
+            $code = trim($item['code'] ?? $item['PurchasingGroup'] ?? '');
+            if (empty($code)) {
+                continue;
+            }
+
+            $existing = PurchasingGroup::where('code', $code)->first();
+
+            $name = trim($item['name'] ?? $item['PurchasingGroupName'] ?? $code);
+            $description = trim($item['description'] ?? $name);
+
+            $attributes = [
+                'name' => $name,
+                'description' => $description ?: $name,
+                'email' => $item['email'] ?? ($existing ? $existing->email : null),
+                'phone_number' => $item['phone_number'] ?? ($existing ? $existing->phone_number : null),
+                'is_active' => isset($item['is_active']) ? (bool)$item['is_active'] : true,
+                'sap_source' => $item['sap_source'] ?? 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI',
+                'is_synced' => true,
+                'synced_at' => now(),
+                'raw_data' => $item['raw_data'] ?? null,
+                'created_by' => $userId ?: ($existing ? $existing->created_by : null),
+            ];
+
+            if ($existing) {
+                $existing->update($attributes);
+                $updated++;
+            } else {
+                PurchasingGroup::create(array_merge(['code' => $code], $attributes));
+                $created++;
+            }
+        }
+
+        return [
+            'created' => $created,
+            'updated' => $updated,
+            'total' => $created + $updated,
+        ];
+    }
+
+    /**
+     * Fallback Purchasing Groups matching SAP YY1_PURCHASINGGROUPAPI_CDS schema.
+     */
+    public function getFormattedFallbackPurchasingGroups(): array
+    {
+        return [
+            ['code' => '001', 'name' => 'Group 001', 'PurchasingGroup' => '001', 'PurchasingGroupName' => 'Group 001', 'description' => 'Group 001', 'extra' => 'Group 001', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '002', 'name' => 'Group 002', 'PurchasingGroup' => '002', 'PurchasingGroupName' => 'Group 002', 'description' => 'Group 002', 'extra' => 'Group 002', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '003', 'name' => 'Group 003', 'PurchasingGroup' => '003', 'PurchasingGroupName' => 'Group 003', 'description' => 'Group 003', 'extra' => 'Group 003', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '005', 'name' => 'Transportation Srv', 'PurchasingGroup' => '005', 'PurchasingGroupName' => 'Transportation Srv', 'description' => 'Transportation Srv', 'extra' => 'Transportation Srv', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '006', 'name' => 'TM – Ext. Planning', 'PurchasingGroup' => '006', 'PurchasingGroupName' => 'TM – Ext. Planning', 'description' => 'TM – Ext. Planning', 'extra' => 'TM – Ext. Planning', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '007', 'name' => 'TM – Int. Planning', 'PurchasingGroup' => '007', 'PurchasingGroupName' => 'TM – Int. Planning', 'description' => 'TM – Int. Planning', 'extra' => 'TM – Int. Planning', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '101', 'name' => 'Civil', 'PurchasingGroup' => '101', 'PurchasingGroupName' => 'Civil', 'description' => 'Civil', 'extra' => 'Civil', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '102', 'name' => 'Contracts', 'PurchasingGroup' => '102', 'PurchasingGroupName' => 'Contracts', 'description' => 'Contracts', 'extra' => 'Contracts', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '103', 'name' => 'Purchase', 'PurchasingGroup' => '103', 'PurchasingGroupName' => 'Purchase', 'description' => 'Purchase', 'extra' => 'Purchase', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '104', 'name' => 'Marketing', 'PurchasingGroup' => '104', 'PurchasingGroupName' => 'Marketing', 'description' => 'Marketing', 'extra' => 'Marketing', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '105', 'name' => 'Technical Service', 'PurchasingGroup' => '105', 'PurchasingGroupName' => 'Technical Service', 'description' => 'Technical Service', 'extra' => 'Technical Service', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '106', 'name' => 'EDP', 'PurchasingGroup' => '106', 'PurchasingGroupName' => 'EDP', 'description' => 'EDP', 'extra' => 'EDP', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '107', 'name' => 'Project', 'PurchasingGroup' => '107', 'PurchasingGroupName' => 'Project', 'description' => 'Project', 'extra' => 'Project', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '108', 'name' => 'Process', 'PurchasingGroup' => '108', 'PurchasingGroupName' => 'Process', 'description' => 'Process', 'extra' => 'Process', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '109', 'name' => 'Admin', 'PurchasingGroup' => '109', 'PurchasingGroupName' => 'Admin', 'description' => 'Admin', 'extra' => 'Admin', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '110', 'name' => 'Finance', 'PurchasingGroup' => '110', 'PurchasingGroupName' => 'Finance', 'description' => 'Finance', 'extra' => 'Finance', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '111', 'name' => 'Production', 'PurchasingGroup' => '111', 'PurchasingGroupName' => 'Production', 'description' => 'Production', 'extra' => 'Production', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '112', 'name' => 'Stores', 'PurchasingGroup' => '112', 'PurchasingGroupName' => 'Stores', 'description' => 'Stores', 'extra' => 'Stores', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '113', 'name' => 'Fire & Safety', 'PurchasingGroup' => '113', 'PurchasingGroupName' => 'Fire & Safety', 'description' => 'Fire & Safety', 'extra' => 'Fire & Safety', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '114', 'name' => 'Quality Control', 'PurchasingGroup' => '114', 'PurchasingGroupName' => 'Quality Control', 'description' => 'Quality Control', 'extra' => 'Quality Control', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '115', 'name' => 'Elect - 500 TPD', 'PurchasingGroup' => '115', 'PurchasingGroupName' => 'Elect - 500 TPD', 'description' => 'Elect - 500 TPD', 'extra' => 'Elect - 500 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '116', 'name' => 'Elect - 125 TPD', 'PurchasingGroup' => '116', 'PurchasingGroupName' => 'Elect - 125 TPD', 'description' => 'Elect - 125 TPD', 'extra' => 'Elect - 125 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '117', 'name' => 'Elect - 100 TPD', 'PurchasingGroup' => '117', 'PurchasingGroupName' => 'Elect - 100 TPD', 'description' => 'Elect - 100 TPD', 'extra' => 'Elect - 100 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '118', 'name' => 'Elect - 200 TPD', 'PurchasingGroup' => '118', 'PurchasingGroupName' => 'Elect - 200 TPD', 'description' => 'Elect - 200 TPD', 'extra' => 'Elect - 200 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '119', 'name' => 'Mech - 500 TPD', 'PurchasingGroup' => '119', 'PurchasingGroupName' => 'Mech - 500 TPD', 'description' => 'Mech - 500 TPD', 'extra' => 'Mech - 500 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '120', 'name' => 'Mech - 125 TPD', 'PurchasingGroup' => '120', 'PurchasingGroupName' => 'Mech - 125 TPD', 'description' => 'Mech - 125 TPD', 'extra' => 'Mech - 125 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '121', 'name' => 'Mech - 100 TPD', 'PurchasingGroup' => '121', 'PurchasingGroupName' => 'Mech - 100 TPD', 'description' => 'Mech - 100 TPD', 'extra' => 'Mech - 100 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '122', 'name' => 'Mech - 200 TPD', 'PurchasingGroup' => '122', 'PurchasingGroupName' => 'Mech - 200 TPD', 'description' => 'Mech - 200 TPD', 'extra' => 'Mech - 200 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '123', 'name' => 'Instr - 500 TPD', 'PurchasingGroup' => '123', 'PurchasingGroupName' => 'Instr - 500 TPD', 'description' => 'Instr - 500 TPD', 'extra' => 'Instr - 500 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '124', 'name' => 'Instr - 125 TPD', 'PurchasingGroup' => '124', 'PurchasingGroupName' => 'Instr - 125 TPD', 'description' => 'Instr - 125 TPD', 'extra' => 'Instr - 125 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '125', 'name' => 'Instr - 100 TPD', 'PurchasingGroup' => '125', 'PurchasingGroupName' => 'Instr - 100 TPD', 'description' => 'Instr - 100 TPD', 'extra' => 'Instr - 100 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+            ['code' => '126', 'name' => 'Instr - 200 TPD', 'PurchasingGroup' => '126', 'PurchasingGroupName' => 'Instr - 200 TPD', 'description' => 'Instr - 200 TPD', 'extra' => 'Instr - 200 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
+        ];
+    }
+
+    /**
+     * Default realistic fallback units of measure matching SAP YY1_UNITOFMEASUREMENT_CDS schema.
+     */
+    protected array $fallbackUnitsOfMeasure = [
+        ['code' => 'NO', 'UnitOfMeasure' => 'NO', 'UnitOfMeasureCommercialName' => 'NO', 'UnitOfMeasureLongName' => 'Number', 'name' => 'NO - Number', 'extra' => 'Number'],
+        ['code' => 'EA', 'UnitOfMeasure' => 'EA', 'UnitOfMeasureCommercialName' => 'EA', 'UnitOfMeasureLongName' => 'Each', 'name' => 'EA - Each', 'extra' => 'Each'],
+        ['code' => 'PC', 'UnitOfMeasure' => 'PC', 'UnitOfMeasureCommercialName' => 'PC', 'UnitOfMeasureLongName' => 'Piece', 'name' => 'PC - Piece', 'extra' => 'Piece'],
+        ['code' => 'KG', 'UnitOfMeasure' => 'KG', 'UnitOfMeasureCommercialName' => 'KG', 'UnitOfMeasureLongName' => 'Kilogram', 'name' => 'KG - Kilogram', 'extra' => 'Kilogram'],
+        ['code' => 'M', 'UnitOfMeasure' => 'M', 'UnitOfMeasureCommercialName' => 'M', 'UnitOfMeasureLongName' => 'Meter', 'name' => 'M - Meter', 'extra' => 'Meter'],
+        ['code' => 'M3', 'UnitOfMeasure' => 'M3', 'UnitOfMeasureCommercialName' => 'M3', 'UnitOfMeasureLongName' => 'Cubic Meter', 'name' => 'M3 - Cubic Meter', 'extra' => 'Cubic Meter'],
+        ['code' => 'L', 'UnitOfMeasure' => 'L', 'UnitOfMeasureCommercialName' => 'L', 'UnitOfMeasureLongName' => 'Liter', 'name' => 'L - Liter', 'extra' => 'Liter'],
+        ['code' => 'TO', 'UnitOfMeasure' => 'TO', 'UnitOfMeasureCommercialName' => 'TO', 'UnitOfMeasureLongName' => 'Metric Ton', 'name' => 'TO - Metric Ton', 'extra' => 'Metric Ton'],
+        ['code' => 'HR', 'UnitOfMeasure' => 'HR', 'UnitOfMeasureCommercialName' => 'HR', 'UnitOfMeasureLongName' => 'Hours', 'name' => 'HR - Hours', 'extra' => 'Hours'],
+        ['code' => 'DAY', 'UnitOfMeasure' => 'DAY', 'UnitOfMeasureCommercialName' => 'DAY', 'UnitOfMeasureLongName' => 'Days', 'name' => 'DAY - Days', 'extra' => 'Days'],
+        ['code' => 'MON', 'UnitOfMeasure' => 'MON', 'UnitOfMeasureCommercialName' => 'MON', 'UnitOfMeasureLongName' => 'Months', 'name' => 'MON - Months', 'extra' => 'Months'],
+        ['code' => 'AU', 'UnitOfMeasure' => 'AU', 'UnitOfMeasureCommercialName' => 'AU', 'UnitOfMeasureLongName' => 'Activity unit', 'name' => 'AU - Activity unit', 'extra' => 'Activity unit'],
+        ['code' => 'SET', 'UnitOfMeasure' => 'SET', 'UnitOfMeasureCommercialName' => 'SET', 'UnitOfMeasureLongName' => 'Set', 'name' => 'SET - Set', 'extra' => 'Set'],
+        ['code' => 'JOB', 'UnitOfMeasure' => 'JOB', 'UnitOfMeasureCommercialName' => 'JOB', 'UnitOfMeasureLongName' => 'Job / Lumpsum', 'name' => 'JOB - Job / Lumpsum', 'extra' => 'Job / Lumpsum'],
+        ['code' => 'LOT', 'UnitOfMeasure' => 'LOT', 'UnitOfMeasureCommercialName' => 'LOT', 'UnitOfMeasureLongName' => 'Lot', 'name' => 'LOT - Lot', 'extra' => 'Lot'],
+    ];
+
+    /**
+     * Get fallback units of measure matching SAP YY1_UNITOFMEASUREMENT_CDS schema.
+     */
+    public function getFormattedFallbackUnitsOfMeasure(): array
+    {
+        return $this->fallbackUnitsOfMeasure;
+    }
+
+    /**
+     * Fetch Units of Measure from SAP S/4HANA Cloud CDS View:
+     * YY1_UNITOFMEASUREMENT_CDS / YY1_UnitOfMeasurement
+     */
+    public function fetchUnitsOfMeasureFromCdsView(
+        ?string $search = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.units_of_measure',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_UNITOFMEASUREMENT_CDS/YY1_UnitOfMeasurement?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $cacheKey = 'sap_uom_items_all_v2';
+                $cachedItems = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+                if (is_array($cachedItems) && !empty($cachedItems)) {
+                    $items = $cachedItems;
+                    $durationMs = round((microtime(true) - $startTime) * 1000);
+                } else {
+                    $request = Http::timeout(15)
+                        ->withBasicAuth($authUser, $authPass)
+                        ->withHeaders([
+                            'Accept' => 'application/json',
+                            'Content-Type' => 'application/json',
+                        ]);
+
+                    if (!$verifySsl) {
+                        $request = $request->withoutVerifying();
+                    }
+
+                    $baseUri = explode('?', $endpoint)[0];
+                    $targetUrl = $baseUri . "?\$filter=" . urlencode("Language eq 'EN'") . "&\$format=json";
+
+                    $response = $request->get($targetUrl);
+                    $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                    if ($response->successful()) {
+                        $json = $response->json();
+                        $items = $this->parseUnitOfMeasureODataItems($json);
+                        if (!empty($items)) {
+                            \Illuminate\Support\Facades\Cache::put($cacheKey, $items, 3600);
+                        }
+                    } else {
+                        $errorBody = $response->body();
+                        Log::warning('SAP Units of Measure CDS View fetch non-200: ' . $response->status(), [
+                            'body' => substr($errorBody, 0, 500),
+                        ]);
+
+                        return [
+                            'success' => false,
+                            'is_live' => false,
+                            'status' => $response->status(),
+                            'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                            'endpoint' => $endpoint,
+                            'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                                ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                            'items' => $this->getFormattedFallbackUnitsOfMeasure(),
+                            'error_details' => substr($errorBody, 0, 300),
+                        ];
+                    }
+                }
+
+                if (!empty($search)) {
+                    $term = strtolower(trim($search));
+                    $items = array_values(array_filter($items, function ($it) use ($term) {
+                        return str_contains(strtolower($it['UnitOfMeasure'] ?? $it['code'] ?? ''), $term)
+                            || str_contains(strtolower($it['UnitOfMeasureCommercialName'] ?? ''), $term)
+                            || str_contains(strtolower($it['UnitOfMeasureLongName'] ?? ''), $term)
+                            || str_contains(strtolower($it['name'] ?? ''), $term);
+                    }));
+                }
+
+                return [
+                    'success' => true,
+                    'is_live' => true,
+                    'status' => 200,
+                    'latency_ms' => $durationMs,
+                    'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_UNITOFMEASUREMENT_CDS)',
+                    'endpoint' => $endpoint,
+                    'count' => count($items),
+                    'items' => $items,
+                    'message' => "Successfully fetched " . count($items) . " units of measure live from SAP CDS View in {$durationMs}ms.",
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Units of Measure CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackUnitsOfMeasure(),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Fallback Master Data (SAP Credentials Not Configured)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackUnitsOfMeasure()),
+            'items' => $this->getFormattedFallbackUnitsOfMeasure(),
+            'message' => 'Serving fallback units of measure (SAP credentials not configured).',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Unit of Measure items.
+     * Response fields supported:
+     * - UnitOfMeasure (code, e.g. "NO")
+     * - UnitOfMeasureCommercialName (commercial name, e.g. "NO")
+     * - UnitOfMeasureLongName (long description, e.g. "Number")
+     */
+    protected function parseUnitOfMeasureODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $uom = trim((string)($rec['UnitOfMeasure'] ?? $rec['code'] ?? ''));
+            if ($uom === '') {
+                continue;
+            }
+
+            $commercialName = trim((string)($rec['UnitOfMeasureCommercialName'] ?? $uom));
+            $longName = trim((string)($rec['UnitOfMeasureLongName'] ?? $rec['name'] ?? $commercialName));
+
+            $code = $uom;
+            $name = $commercialName !== '' ? "{$commercialName} - {$longName}" : "{$code} - {$longName}";
+            $extra = $longName;
+
+            $parsed[] = [
+                'code' => $code,
+                'name' => $name,
+                'extra' => $extra,
+                'UnitOfMeasure' => $uom,
+                'UnitOfMeasureCommercialName' => $commercialName,
+                'UnitOfMeasureLongName' => $longName,
+                'Language' => $rec['Language'] ?? 'EN',
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackUnitsOfMeasure();
+    }
 }
+

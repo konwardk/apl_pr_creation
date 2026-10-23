@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Department;
+use App\Models\PurchasingGroup;
+use App\Models\PurchasingOrganization;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +21,7 @@ class UserManagementController extends Controller
      */
     public function index(Request $request): Response
     {
-        $query = User::with(['role', 'department'])->latest();
+        $query = User::with(['role', 'department', 'purchasingGroupDetail'])->latest();
 
         // Search filter
         if ($search = $request->query('search')) {
@@ -27,7 +29,9 @@ class UserManagementController extends Controller
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%")
                     ->orWhere('employee_id', 'like', "%{$search}%")
-                    ->orWhere('designation', 'like', "%{$search}%");
+                    ->orWhere('designation', 'like', "%{$search}%")
+                    ->orWhere('plant', 'like', "%{$search}%")
+                    ->orWhere('purchasing_group', 'like', "%{$search}%");
             });
         }
 
@@ -39,6 +43,11 @@ class UserManagementController extends Controller
         // Department filter
         if ($deptId = $request->query('department_id')) {
             $query->where('department_id', $deptId);
+        }
+
+        // Purchasing Group filter
+        if ($pg = $request->query('purchasing_group')) {
+            $query->where('purchasing_group', $pg);
         }
 
         $users = $query->get();
@@ -53,15 +62,64 @@ class UserManagementController extends Controller
             'inactive_count' => $allUsers->where('is_active', false)->count(),
         ];
 
+        // Retrieve available plants from PurchasingOrganization model (plants JSON array)
+        $orgPlants = PurchasingOrganization::whereNotNull('plants')
+            ->get()
+            ->pluck('plants')
+            ->flatten()
+            ->filter()
+            ->map(fn($p) => trim((string)$p))
+            ->unique()
+            ->sort()
+            ->values()
+            ->toArray();
+
+        if (empty($orgPlants)) {
+            $orgPlants = ['1100', '1200', '1300', '1400'];
+        }
+
+        $plantDescriptions = [
+            '1100' => '1100 - Corporate Office',
+            '1200' => '1200 - Dibrugarh Manufacturing Plant',
+            '1300' => '1300 - Boitamari Plant Facility',
+            '1400' => '1400 - Rani Nagar Plant Facility',
+        ];
+
+        $availablePlants = array_map(function ($code) use ($plantDescriptions) {
+            $name = $plantDescriptions[$code] ?? "{$code} - Plant Facility {$code}";
+            return [
+                'code' => $code,
+                'name' => $name,
+                'value' => $name,
+            ];
+        }, $orgPlants);
+
+        // Retrieve active purchasing groups from database
+        $purchasingGroups = PurchasingGroup::active()
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'description'])
+            ->map(function ($pg) {
+                $desc = $pg->description ?: $pg->name;
+                return [
+                    'id' => $pg->id,
+                    'code' => $pg->code,
+                    'name' => "{$pg->code} - {$desc}",
+                    'description' => $desc,
+                ];
+            });
+
         return Inertia::render('users/index', [
             'users' => $users,
             'roles' => Role::all(),
             'departments' => Department::where('is_active', true)->orderBy('name')->get(),
+            'purchasingGroups' => $purchasingGroups,
+            'availablePlants' => $availablePlants,
             'stats' => $stats,
             'filters' => [
                 'search' => $request->query('search', ''),
                 'role_id' => $request->query('role_id', ''),
                 'department_id' => $request->query('department_id', ''),
+                'purchasing_group' => $request->query('purchasing_group', ''),
             ],
         ]);
     }
@@ -81,6 +139,7 @@ class UserManagementController extends Controller
             'designation' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
             'plant' => ['nullable', 'string', 'max:255'],
+            'purchasing_group' => ['nullable', 'string', 'max:20'],
             'is_active' => ['boolean'],
         ]);
 
@@ -105,7 +164,8 @@ class UserManagementController extends Controller
             'employee_id' => $validated['employee_id'],
             'designation' => $validated['designation'] ?? null,
             'phone' => $validated['phone'] ?? null,
-            'plant' => $validated['plant'] ?? '1200 - Dibrugarh Manufacturing Plant',
+            'plant' => !empty($validated['plant']) ? $validated['plant'] : '1200 - Dibrugarh Manufacturing Plant',
+            'purchasing_group' => !empty($validated['purchasing_group']) ? $validated['purchasing_group'] : null,
             'is_active' => $request->boolean('is_active', true),
             'email_verified_at' => now(), // Auto-verified: user can directly log in without email verification
         ]);
@@ -128,6 +188,7 @@ class UserManagementController extends Controller
             'designation' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
             'plant' => ['nullable', 'string', 'max:255'],
+            'purchasing_group' => ['nullable', 'string', 'max:20'],
             'is_active' => ['boolean'],
         ]);
 
@@ -139,7 +200,8 @@ class UserManagementController extends Controller
             'employee_id' => $validated['employee_id'] ?? $user->employee_id,
             'designation' => $validated['designation'] ?? null,
             'phone' => $validated['phone'] ?? null,
-            'plant' => $validated['plant'] ?? $user->plant,
+            'plant' => !empty($validated['plant']) ? $validated['plant'] : $user->plant,
+            'purchasing_group' => !empty($validated['purchasing_group']) ? $validated['purchasing_group'] : null,
             'is_active' => $request->boolean('is_active', true),
         ];
 

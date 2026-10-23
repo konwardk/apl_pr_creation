@@ -30,7 +30,7 @@ import {
     Edit3,
 } from 'lucide-react';
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
-import type { User, HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization } from '@/types';
+import type { User, HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization, PurchasingGroup } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 
 interface PrItem {
@@ -96,6 +96,7 @@ interface DashboardProps {
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
     purchasingOrganizations?: PurchasingOrganization[];
+    purchasingGroups?: PurchasingGroup[];
     stats?: {
         total_count: number;
         total_amount: number;
@@ -125,6 +126,7 @@ export default function Dashboard({
     prDocumentTypes = [],
     itemCategories = [],
     purchasingOrganizations = [],
+    purchasingGroups = [],
     stats = {
 
         total_count: 0,
@@ -957,6 +959,7 @@ export default function Dashboard({
                     prDocumentTypes={prDocumentTypes}
                     itemCategories={itemCategories}
                     purchasingOrganizations={purchasingOrganizations}
+                    purchasingGroups={purchasingGroups}
                     isSuperAdmin={isSuperAdmin}
                     activeSubTab={activeSubTab}
                     onSubTabChange={(sub) => handleTabChange('pr-configuration', sub)}

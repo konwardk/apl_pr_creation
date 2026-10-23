@@ -22,6 +22,7 @@ import {
     ShieldCheck,
     ArrowRight,
     Boxes,
+    Users2,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -131,6 +132,14 @@ export default function SapAppLayout({
             badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         },
         {
+            id: 'purchasing-groups',
+            label: 'Manage Purchasing Groups',
+            description: 'SAP Purchasing Groups (EKGRP) for buyer teams and operational procurement responsibilities',
+            icon: Users2,
+            badge: 'Buyer Teams',
+            badgeColor: 'bg-teal-100 text-teal-800 border-teal-200',
+        },
+        {
             id: 'account-assignment',
             label: 'Account Assignment',
             description: 'Cost Centers, GL Accounts & WBS Elements',
@@ -187,11 +196,11 @@ export default function SapAppLayout({
     const tabs = isEmployee
         ? [
               { id: 'overview', label: 'My Home & Overview', icon: Home, href: '/dashboard' },
-              { id: 'requisitions', label: 'My Requisitions', icon: FileSpreadsheet, href: '/dashboard' },
+            //   { id: 'requisitions', label: 'My Requisitions', icon: FileSpreadsheet, href: '/dashboard' },
           ]
         : [
               { id: 'overview', label: 'Overview (My Home)', icon: Home, href: '/dashboard' },
-              { id: 'requisitions', label: 'Purchase Requisitions', icon: FileSpreadsheet, href: '/dashboard' },
+            //   { id: 'requisitions', label: 'Purchase Requisitions', icon: FileSpreadsheet, href: '/dashboard' },
               { id: 'sync-monitor', label: 'SAP OData V4 Monitor', icon: Server, href: '/dashboard' },
               { id: 'architecture', label: 'Architecture & Dual-Posting', icon: Layers, href: '/dashboard' },
               ...(isSuperAdmin

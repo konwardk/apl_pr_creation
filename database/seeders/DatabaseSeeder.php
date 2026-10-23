@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             HeaderOptionSeeder::class,
             PrDocumentTypeSeeder::class,
             ItemCategorySeeder::class,
+            PurchasingGroupSeeder::class,
             PurchaseRequisitionSeeder::class,
         ]);
     }

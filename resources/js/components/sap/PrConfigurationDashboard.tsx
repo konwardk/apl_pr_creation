@@ -21,11 +21,13 @@ import {
     Briefcase,
     Globe,
     Lock,
+    Users2,
 } from 'lucide-react';
-import type { HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization } from '@/types';
+import type { HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization, PurchasingGroup } from '@/types';
 import HeaderOptionsManager from './HeaderOptionsManager';
 import DocumentTypesManager from './DocumentTypesManager';
 import ItemCategoriesManager from './ItemCategoriesManager';
+import PurchasingGroupsManager from './PurchasingGroupsManager';
 import PlantsManager from './PlantsManager';
 
 export interface PrConfigSubTab {
@@ -44,6 +46,7 @@ interface PrConfigurationDashboardProps {
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
     purchasingOrganizations?: PurchasingOrganization[];
+    purchasingGroups?: PurchasingGroup[];
     isSuperAdmin?: boolean;
     activeSubTab?: string;
     onSubTabChange?: (subTab: string) => void;
@@ -54,6 +57,7 @@ export default function PrConfigurationDashboard({
     prDocumentTypes = [],
     itemCategories = [],
     purchasingOrganizations = [],
+    purchasingGroups = [],
     isSuperAdmin = true,
     activeSubTab: controlledSubTab,
     onSubTabChange,
@@ -124,6 +128,16 @@ export default function PrConfigurationDashboard({
                 isReady: true,
             },
             {
+                id: 'purchasing-groups',
+                label: 'Manage Purchasing Groups',
+                description: 'SAP S/4HANA Purchasing Groups (CDS: YY1_PURCHASINGGROUPAPI_CDS)',
+                icon: Users2,
+                badge: `${purchasingGroups.length > 0 ? purchasingGroups.length : 32} Groups`,
+                badgeColor: 'bg-teal-100 text-teal-800 border-teal-200',
+                category: 'Master Data',
+                isReady: true,
+            },
+            {
                 id: 'account-assignment',
                 label: 'Account Assignment',
                 description: 'Cost centers, GL accounts, and asset posting rules',
@@ -144,7 +158,7 @@ export default function PrConfigurationDashboard({
                 isReady: true,
             },
         ],
-        [headerOptions.length, prDocumentTypes.length, itemCategories.length, purchasingOrganizations.length]
+        [headerOptions.length, prDocumentTypes.length, itemCategories.length, purchasingOrganizations.length, purchasingGroups.length]
     );
 
 
@@ -341,6 +355,14 @@ export default function PrConfigurationDashboard({
                         <PlantsManager
                             isSuperAdmin={isSuperAdmin}
                             initialPurchasingOrganizations={purchasingOrganizations}
+                        />
+                    )}
+
+                    {/* SUB-TAB: PURCHASING GROUPS */}
+                    {activeSubTab === 'purchasing-groups' && (
+                        <PurchasingGroupsManager
+                            purchasingGroups={purchasingGroups}
+                            isSuperAdmin={isSuperAdmin}
                         />
                     )}
 

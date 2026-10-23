@@ -26,6 +26,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $designation
  * @property string|null $phone
  * @property string|null $plant
+ * @property string|null $purchasing_group
  * @property bool $is_active
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -36,7 +37,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'role_id', 'department_id', 'employee_id', 'designation', 'phone', 'plant', 'is_active', 'email_verified_at'])]
+#[Fillable(['name', 'email', 'password', 'role_id', 'department_id', 'employee_id', 'designation', 'phone', 'plant', 'purchasing_group', 'is_active', 'email_verified_at'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 // Email verification is temporarily disabled; users can log in directly without verifying emails.
 // class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
@@ -83,6 +84,22 @@ class User extends Authenticatable implements PasskeyUser
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * Detailed SAP Purchasing Group relationship (avoids collision with purchasing_group column attribute).
+     */
+    public function purchasingGroupDetail(): BelongsTo
+    {
+        return $this->belongsTo(PurchasingGroup::class, 'purchasing_group', 'code');
+    }
+
+    /**
+     * The SAP Purchasing Group assigned to this user.
+     */
+    public function purchasingGroup(): BelongsTo
+    {
+        return $this->purchasingGroupDetail();
     }
 
     /**

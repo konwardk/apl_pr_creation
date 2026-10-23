@@ -27,10 +27,25 @@ import {
 } from 'lucide-react';
 import type { User, Role, Department } from '@/types';
 
+export interface PlantOption {
+    code: string;
+    name: string;
+    value: string;
+}
+
+export interface PurchasingGroupOption {
+    id: number;
+    code: string;
+    name: string;
+    description?: string;
+}
+
 interface PageProps {
     users: User[];
     roles: Role[];
     departments: Department[];
+    purchasingGroups?: PurchasingGroupOption[];
+    availablePlants?: PlantOption[];
     stats: {
         total_users: number;
         superadmin_count: number;
@@ -43,6 +58,7 @@ interface PageProps {
         search: string;
         role_id: string;
         department_id: string;
+        purchasing_group?: string;
     };
     flash?: {
         success?: string | null;
@@ -54,6 +70,8 @@ export default function UsersIndex({
     users = [],
     roles = [],
     departments = [],
+    purchasingGroups = [],
+    availablePlants = [],
     stats = {
         total_users: 0,
         superadmin_count: 0,
@@ -71,7 +89,11 @@ export default function UsersIndex({
     const [searchQuery, setSearchQuery] = useState(filters?.search || '');
     const [selectedRole, setSelectedRole] = useState(filters?.role_id || '');
     const [selectedDept, setSelectedDept] = useState(filters?.department_id || '');
+    const [selectedPg, setSelectedPg] = useState(filters?.purchasing_group || '');
     const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'inactive'>('all');
+
+    // Default plant from availablePlants or fallback
+    const defaultPlant = availablePlants.find((p) => p.code === '1200')?.value || availablePlants[0]?.value || '1200 - Dibrugarh Manufacturing Plant';
 
     // Modal states
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -88,7 +110,8 @@ export default function UsersIndex({
         employee_id: '',
         designation: '',
         phone: '',
-        plant: '1200 - Dibrugarh Manufacturing Plant',
+        plant: defaultPlant,
+        purchasing_group: '',
         is_active: true,
     });
     const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
@@ -104,7 +127,8 @@ export default function UsersIndex({
         employee_id: '',
         designation: '',
         phone: '',
-        plant: '',
+        plant: defaultPlant,
+        purchasing_group: '',
         is_active: true,
     });
     const [editErrors, setEditErrors] = useState<Record<string, string>>({});
@@ -119,10 +143,15 @@ export default function UsersIndex({
                 u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (u.employee_id && u.employee_id.toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (u.designation && u.designation.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (u.plant && u.plant.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (u.purchasing_group && u.purchasing_group.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (u.purchasing_group_detail?.description && u.purchasing_group_detail.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                (u.purchasing_group_detail?.name && u.purchasing_group_detail.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (u.department?.name && u.department.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
             const matchesRole = !selectedRole || String(u.role_id) === String(selectedRole);
             const matchesDept = !selectedDept || String(u.department_id) === String(selectedDept);
+            const matchesPg = !selectedPg || u.purchasing_group === selectedPg;
             const matchesStatus =
                 selectedStatus === 'all'
                     ? true
@@ -130,9 +159,9 @@ export default function UsersIndex({
                     ? Boolean(u.is_active)
                     : !u.is_active;
 
-            return matchesSearch && matchesRole && matchesDept && matchesStatus;
+            return matchesSearch && matchesRole && matchesDept && matchesPg && matchesStatus;
         });
-    }, [users, searchQuery, selectedRole, selectedDept, selectedStatus]);
+    }, [users, searchQuery, selectedRole, selectedDept, selectedPg, selectedStatus]);
 
     // Handle Create User
     const handleCreateSubmit = (e: React.FormEvent) => {
@@ -152,7 +181,8 @@ export default function UsersIndex({
                     employee_id: '',
                     designation: '',
                     phone: '',
-                    plant: '1200 - Dibrugarh Manufacturing Plant',
+                    plant: defaultPlant,
+                    purchasing_group: '',
                     is_active: true,
                 });
             },
@@ -168,6 +198,13 @@ export default function UsersIndex({
     // Open Edit modal
     const handleOpenEdit = (userToEdit: User) => {
         setEditingUser(userToEdit);
+
+        // Match plant to availablePlants or fallback
+        const matchedPlant = availablePlants.find(
+            (p) => p.value === userToEdit.plant || p.code === userToEdit.plant
+        );
+        const resolvedPlant = matchedPlant ? matchedPlant.value : (userToEdit.plant || defaultPlant);
+
         setEditForm({
             name: userToEdit.name,
             email: userToEdit.email,
@@ -177,7 +214,8 @@ export default function UsersIndex({
             employee_id: userToEdit.employee_id || '',
             designation: userToEdit.designation || '',
             phone: userToEdit.phone || '',
-            plant: userToEdit.plant || '1200 - Dibrugarh Manufacturing Plant',
+            plant: resolvedPlant,
+            purchasing_group: userToEdit.purchasing_group || '',
             is_active: Boolean(userToEdit.is_active),
         });
         setEditErrors({});
@@ -407,6 +445,20 @@ export default function UsersIndex({
                                 ))}
                             </select>
 
+                            {/* Purchasing Group Filter */}
+                            <select
+                                value={selectedPg}
+                                onChange={(e) => setSelectedPg(e.target.value)}
+                                className="h-9 rounded-md border border-[#d9e2ec] bg-white px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none max-w-[200px]"
+                            >
+                                <option value="">All Purchase Groups</option>
+                                {purchasingGroups.map((pg) => (
+                                    <option key={pg.id || pg.code} value={pg.code}>
+                                        {pg.name}
+                                    </option>
+                                ))}
+                            </select>
+
                             {/* Status Filter */}
                             <select
                                 value={selectedStatus}
@@ -418,13 +470,14 @@ export default function UsersIndex({
                                 <option value="inactive">Inactive Only</option>
                             </select>
 
-                            {(searchQuery || selectedRole || selectedDept || selectedStatus !== 'all') && (
+                            {(searchQuery || selectedRole || selectedDept || selectedPg || selectedStatus !== 'all') && (
                                 <button
                                     type="button"
                                     onClick={() => {
                                         setSearchQuery('');
                                         setSelectedRole('');
                                         setSelectedDept('');
+                                        setSelectedPg('');
                                         setSelectedStatus('all');
                                     }}
                                     className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
@@ -443,7 +496,7 @@ export default function UsersIndex({
                                     <th className="py-3 px-3">User & Employee ID</th>
                                     <th className="py-3 px-3">System Role</th>
                                     <th className="py-3 px-3">Department & Designation</th>
-                                    <th className="py-3 px-3">Plant Facility</th>
+                                    <th className="py-3 px-3">Plant & Purchase Group</th>
                                     <th className="py-3 px-3">Contact</th>
                                     <th className="py-3 px-3 text-center">Status</th>
                                     <th className="py-3 px-3 text-right">Actions</th>
@@ -530,11 +583,25 @@ export default function UsersIndex({
                                                     </div>
                                                 </td>
 
-                                                {/* Plant Facility */}
+                                                {/* Plant Facility & Purchasing Group */}
                                                 <td className="py-3 px-3">
-                                                    <div className="text-xs text-[#1c2d42] max-w-[180px] truncate" title={u.plant || 'Plant 1000'}>
-                                                        {u.plant || '1200 - Dibrugarh'}
+                                                    <div className="text-xs font-medium text-[#1c2d42] max-w-[200px] truncate" title={u.plant || 'Plant Facility'}>
+                                                        {u.plant || '1200 - Dibrugarh Manufacturing Plant'}
                                                     </div>
+                                                    {u.purchasing_group ? (
+                                                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                                            <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 border border-amber-200">
+                                                                PG: {u.purchasing_group}
+                                                            </span>
+                                                            <span className="text-[11px] text-[#556b82] truncate max-w-[130px]" title={u.purchasing_group_detail?.description || u.purchasing_group_detail?.name || ''}>
+                                                                {u.purchasing_group_detail?.description || u.purchasing_group_detail?.name || ''}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="mt-0.5 text-[10px] text-slate-400 italic">
+                                                            No Purchase Group
+                                                        </div>
+                                                    )}
                                                 </td>
 
                                                 {/* Contact */}
@@ -793,16 +860,57 @@ export default function UsersIndex({
                                 </div>
                             </div>
 
-                            {/* Plant Location */}
-                            <div className="space-y-1">
-                                <label className="font-semibold text-[#1c2d42]">Assam Petro-Chemicals Plant Facility</label>
-                                <input
-                                    type="text"
-                                    value={createForm.plant}
-                                    onChange={(e) => setCreateForm({ ...createForm, plant: e.target.value })}
-                                    placeholder="1200 - Dibrugarh Manufacturing Plant / 1000 - Namrup Main Plant"
-                                    className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none"
-                                />
+                            {/* Plant Location & Purchasing Group Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {/* Plant Location Dropdown */}
+                                <div className="space-y-1">
+                                    <label className="font-semibold text-[#1c2d42]">
+                                        Assam Petro-Chemicals Plant Facility <span className="text-rose-500">*</span>
+                                    </label>
+                                    <select
+                                        value={createForm.plant}
+                                        onChange={(e) => setCreateForm({ ...createForm, plant: e.target.value })}
+                                        className="h-9 w-full rounded-md border border-[#d9e2ec] bg-white px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none"
+                                    >
+                                        <option value="">Select Plant Facility</option>
+                                        {availablePlants.map((plant) => (
+                                            <option key={plant.code} value={plant.value}>
+                                                {plant.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {createErrors.plant && (
+                                        <p className="text-[11px] text-rose-600">{createErrors.plant}</p>
+                                    )}
+                                    <p className="text-[10px] text-slate-500">
+                                        Source: Purchasing Organization plant list.
+                                    </p>
+                                </div>
+
+                                {/* Purchasing Group Dropdown */}
+                                <div className="space-y-1">
+                                    <label className="font-semibold text-[#1c2d42]">
+                                        Purchase Group (SAP EKGRP)
+                                    </label>
+                                    <select
+                                        value={createForm.purchasing_group}
+                                        onChange={(e) => setCreateForm({ ...createForm, purchasing_group: e.target.value })}
+                                        className="h-9 w-full rounded-md border border-[#d9e2ec] bg-white px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none"
+                                    >
+                                        <option value="">Select Purchase Group (Optional)</option>
+                                        {purchasingGroups.map((pg) => (
+                                            <option key={pg.id || pg.code} value={pg.code}>
+                                                {pg.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {createErrors.purchasing_group && (
+                                        <p className="text-[11px] text-rose-600">{createErrors.purchasing_group}</p>
+                                    )}
+                                    <p className="text-[10px] text-slate-500">
+                                        Assigned SAP EKGRP for purchase requisition tracking.
+                                    </p>
+                                </div>
                             </div>
 
                             {/* Active Switch */}
@@ -1000,15 +1108,63 @@ export default function UsersIndex({
                                 </div>
                             </div>
 
-                            {/* Plant Location */}
-                            <div className="space-y-1">
-                                <label className="font-semibold text-[#1c2d42]">Plant Facility</label>
-                                <input
-                                    type="text"
-                                    value={editForm.plant}
-                                    onChange={(e) => setEditForm({ ...editForm, plant: e.target.value })}
-                                    className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none"
-                                />
+                            {/* Plant Location & Purchasing Group Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {/* Plant Location Dropdown */}
+                                <div className="space-y-1">
+                                    <label className="font-semibold text-[#1c2d42]">
+                                        Assam Petro-Chemicals Plant Facility <span className="text-rose-500">*</span>
+                                    </label>
+                                    <select
+                                        value={editForm.plant}
+                                        onChange={(e) => setEditForm({ ...editForm, plant: e.target.value })}
+                                        className="h-9 w-full rounded-md border border-[#d9e2ec] bg-white px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none"
+                                    >
+                                        <option value="">Select Plant Facility</option>
+                                        {availablePlants.map((plant) => (
+                                            <option key={plant.code} value={plant.value}>
+                                                {plant.name}
+                                            </option>
+                                        ))}
+                                        {editForm.plant && !availablePlants.some((p) => p.value === editForm.plant || p.code === editForm.plant) && (
+                                            <option value={editForm.plant}>{editForm.plant}</option>
+                                        )}
+                                    </select>
+                                    {editErrors.plant && (
+                                        <p className="text-[11px] text-rose-600">{editErrors.plant}</p>
+                                    )}
+                                    <p className="text-[10px] text-slate-500">
+                                        Source: Purchasing Organization plant list.
+                                    </p>
+                                </div>
+
+                                {/* Purchasing Group Dropdown */}
+                                <div className="space-y-1">
+                                    <label className="font-semibold text-[#1c2d42]">
+                                        Purchase Group (SAP EKGRP)
+                                    </label>
+                                    <select
+                                        value={editForm.purchasing_group}
+                                        onChange={(e) => setEditForm({ ...editForm, purchasing_group: e.target.value })}
+                                        className="h-9 w-full rounded-md border border-[#d9e2ec] bg-white px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:outline-none"
+                                    >
+                                        <option value="">Select Purchase Group (Optional)</option>
+                                        {purchasingGroups.map((pg) => (
+                                            <option key={pg.id || pg.code} value={pg.code}>
+                                                {pg.name}
+                                            </option>
+                                        ))}
+                                        {editForm.purchasing_group && !purchasingGroups.some((pg) => pg.code === editForm.purchasing_group) && (
+                                            <option value={editForm.purchasing_group}>{editForm.purchasing_group}</option>
+                                        )}
+                                    </select>
+                                    {editErrors.purchasing_group && (
+                                        <p className="text-[11px] text-rose-600">{editErrors.purchasing_group}</p>
+                                    )}
+                                    <p className="text-[10px] text-slate-500">
+                                        Assigned SAP EKGRP for purchase requisition tracking.
+                                    </p>
+                                </div>
                             </div>
 
                             {/* Active Switch */}

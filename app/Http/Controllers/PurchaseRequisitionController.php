@@ -6,6 +6,7 @@ use App\Models\Attachment;
 use App\Models\HeaderOption;
 use App\Models\ItemCategory;
 use App\Models\PrDocumentType;
+use App\Models\PurchasingGroup;
 use App\Models\PurchasingOrganization;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
@@ -128,8 +129,20 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Fetch Units of Measure from SAP S/4HANA Cloud CDS View (YY1_UNITOFMEASUREMENT_CDS)
+     */
+    public function getUnitsOfMeasure(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchUnitsOfMeasureFromCdsView($search);
+
+        return response()->json($result);
+    }
+
+    /**
      * Display the purchase requisition creation page.
      */
+
     public function create(Request $request): Response
     {
         $config = $this->getMasterDataConfig($request);
@@ -380,16 +393,27 @@ class PurchaseRequisitionController extends Controller
             }, $this->sapService->getFormattedFallbackPurchasingOrganizations());
         }
 
-        $purchasingGroups = [
-            ['code' => '103', 'name' => '103 - Purchasing Group 103'],
-            ['code' => '001', 'name' => '001 - Purchasing Group 001'],
-            ['code' => '101', 'name' => '101 - Central Purchasing'],
-            ['code' => '102', 'name' => '102 - Technical Purchasing'],
-            ['code' => '104', 'name' => '104 - Projects Purchasing'],
-            ['code' => '112', 'name' => '112 - Chemicals Purchasing'],
-            ['code' => '114', 'name' => '114 - Reagents Purchasing'],
-            ['code' => '119', 'name' => '119 - Services Purchasing'],
-        ];
+        $dbPurchasingGroups = PurchasingGroup::active()
+            ->orderBy('code')
+            ->get();
+
+        if ($dbPurchasingGroups->isNotEmpty()) {
+            $purchasingGroups = $dbPurchasingGroups->map(function ($pg) {
+                $desc = $pg->description ?: $pg->name;
+                return [
+                    'code' => $pg->code,
+                    'name' => "{$pg->code} - {$desc}",
+                    'description' => $desc,
+                    'PurchasingGroup' => $pg->code,
+                    'PurchasingGroupName' => $desc,
+                    'extra' => $desc,
+                    'email' => $pg->email,
+                    'phone_number' => $pg->phone_number,
+                ];
+            })->toArray();
+        } else {
+            $purchasingGroups = $this->sapService->getFormattedFallbackPurchasingGroups();
+        }
 
         // 10. Storage Locations from live SAP S/4HANA Cloud service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
         $storageLocationsResult = $this->sapService->fetchStorageLocationsFromSap();
@@ -470,7 +494,7 @@ class PurchaseRequisitionController extends Controller
     /**
      * Store a newly created purchase requisition in local DB and sync directly with SAP S/4HANA Cloud.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'is_draft' => 'nullable|boolean',
@@ -667,7 +691,7 @@ class PurchaseRequisitionController extends Controller
                     'cost_center' => !empty($itemData['account_assignment_category']) ? ($itemData['cost_center'] ?? '10101PCC01') : null,
                     'gl_account' => !empty($itemData['account_assignment_category']) ? ($itemData['gl_account'] ?? '65301000') : null,
                     'purchasing_organization' => $itemData['purchasing_organization'] ?? '1100',
-                    'purchasing_group' => $itemData['purchasing_group'] ?? '103',
+                    'purchasing_group' => !empty($itemData['purchasing_group']) ? $itemData['purchasing_group'] : ($request->user()?->purchasing_group ?: '103'),
                     'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
                     'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
                     'release_date' => $itemData['release_date'] ?? now()->format('Y-m-d'),
@@ -737,9 +761,9 @@ class PurchaseRequisitionController extends Controller
                     'guarantee_warranty_period' => $crData['guarantee_warranty_period'] ?? null,
                     'defect_liability_period' => $crData['defect_liability_period'] ?? null,
                     'others' => $crData['others'] ?? null,
-                    'requisitioner_name' => $crData['requisitioner_name'] ?? $pr->requisitioner,
-                    'req_designation' => $crData['req_designation'] ?? null,
-                    'req_department' => $crData['req_department'] ?? null,
+                    'requisitioner_name' => !empty($crData['requisitioner_name']) ? $crData['requisitioner_name'] : ($pr->requisitioner ?: ($request->user()?->name ?? 'Requester')),
+                    'req_designation' => !empty($crData['req_designation']) ? $crData['req_designation'] : ($request->user()?->designation ?? null),
+                    'req_department' => !empty($crData['req_department']) ? $crData['req_department'] : ($request->user()?->department?->name ?? null),
                     'tender_type' => $crData['tender_type'] ?? 'Single',
                     'tender_estimate_value' => $crData['tender_estimate_value'] ?? 'Excluding GST',
                     'total_pr_value' => !empty($crData['total_pr_value']) ? $crData['total_pr_value'] : $totalAmount,
@@ -764,6 +788,20 @@ class PurchaseRequisitionController extends Controller
 
         // If saved as Draft (is_draft = 1), keep in local database only and do NOT sync to SAP server
         if ($pr->is_draft) {
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => true,
+                    'pr_id' => $pr->id,
+                    'pr_number' => $prNumber,
+                    'sap_pr_number' => null,
+                    'is_draft' => true,
+                    'sap_sync_status' => 'draft',
+                    'total_amount' => $totalAmount,
+                    'currency' => $pr->currency,
+                    'message' => "Purchase Requisition {$prNumber} successfully saved as Draft in local database (is_draft = 1).",
+                ]);
+            }
+
             return redirect()->route('dashboard')->with(
                 'success',
                 "Purchase Requisition {$prNumber} successfully saved as Draft in local database (is_draft = 1). Draft PRs cannot be synced to SAP server until draft status is removed."
@@ -804,6 +842,20 @@ class PurchaseRequisitionController extends Controller
                 ]);
             }
 
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => true,
+                    'pr_id' => $pr->id,
+                    'pr_number' => $prNumber,
+                    'sap_pr_number' => $sapPrNum,
+                    'is_draft' => false,
+                    'sap_sync_status' => 'synced',
+                    'total_amount' => $totalAmount,
+                    'currency' => $pr->currency,
+                    'message' => "Purchase Requisition {$prNumber} successfully created in local database and synced to SAP S/4HANA Cloud (SAP PR #{$sapPrNum})!",
+                ]);
+            }
+
             return redirect()->route('dashboard')->with(
                 'success',
                 "Purchase Requisition {$prNumber} successfully created in local database and synced to SAP S/4HANA Cloud (SAP PR #{$sapPrNum})!"
@@ -815,6 +867,21 @@ class PurchaseRequisitionController extends Controller
                 'sap_payload' => $syncResult['payload'] ?? $pr->sap_payload,
                 'sap_response' => $syncResult['response'] ?? null,
             ]);
+
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => true,
+                    'pr_id' => $pr->id,
+                    'pr_number' => $prNumber,
+                    'sap_pr_number' => null,
+                    'is_draft' => false,
+                    'sap_sync_status' => 'failed',
+                    'total_amount' => $totalAmount,
+                    'currency' => $pr->currency,
+                    'warning' => "Purchase Requisition {$prNumber} created in local database, but SAP S/4HANA Cloud sync failed: {$syncResult['message']}.",
+                    'message' => "Purchase Requisition {$prNumber} created in local database, but SAP S/4HANA Cloud sync failed: {$syncResult['message']}.",
+                ]);
+            }
 
             return redirect()->route('dashboard')->with(
                 'warning',
@@ -924,9 +991,16 @@ class PurchaseRequisitionController extends Controller
     /**
      * Update an existing draft purchase requisition in local DB and optionally sync with SAP S/4HANA Cloud.
      */
-    public function update(Request $request, PurchaseRequisition $purchaseRequisition): RedirectResponse
+    public function update(Request $request, PurchaseRequisition $purchaseRequisition): RedirectResponse|JsonResponse
     {
         if (!$purchaseRequisition->is_draft) {
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Purchase Requisition {$purchaseRequisition->pr_number} is not in draft mode (is_draft = 0) and cannot be edited.",
+                ], 422);
+            }
+
             return redirect()->route('dashboard')->with(
                 'error',
                 "Purchase Requisition {$purchaseRequisition->pr_number} is not in draft mode (is_draft = 0) and cannot be edited."
@@ -1135,7 +1209,7 @@ class PurchaseRequisitionController extends Controller
                     'cost_center' => !empty($itemData['account_assignment_category']) ? ($itemData['cost_center'] ?? '10101PCC01') : null,
                     'gl_account' => !empty($itemData['account_assignment_category']) ? ($itemData['gl_account'] ?? '65301000') : null,
                     'purchasing_organization' => $itemData['purchasing_organization'] ?? '1100',
-                    'purchasing_group' => $itemData['purchasing_group'] ?? '103',
+                    'purchasing_group' => !empty($itemData['purchasing_group']) ? $itemData['purchasing_group'] : ($request->user()?->purchasing_group ?: '103'),
                     'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
                     'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
                     'release_date' => $itemData['release_date'] ?? now()->format('Y-m-d'),
@@ -1222,9 +1296,9 @@ class PurchaseRequisitionController extends Controller
                     'guarantee_warranty_period' => $crData['guarantee_warranty_period'] ?? null,
                     'defect_liability_period' => $crData['defect_liability_period'] ?? null,
                     'others' => $crData['others'] ?? null,
-                    'requisitioner_name' => $crData['requisitioner_name'] ?? $purchaseRequisition->requisitioner,
-                    'req_designation' => $crData['req_designation'] ?? null,
-                    'req_department' => $crData['req_department'] ?? null,
+                    'requisitioner_name' => !empty($crData['requisitioner_name']) ? $crData['requisitioner_name'] : ($purchaseRequisition->requisitioner ?: ($request->user()?->name ?? 'Requester')),
+                    'req_designation' => !empty($crData['req_designation']) ? $crData['req_designation'] : ($request->user()?->designation ?? null),
+                    'req_department' => !empty($crData['req_department']) ? $crData['req_department'] : ($request->user()?->department?->name ?? null),
                     'tender_type' => $crData['tender_type'] ?? 'Single',
                     'tender_estimate_value' => $crData['tender_estimate_value'] ?? 'Excluding GST',
                     'total_pr_value' => !empty($crData['total_pr_value']) ? $crData['total_pr_value'] : $totalAmount,
@@ -1253,6 +1327,20 @@ class PurchaseRequisitionController extends Controller
         });
 
         if ($purchaseRequisition->is_draft) {
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => true,
+                    'pr_id' => $purchaseRequisition->id,
+                    'pr_number' => $prNumber,
+                    'sap_pr_number' => null,
+                    'is_draft' => true,
+                    'sap_sync_status' => 'draft',
+                    'total_amount' => $totalAmount,
+                    'currency' => $purchaseRequisition->currency,
+                    'message' => "Purchase Requisition {$prNumber} draft updated successfully in local database.",
+                ]);
+            }
+
             return redirect()->route('dashboard')->with(
                 'success',
                 "Purchase Requisition {$prNumber} draft updated successfully in local database."
@@ -1291,6 +1379,20 @@ class PurchaseRequisitionController extends Controller
                 ]);
             }
 
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => true,
+                    'pr_id' => $purchaseRequisition->id,
+                    'pr_number' => $prNumber,
+                    'sap_pr_number' => $sapPrNum,
+                    'is_draft' => false,
+                    'sap_sync_status' => 'synced',
+                    'total_amount' => $totalAmount,
+                    'currency' => $purchaseRequisition->currency,
+                    'message' => "Purchase Requisition {$prNumber} successfully updated and synced to SAP S/4HANA Cloud (SAP PR #{$sapPrNum})!",
+                ]);
+            }
+
             return redirect()->route('dashboard')->with(
                 'success',
                 "Purchase Requisition {$prNumber} successfully updated and synced to SAP S/4HANA Cloud (SAP PR #{$sapPrNum})!"
@@ -1302,6 +1404,21 @@ class PurchaseRequisitionController extends Controller
                 'sap_payload' => $syncResult['payload'] ?? $purchaseRequisition->sap_payload,
                 'sap_response' => $syncResult['response'] ?? null,
             ]);
+
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => true,
+                    'pr_id' => $purchaseRequisition->id,
+                    'pr_number' => $prNumber,
+                    'sap_pr_number' => null,
+                    'is_draft' => false,
+                    'sap_sync_status' => 'failed',
+                    'total_amount' => $totalAmount,
+                    'currency' => $purchaseRequisition->currency,
+                    'warning' => "Purchase Requisition {$prNumber} updated in local database, but SAP S/4HANA Cloud sync failed: {$syncResult['message']}.",
+                    'message' => "Purchase Requisition {$prNumber} updated in local database, but SAP S/4HANA Cloud sync failed: {$syncResult['message']}.",
+                ]);
+            }
 
             return redirect()->route('dashboard')->with(
                 'warning',

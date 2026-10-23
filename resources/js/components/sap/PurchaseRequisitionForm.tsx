@@ -27,6 +27,8 @@ import {
     Loader2,
     RotateCcw,
     Wrench,
+    Check,
+    Eye,
 } from 'lucide-react';
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
@@ -135,8 +137,11 @@ export default function PurchaseRequisitionForm({
 }: PurchaseRequisitionFormProps) {
     const { auth } = usePage<any>().props;
     const defaultRequisitioner = auth?.user?.name
-        ? (auth.user.employee_id ? `${auth.user.name} (${auth.user.employee_id})` : auth.user.name)
+        ? (auth.user.employee_id ? `${auth.user.name}` : auth.user.name)
         : '';
+    const defaultDesignation = auth?.user?.designation || '';
+    const defaultDepartment = auth?.user?.department?.name || auth?.user?.department?.code || '';
+    const defaultPurchasingGroup = auth?.user?.purchasing_group || '103';
 
     const activePrDocTypes = prDocumentTypes && prDocumentTypes.length > 0
         ? prDocumentTypes.filter((dt) => dt.is_active).map((dt) => ({
@@ -202,15 +207,15 @@ export default function PurchaseRequisitionForm({
         pr_number_sap: initialCr.pr_number_sap || initialData?.sap_pr_number || '',
         contract_title: initialCr.contract_title || '',
         scope_of_work: initialCr.scope_of_work || '',
-        payment_terms: initialCr.payment_terms || '0001',
+        payment_terms: initialCr.payment_terms || '',
         bidders_qualification_criteria: initialCr.bidders_qualification_criteria || '',
         special_terms_condition: initialCr.special_terms_condition || '',
         guarantee_warranty_period: initialCr.guarantee_warranty_period || '',
         defect_liability_period: initialCr.defect_liability_period || '',
         others: initialCr.others || '',
         requisitioner_name: initialCr.requisitioner_name || initialData?.requisitioner || defaultRequisitioner || '',
-        req_designation: initialCr.req_designation || '',
-        req_department: initialCr.req_department || '',
+        req_designation: initialCr.req_designation || defaultDesignation || '',
+        req_department: initialCr.req_department || defaultDepartment || '',
         tender_type: initialCr.tender_type || 'Single',
         tender_estimate_value: initialCr.tender_estimate_value || 'Excluding GST',
         total_pr_value: initialCr.total_pr_value !== undefined && initialCr.total_pr_value !== null ? initialCr.total_pr_value : '',
@@ -374,8 +379,9 @@ export default function PurchaseRequisitionForm({
         supplying_plant: '',
         issuing_storage_location: '',
         quantity: '',
-        unit_of_measure: type === 'service' ? 'LE' : '',
+        unit_of_measure: '',
         unit_price: '',
+
         price_unit: 1,
         currency: currency,
         tax_code: '',
@@ -387,7 +393,7 @@ export default function PurchaseRequisitionForm({
         cost_center: '',
         gl_account: '',
         purchasing_organization: '',
-        purchasing_group: '',
+        purchasing_group: defaultPurchasingGroup,
         delivery_date: getTodayString(14),
         requisition_date: getTodayString(0),
         release_date: getTodayString(0),
@@ -453,7 +459,7 @@ export default function PurchaseRequisitionForm({
                     cost_center: it.cost_center || '',
                     gl_account: it.gl_account || '',
                     purchasing_organization: it.purchasing_organization || '1100',
-                    purchasing_group: it.purchasing_group || '103',
+                    purchasing_group: it.purchasing_group || defaultPurchasingGroup,
                     delivery_date: rawDelDate,
                     requisition_date: rawReqDate,
                     release_date: rawRelDate,
@@ -510,15 +516,15 @@ export default function PurchaseRequisitionForm({
                     pr_number_sap: icr.pr_number_sap || initialData.sap_pr_number || '',
                     contract_title: icr.contract_title || '',
                     scope_of_work: icr.scope_of_work || '',
-                    payment_terms: icr.payment_terms || '0001',
+                    payment_terms: icr.payment_terms || '',
                     bidders_qualification_criteria: icr.bidders_qualification_criteria || '',
                     special_terms_condition: icr.special_terms_condition || '',
                     guarantee_warranty_period: icr.guarantee_warranty_period || '',
                     defect_liability_period: icr.defect_liability_period || '',
                     others: icr.others || '',
                     requisitioner_name: icr.requisitioner_name || initialData.requisitioner || defaultRequisitioner || '',
-                    req_designation: icr.req_designation || '',
-                    req_department: icr.req_department || '',
+                    req_designation: icr.req_designation || defaultDesignation || '',
+                    req_department: icr.req_department || defaultDepartment || '',
                     tender_type: icr.tender_type || 'Single',
                     tender_estimate_value: icr.tender_estimate_value || 'Excluding GST',
                     total_pr_value: icr.total_pr_value !== undefined && icr.total_pr_value !== null ? icr.total_pr_value : '',
@@ -542,6 +548,29 @@ export default function PurchaseRequisitionForm({
     const [isDrafting, setIsDrafting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+    // Field-level validation errors
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+    // Confirmation & Success Dialog States
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        isDraft: boolean;
+    } | null>(null);
+
+    const [successModal, setSuccessModal] = useState<{
+        isOpen: boolean;
+        prNumber: string;
+        sapPrNumber?: string;
+        isDraft: boolean;
+        message: string;
+        prId: number | string;
+        totalAmount: number;
+        currency: string;
+    } | null>(null);
+
+    const [copiedPrNumber, setCopiedPrNumber] = useState(false);
+    const [copiedSapPrNumber, setCopiedSapPrNumber] = useState(false);
 
     // Search Help Modal State
     const [searchHelpState, setSearchHelpState] = useState<{
@@ -574,6 +603,47 @@ export default function PurchaseRequisitionForm({
     const [sapCostCentersCache, setSapCostCentersCache] = useState<SearchHelpOption[]>([]);
     const [sapSuppliersCache, setSapSuppliersCache] = useState<SearchHelpOption[]>([]);
     const [sapPurchasingOrgsCache, setSapPurchasingOrgsCache] = useState<SearchHelpOption[]>([]);
+    const [sapPurchasingGroupsCache, setSapPurchasingGroupsCache] = useState<SearchHelpOption[]>([]);
+    const [sapUnitsOfMeasureCache, setSapUnitsOfMeasureCache] = useState<SearchHelpOption[]>([]);
+
+    // Silently pre-fetch plants, purchasing groups, AACs, and units of measure to enhance validation & F4 responsiveness
+    React.useEffect(() => {
+        fetch('/sap-plants', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapPlantsCache(d.items);
+            })
+            .catch(() => {});
+
+        fetch('/sap-purchasing-groups', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapPurchasingGroupsCache(d.items);
+            })
+            .catch(() => {});
+
+        fetch('/sap-purchasing-organizations', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapPurchasingOrgsCache(d.items);
+            })
+            .catch(() => {});
+
+        fetch('/sap-account-assignment-categories', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapAccountAssignmentCategoriesCache(d.items);
+            })
+            .catch(() => {});
+
+        fetch('/sap-units-of-measure', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapUnitsOfMeasureCache(d.items);
+            })
+            .catch(() => {});
+    }, []);
+
 
     // Valuation lookup tracking & debouncing
     const [fetchingValuation, setFetchingValuation] = useState<Record<string, boolean>>({});
@@ -1474,8 +1544,162 @@ export default function PurchaseRequisitionForm({
         return found ? (found.PurchasingOrganizationName || found.purchasingOrgName || found.name || '') : '';
     };
 
-    const handleSelectSearchHelp = (opt: SearchHelpOption) => {
+    /**
+     * Hit /sap-purchasing-groups API (or fallback to master data) for Purchasing Group F4 Search Help.
+     * Shows PurchasingGroup (code) and PurchasingGroupName/description from App\Models\PurchasingGroup.
+     */
+    const handleOpenPurchasingGroupSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
 
+        if (sapPurchasingGroupsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Purchasing Group - SAP S/4HANA (EKGRP)',
+                subtitle: `Purchasing Groups (${sapPurchasingGroupsCache.length} groups)`,
+                options: sapPurchasingGroupsCache,
+                selectedCode: currentCode || '',
+                field: 'purchasing_group',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        const fallback = dataCatalog.purchasingGroups || [];
+
+        // Open modal immediately with loading state and fallback from dataCatalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Purchasing Group - SAP S/4HANA (EKGRP)',
+            subtitle: 'Loading Purchasing Groups from Database...',
+            options: fallback,
+            selectedCode: currentCode || '',
+            field: 'purchasing_group',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-purchasing-groups', {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            const groups = data.purchasingGroups || data.items || [];
+            if (groups && groups.length > 0) {
+                const formatted = groups.map((g: any) => {
+                    const desc = g.description || g.PurchasingGroupName || g.name || '';
+                    return {
+                        code: g.code,
+                        name: desc,
+                        PurchasingGroup: g.code,
+                        PurchasingGroupName: desc,
+                        description: desc,
+                        extra: desc,
+                    };
+                });
+                setSapPurchasingGroupsCache(formatted);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: formatted,
+                    subtitle: `Purchasing Groups (${formatted.length} groups)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: fallback,
+                    subtitle: 'Loaded Purchasing Groups',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch purchasing groups:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                options: fallback,
+                subtitle: 'Loaded Cached Purchasing Groups',
+                isLoading: false,
+            }));
+        }
+    };
+
+    const getPurchasingGroupLabel = (code?: string) => {
+        if (!code) return '';
+        const allGroups = sapPurchasingGroupsCache.length > 0 ? sapPurchasingGroupsCache : (dataCatalog.purchasingGroups || []);
+        const found = allGroups.find((g) => (g.PurchasingGroup || g.code) === code);
+        return found ? (found.description || found.PurchasingGroupName || found.name || '') : '';
+    };
+
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_UNITOFMEASUREMENT_CDS) API for Unit of Measure F4 Search Help.
+     * Uses UnitOfMeasure, UnitOfMeasureCommercialName, and UnitOfMeasureLongName with search functionality.
+     */
+    const handleOpenUnitOfMeasureSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+
+        if (sapUnitsOfMeasureCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Unit of Measure - SAP S/4HANA Cloud (CDS: YY1_UNITOFMEASUREMENT_CDS)',
+                subtitle: `SAP Units of Measure (${sapUnitsOfMeasureCache.length} units)`,
+                options: sapUnitsOfMeasureCache,
+                selectedCode: currentCode || '',
+                field: 'unit_of_measure',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state and fallback catalog
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Unit of Measure - SAP S/4HANA Cloud (CDS: YY1_UNITOFMEASUREMENT_CDS)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_UNITOFMEASUREMENT_CDS)...',
+            options: dataCatalog.unitsOfMeasure || [],
+            selectedCode: currentCode || '',
+            field: 'unit_of_measure',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-units-of-measure', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapUnitsOfMeasureCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP Units of Measure (${data.items.length} units)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No units returned from SAP CDS View',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch units of measure from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
+    const handleSelectSearchHelp = (opt: SearchHelpOption) => {
         const { field, targetIndex } = searchHelpState;
         const targetIdx = targetIndex !== undefined ? targetIndex : activeItemIndex;
 
@@ -1483,6 +1707,31 @@ export default function PurchaseRequisitionForm({
             setPrType(opt.code);
             return;
         }
+
+        // Special handling when selecting Unit of Measure:
+        if (field === 'unit_of_measure') {
+            const uomCode = opt.UnitOfMeasure || opt.UnitOfMeasureCommercialName || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        unit_of_measure: uomCode,
+                    };
+                })
+            );
+            if (targetIdx !== undefined && targetIdx >= 0) {
+                setFieldErrors((prev) => {
+                    const key = `item_${targetIdx}_unit_of_measure`;
+                    if (!prev[key]) return prev;
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                });
+            }
+            return;
+        }
+
 
         // Special handling when selecting Material Group:
         if (field === 'material_group') {
@@ -1687,23 +1936,64 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
+        // Special handling when selecting Purchasing Group:
+        if (field === 'purchasing_group') {
+            const pgCode = opt.PurchasingGroup || opt.code;
+            setItems((prev) =>
+                prev.map((item, idx) => {
+                    if (idx !== targetIdx) return item;
+                    return {
+                        ...item,
+                        purchasing_group: pgCode,
+                    };
+                })
+            );
+            return;
+        }
+
         // Other fields: plant, item_category, account_assignment_category, material_type, material_group, unit_of_measure, storage_location, cost_center, gl_account, etc.
         setItems((prev) =>
             prev.map((item, idx) => (idx === targetIdx ? { ...item, [field]: opt.code } : item))
         );
+        if (targetIdx !== undefined && targetIdx >= 0) {
+            setFieldErrors((prev) => {
+                const key = `item_${targetIdx}_${field}`;
+                if (!prev[key]) return prev;
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
+        }
+    };
 
+    const clearFieldError = (key: string) => {
+        setFieldErrors((prev) => {
+            if (!prev[key]) return prev;
+            const next = { ...prev };
+            delete next[key];
+            return next;
+        });
     };
 
     const updateCurrentItem = (updates: Partial<PrItemData>) => {
         setItems((prev) =>
             prev.map((item, idx) => (idx === activeItemIndex ? { ...item, ...updates } : item))
         );
+        Object.keys(updates).forEach((k) => {
+            clearFieldError(`item_${activeItemIndex}_${k}`);
+        });
     };
 
     const updateItemById = (id: string, updates: Partial<PrItemData>) => {
+        const itemIdx = items.findIndex((it) => it.id === id);
         setItems((prev) =>
             prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
         );
+        if (itemIdx >= 0) {
+            Object.keys(updates).forEach((k) => {
+                clearFieldError(`item_${itemIdx}_${k}`);
+            });
+        }
     };
 
     const handleAddItem = (type: 'material' | 'service' | '' = '') => {
@@ -1725,14 +2015,16 @@ export default function PurchaseRequisitionForm({
                     return {
                         ...item,
                         item_type: 'service',
+                        material_code: '',
                         account_assignment_category: item.account_assignment_category || 'K',
-                        unit_of_measure: item.unit_of_measure === 'EA' ? 'LE' : (item.unit_of_measure || 'LE'),
+                        unit_of_measure: item.unit_of_measure === 'EA' ? '' : (item.unit_of_measure || ''),
                         moving_average_price: item.moving_average_price || '0.00',
                         standard_price: item.standard_price || '0.00',
                         inventory_valuation_procedure: item.inventory_valuation_procedure || '',
                         price_control: item.price_control || '',
                     };
                 }
+
 
                 // Material
                 return {
@@ -1781,7 +2073,7 @@ export default function PurchaseRequisitionForm({
                     cost_center: '',
                     gl_account: '',
                     purchasing_organization: '',
-                    purchasing_group: '',
+                    purchasing_group: defaultPurchasingGroup,
                     planned_delivery_time: 0,
                     gr_processing_time: 0,
                     item_text: '',
@@ -1832,13 +2124,31 @@ export default function PurchaseRequisitionForm({
     };
 
     // Calculate Total Value
-    const calculateTotal = () => {
+    const calculateTotal = React.useCallback(() => {
         return items.reduce((sum, item) => {
-            const pu = item.price_unit > 0 ? item.price_unit : 1;
+            const pu = Number(item.price_unit) > 0 ? Number(item.price_unit) : 1;
             const itemTotal = ((Number(item.quantity) || 0) / pu) * (Number(item.unit_price) || 0);
             return sum + itemTotal;
         }, 0);
-    };
+    }, [items]);
+
+    // Automatically recalculate Total PR Value and in Words whenever line items change
+    React.useEffect(() => {
+        const total = calculateTotal();
+        const words = total > 0 ? convertAmountToWords(total) : '';
+
+        setContractRequisition((prev) => {
+            const prevTotal = Number(prev.total_pr_value) || 0;
+            if (prevTotal === total && prev.total_pr_value_in_word === words && prev.total_pr_value !== '') {
+                return prev;
+            }
+            return {
+                ...prev,
+                total_pr_value: total,
+                total_pr_value_in_word: words,
+            };
+        });
+    }, [calculateTotal]);
 
     const currentItemTotal = () => {
         if (!currentItem) return 0;
@@ -1846,94 +2156,259 @@ export default function PurchaseRequisitionForm({
         return ((Number(currentItem.quantity) || 0) / pu) * (Number(currentItem.unit_price) || 0);
     };
 
-    // Form Submission (Direct Sync or Draft)
-    const submitForm = (isDraft: boolean) => {
-        setErrorMessage(null);
+    // CSRF Token Helper
+    const getCsrfToken = (): string => {
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        if (metaTag) {
+            const val = metaTag.getAttribute('content');
+            if (val) return val;
+        }
+        const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+        if (match) {
+            return decodeURIComponent(match[1]);
+        }
+        return '';
+    };
 
-        // Validation: Document Type is mandatory
+    // Tab Error Indicator Helper
+    const getItemTabHasError = (tabId: string, itemIdx: number) => {
+        const prefix = `item_${itemIdx}_`;
+        if (tabId === 'general') {
+            return Boolean(
+                fieldErrors[prefix + 'item_type'] ||
+                fieldErrors[prefix + 'material_code'] ||
+                fieldErrors[prefix + 'description'] ||
+                fieldErrors[prefix + 'plant'] ||
+                fieldErrors[prefix + 'material_group'] ||
+                fieldErrors[prefix + 'item_category']
+            );
+        }
+        if (tabId === 'quantity-date') {
+            return Boolean(fieldErrors[prefix + 'quantity']);
+        }
+        if (tabId === 'valuation') {
+            return Boolean(
+                fieldErrors[prefix + 'unit_price'] ||
+                fieldErrors[prefix + 'unit_of_measure'] ||
+                fieldErrors[prefix + 'currency']
+            );
+        }
+        if (tabId === 'account-assignment') {
+            return Boolean(
+                fieldErrors[prefix + 'account_assignment_category'] ||
+                fieldErrors[prefix + 'cost_center'] ||
+                fieldErrors[prefix + 'gl_account']
+            );
+        }
+        if (tabId === 'contact-info') {
+            return Boolean(
+                fieldErrors[prefix + 'purchasing_group'] ||
+                fieldErrors[prefix + 'purchasing_organization']
+            );
+        }
+        return false;
+    };
+
+    // Comprehensive Field-Level Validation Function
+    const validateForm = (isDraft: boolean): Record<string, string> => {
+        const errs: Record<string, string> = {};
+
+        // 1. Header Validation
+        if (!isDraft && !description.trim()) {
+            errs['header_description'] = 'Requisition Header Description is mandatory to sync with SAP.';
+        }
+
+        const validDocTypes = (dataCatalog.documentTypes || []).map((dt) => dt.code.toUpperCase());
         if (!prType) {
-            setErrorMessage('Document Type is mandatory. Please select an option.');
+            errs['header_pr_type'] = 'Document Type is mandatory. Please select a Document Type.';
+        } else if (validDocTypes.length > 0 && !validDocTypes.includes(prType.toUpperCase())) {
+            errs['header_pr_type'] = `Invalid Document Type '${prType}'. Please select a valid document type from the list.`;
+        }
+
+        // 2. Line Items Validation
+        if (!items || items.length === 0) {
+            errs['general'] = 'At least one line item is required to create a Purchase Requisition.';
+            return errs;
+        }
+
+        const validPlants = Array.from(new Set([
+            ...(dataCatalog.plants || []).map((p) => p.code.toUpperCase()),
+            ...sapPlantsCache.map((p) => p.code.toUpperCase()),
+            '1100', '1200', '1300', '1400',
+        ]));
+
+        const validPurchasingGroups = Array.from(new Set([
+            ...(dataCatalog.purchasingGroups || []).map((pg) => pg.code.toUpperCase()),
+            ...sapPurchasingGroupsCache.map((pg) => pg.code.toUpperCase()),
+            ...(defaultPurchasingGroup ? [defaultPurchasingGroup.toUpperCase()] : []),
+            '101', '102', '103', '104', '105', '106', '107', '108', '109', '110',
+        ]));
+
+        const validPurchasingOrgs = Array.from(new Set([
+            ...(dataCatalog.purchasingOrganizations || []).map((po) => po.code.toUpperCase()),
+            ...sapPurchasingOrgsCache.map((po) => po.code.toUpperCase()),
+            '1100', '1000',
+        ]));
+
+        const validItemCats = Array.from(new Set([
+            '',
+            ...(dataCatalog.itemCategories || []).map((ic) => ic.code.toUpperCase()),
+            'B', 'D', 'L', 'S', 'U',
+        ]));
+
+        const validAacs = Array.from(new Set([
+            '',
+            ...(dataCatalog.accountAssignmentCategories || []).map((aac) => aac.code.toUpperCase()),
+            ...sapAccountAssignmentCategoriesCache.map((aac) => aac.code.toUpperCase()),
+            'K', 'P', 'U', 'A', 'C', 'F',
+        ]));
+
+        const validUoms = Array.from(new Set([
+            ...(dataCatalog.unitsOfMeasure || []).map((u) => u.code.toUpperCase()),
+            ...sapUnitsOfMeasureCache.map((u) => (u.UnitOfMeasure || u.UnitOfMeasureCommercialName || u.code || '').toUpperCase()),
+            'NO', 'EA', 'PC', 'KG', 'M', 'L', 'HR', 'DAY', 'SET', 'AU', 'LE', 'M3', 'TO', 'MON', 'JOB', 'LOT', '%',
+        ]));
+
+
+        items.forEach((it, idx) => {
+            const prefix = `item_${idx}_`;
+
+            // Item Type
+            if (!it.item_type) {
+                errs[prefix + 'item_type'] = 'Line item type must be selected (Material or Service).';
+            }
+
+            // Description
+            if (!it.description || !it.description.trim()) {
+                errs[prefix + 'description'] = 'Item Description is mandatory.';
+            }
+
+            // Material Number
+            if (it.item_type === 'material') {
+                if (!it.material_code || !it.material_code.trim()) {
+                    errs[prefix + 'material_code'] = 'Material Number is mandatory for Material line items.';
+                } else if (it.material_code.trim().toUpperCase() === 'NUTS') {
+                    errs[prefix + 'material_code'] = "Material 'NUTS' is not maintained by Purchasing in Plant 1200 in SAP (ME/046). Please choose another material.";
+                }
+            }
+
+            // Plant
+            const plantUpper = (it.plant || '').trim().toUpperCase();
+            if (!plantUpper) {
+                errs[prefix + 'plant'] = 'Plant is mandatory. Please select a receiving plant.';
+            } else if (validPlants.length > 0 && !validPlants.includes(plantUpper)) {
+                errs[prefix + 'plant'] = `Invalid Plant '${it.plant}'. Must be a valid SAP plant (e.g. 1100, 1200, 1300, 1400).`;
+            }
+
+            // Purchasing Group
+            const pgUpper = (it.purchasing_group || '').trim().toUpperCase();
+            if (!pgUpper) {
+                errs[prefix + 'purchasing_group'] = 'Purchasing Group is mandatory.';
+            } else if (validPurchasingGroups.length > 0 && !validPurchasingGroups.includes(pgUpper)) {
+                errs[prefix + 'purchasing_group'] = `Invalid Purchasing Group '${it.purchasing_group}'. Press F4 to select a valid group.`;
+            }
+
+            // Purchasing Organization
+            const poUpper = (it.purchasing_organization || '').trim().toUpperCase();
+            if (!poUpper) {
+                errs[prefix + 'purchasing_organization'] = 'Purchasing Organization is mandatory.';
+            } else if (validPurchasingOrgs.length > 0 && !validPurchasingOrgs.includes(poUpper)) {
+                errs[prefix + 'purchasing_organization'] = `Invalid Purchasing Org '${it.purchasing_organization}'. Must match a valid Org (e.g. 1100).`;
+            }
+
+            // Item Category
+            const icUpper = (it.item_category || '').trim().toUpperCase();
+            if (icUpper && !validItemCats.includes(icUpper)) {
+                errs[prefix + 'item_category'] = `Invalid Item Category '${it.item_category}'. Press F4 to select a valid category.`;
+            }
+
+            // Account Assignment Category (AAC)
+            const aacUpper = (it.account_assignment_category || '').trim().toUpperCase();
+            if (aacUpper === 'N') {
+                errs[prefix + 'account_assignment_category'] = "Category 'N' (Network) is not supported in SAP S/4HANA Cloud (ME/066). Leave blank for Stock or select 'K' for Cost Center.";
+            } else if (aacUpper && !validAacs.includes(aacUpper)) {
+                errs[prefix + 'account_assignment_category'] = `Invalid Account Assignment Category '${it.account_assignment_category}'. Press F4 for help.`;
+            }
+
+            // Cost Center & G/L Account (Mandatory when AAC is K, especially on Sync)
+            if (aacUpper === 'K' && !isDraft) {
+                if (!it.gl_account || !it.gl_account.trim()) {
+                    errs[prefix + 'gl_account'] = "G/L Account is mandatory when Account Assignment is 'K'.";
+                }
+                if (!it.cost_center || !it.cost_center.trim()) {
+                    errs[prefix + 'cost_center'] = "Cost Center is mandatory when Account Assignment is 'K'.";
+                }
+            }
+
+            // Quantity
+            const qtyNum = Number(it.quantity);
+            if (it.quantity === '' || isNaN(qtyNum) || qtyNum <= 0) {
+                errs[prefix + 'quantity'] = 'Quantity must be a numeric value greater than 0.';
+            }
+
+            // Unit of Measure
+            const uomUpper = (it.unit_of_measure || '').trim().toUpperCase();
+            if (!uomUpper) {
+                errs[prefix + 'unit_of_measure'] = 'Unit of Measure is mandatory.';
+            } else if (validUoms.length > 0 && !validUoms.includes(uomUpper)) {
+                errs[prefix + 'unit_of_measure'] = `Invalid Unit of Measure '${it.unit_of_measure}'. Press F4 to select a valid UoM.`;
+            }
+
+            // Valuation Price
+            const priceNum = Number(it.unit_price);
+            if (it.unit_price === '' || isNaN(priceNum) || priceNum < 0) {
+                errs[prefix + 'unit_price'] = 'Valuation Price cannot be negative.';
+            }
+
+            // Material Group
+            if (!it.material_group || !it.material_group.trim()) {
+                errs[prefix + 'material_group'] = 'Material Group is mandatory.';
+            }
+        });
+
+        return errs;
+    };
+
+    // User triggers submission via "Save as Draft" or "Sync with SAP"
+    const handleInitiateSubmit = (isDraft: boolean) => {
+        const errs = validateForm(isDraft);
+        if (Object.keys(errs).length > 0) {
+            setFieldErrors(errs);
+            setErrorMessage('Validation errors found: Please fix all highlighted fields with red borders below.');
+
+            // Automatically navigate to the first invalid line item and tab
+            for (let i = 0; i < items.length; i++) {
+                const prefix = `item_${i}_`;
+                const itemErrKeys = Object.keys(errs).filter((k) => k.startsWith(prefix));
+                if (itemErrKeys.length > 0) {
+                    setActiveItemIndex(i);
+                    const firstKey = itemErrKeys[0];
+                    if (firstKey.includes('quantity')) {
+                        setActiveItemTab('quantity-date');
+                    } else if (firstKey.includes('unit_price') || firstKey.includes('unit_of_measure') || firstKey.includes('currency')) {
+                        setActiveItemTab('valuation');
+                    } else if (firstKey.includes('account_assignment') || firstKey.includes('cost_center') || firstKey.includes('gl_account')) {
+                        setActiveItemTab('account-assignment');
+                    } else if (firstKey.includes('purchasing_group') || firstKey.includes('purchasing_organization')) {
+                        setActiveItemTab('contact-info');
+                    } else {
+                        setActiveItemTab('general');
+                    }
+                    break;
+                }
+            }
             return;
         }
 
-        // When saving as non-draft, validate all items strictly
-        if (!isDraft) {
-            for (let i = 0; i < items.length; i++) {
-                const it = items[i];
-                if (!it.item_type) {
-                    setErrorMessage(`Item ${it.item_number}: Please select line item type (Material or Service).`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('general');
-                    return;
-                }
-                const aac = it.account_assignment_category?.trim().toUpperCase();
-                if (aac === 'N') {
-                    setErrorMessage(`Item ${it.item_number}: Account Assignment Category 'N' (Network) is not supported for standard items in SAP S/4HANA Cloud (SAP error ME/066). Leave blank for Stock/Inventory materials or select 'K' for Cost Center.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('account-assignment');
-                    return;
-                }
-                if (it.item_type === 'material' && !it.material_code.trim()) {
-                    setErrorMessage(`Item ${it.item_number}: Material Number is mandatory for Material line items.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('general');
-                    return;
-                }
-                if (!it.description.trim()) {
-                    setErrorMessage(`Item ${it.item_number}: Item Description is mandatory.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('general');
-                    return;
-                }
-                if (!it.plant) {
-                    setErrorMessage(`Item ${it.item_number}: Plant is mandatory.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('general');
-                    return;
-                }
-                if (!it.material_group) {
-                    setErrorMessage(`Item ${it.item_number}: Material Group is mandatory.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('general');
-                    return;
-                }
-                if (Number(it.quantity) <= 0) {
-                    setErrorMessage(`Item ${it.item_number}: Quantity must be greater than 0.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('quantity-date');
-                    return;
-                }
-                if (!it.unit_of_measure) {
-                    setErrorMessage(`Item ${it.item_number}: Unit of Measure is mandatory.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('valuation');
-                    return;
-                }
-                if (Number(it.unit_price) < 0) {
-                    setErrorMessage(`Item ${it.item_number}: Valuation Price cannot be negative.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('valuation');
-                    return;
-                }
-                if (!it.purchasing_group) {
-                    setErrorMessage(`Item ${it.item_number}: Purchasing Group is mandatory.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('contact-info');
-                    return;
-                }
-            }
-        } else {
-            // For draft, only check item description if present
-            for (let i = 0; i < items.length; i++) {
-                const it = items[i];
-                if (!it.description.trim()) {
-                    setErrorMessage(`Item ${it.item_number}: Item Description is mandatory to save draft.`);
-                    setActiveItemIndex(i);
-                    setActiveItemTab('general');
-                    return;
-                }
-            }
-        }
+        setFieldErrors({});
+        setErrorMessage(null);
+        // All validated -> open confirmation popup!
+        setConfirmModal({ isOpen: true, isDraft });
+    };
+
+    // Actual submission to backend via AJAX (called when confirmed in popup)
+    const submitForm = async (isDraft: boolean) => {
+        setErrorMessage(null);
 
         if (isDraft) {
             setIsDrafting(true);
@@ -1942,104 +2417,175 @@ export default function PurchaseRequisitionForm({
         }
 
         const endpoint = isEdit ? `/purchase-requisitions/${initialData.id}` : '/purchase-requisitions';
-        const payloadData: any = {
-            ...(isEdit ? { _method: 'PUT' } : {}),
-            is_draft: isDraft ? 1 : 0,
-            description: description.trim() || currentItem.description || (isDraft ? 'Draft Purchase Requisition' : 'Purchase Requisition'),
-            header_note: headerNote,
-            header_option_id: headerOptionId || null,
-            pr_type: prType,
-            auto_source_determination: autoSourceDetermination,
-            company_code: companyCode || '1000',
-            plant: currentItem.plant || '1000',
-            currency: currency,
-            requisitioner: requisitioner,
-            contract_requisition: {
-                ...contractRequisition,
-                total_pr_value: contractRequisition.total_pr_value !== '' ? contractRequisition.total_pr_value : calculateTotal(),
-                requisitioner_name: contractRequisition.requisitioner_name || requisitioner,
-                sap_description: (contractRequisition.sap_description || contractRequisition.contract_title || description || 'Contract Requisition').substring(0, 80),
-            },
-            items: items.map((it) => ({
-                id: (it as any).item_id || undefined,
-                item_number: it.item_number,
-                item_type: it.item_type || 'material',
-                material_type: it.material_type,
-                item_category: it.item_category,
-                description: it.description || 'Draft Item',
-                material_code: it.material_code,
-                supplier_material_number: it.manufacturer_part_number || it.supplier_material_number || '',
-                manufacturer_part_number: it.manufacturer_part_number || it.supplier_material_number || '',
-                batch: it.batch,
-                revision_level: it.revision_level,
-                material_group: it.material_group || 'YBPM01',
-                desired_supplier: it.desired_supplier || it.fixed_vendor || '',
-                fixed_vendor: it.fixed_vendor || '',
-                supplying_plant: it.supplying_plant || '',
-                agreement_number: it.agreement_number || '',
-                agreement_item: it.agreement_item || '',
-                info_record: it.info_record || '',
-                quantity: Number(it.quantity) > 0 ? it.quantity : 1,
-                unit_of_measure: it.unit_of_measure || 'PC',
-                unit_price: Number(it.unit_price) >= 0 ? it.unit_price : 0,
-                price_unit: it.price_unit || 1,
-                currency: it.currency || currency,
-                tax_code: it.tax_code,
-                po_price_type: it.po_price_type,
-                plant: it.plant || currentItem.plant || '1000',
-                storage_location: it.storage_location,
-                account_assignment_category: it.account_assignment_category,
-                requirement_tracking_number: it.requirement_tracking_number,
-                cost_center: it.cost_center,
-                gl_account: it.gl_account,
-                purchasing_organization: it.purchasing_organization || '1100',
-                purchasing_group: it.purchasing_group || '103',
-                delivery_date: it.delivery_date,
-                requisition_date: it.requisition_date,
-                release_date: it.release_date,
-                planned_delivery_time: it.planned_delivery_time,
-                gr_processing_time: it.gr_processing_time,
-                item_text: it.item_text,
-                item_note: it.item_note,
-                delivery_text: it.delivery_text,
-                material_po_text: it.material_po_text,
-                closure_comment: it.closure_comment,
-                attachment_doc_type: it.attachment_doc_type,
-                attachment_name: it.attachment_name,
-                attachment_file: it.attachment_file || null,
-            })),
-        };
+        const formData = new FormData();
+        if (isEdit) {
+            formData.append('_method', 'PUT');
+        }
+        formData.append('is_draft', isDraft ? '1' : '0');
+        formData.append('description', description.trim() || currentItem?.description || (isDraft ? 'Draft Purchase Requisition' : 'Purchase Requisition'));
+        formData.append('header_note', headerNote || '');
+        if (headerOptionId) formData.append('header_option_id', headerOptionId);
+        formData.append('pr_type', prType);
+        formData.append('auto_source_determination', autoSourceDetermination ? '1' : '0');
+        formData.append('company_code', companyCode || '1000');
+        formData.append('plant', currentItem?.plant || '1000');
+        formData.append('currency', currency);
+        formData.append('requisitioner', requisitioner || defaultRequisitioner);
 
-        router.post(
-            endpoint,
-            payloadData,
-            {
-                forceFormData: true,
-                onSuccess: () => {
-                    setSubmitting(false);
-                    setIsDrafting(false);
-                    if (isModal && onCloseModal) {
-                        onCloseModal();
-                    }
-                },
-                onError: (errors) => {
-                    setSubmitting(false);
-                    setIsDrafting(false);
-                    const firstError = Object.values(errors)[0] as string;
-                    setErrorMessage(firstError || 'Failed to save Purchase Requisition.');
-                },
+        // Contract Requisition
+        formData.append('contract_requisition[cr_no]', contractRequisition.cr_no || '');
+        formData.append('contract_requisition[contract_title]', contractRequisition.contract_title || '');
+        formData.append('contract_requisition[scope_of_work]', contractRequisition.scope_of_work || '');
+        formData.append('contract_requisition[payment_terms]', contractRequisition.payment_terms || '');
+        formData.append('contract_requisition[bidders_qualification_criteria]', contractRequisition.bidders_qualification_criteria || '');
+        formData.append('contract_requisition[special_terms_condition]', contractRequisition.special_terms_condition || '');
+        formData.append('contract_requisition[guarantee_warranty_period]', contractRequisition.guarantee_warranty_period || '');
+        formData.append('contract_requisition[defect_liability_period]', contractRequisition.defect_liability_period || '');
+        formData.append('contract_requisition[others]', contractRequisition.others || '');
+        formData.append('contract_requisition[requisitioner_name]', contractRequisition.requisitioner_name || requisitioner || defaultRequisitioner);
+        formData.append('contract_requisition[req_designation]', contractRequisition.req_designation || defaultDesignation);
+        formData.append('contract_requisition[req_department]', contractRequisition.req_department || defaultDepartment);
+        formData.append('contract_requisition[tender_type]', contractRequisition.tender_type || 'Single');
+        formData.append('contract_requisition[tender_estimate_value]', contractRequisition.tender_estimate_value || 'Excluding GST');
+        formData.append('contract_requisition[total_pr_value]', String(Number(contractRequisition.total_pr_value) || calculateTotal()));
+        formData.append('contract_requisition[total_pr_value_in_word]', contractRequisition.total_pr_value_in_word || (calculateTotal() > 0 ? convertAmountToWords(calculateTotal()) : ''));
+
+        // Items
+        items.forEach((it, index) => {
+            if ((it as any).item_id) {
+                formData.append(`items[${index}][id]`, String((it as any).item_id));
             }
-        );
+            formData.append(`items[${index}][item_number]`, it.item_number);
+            formData.append(`items[${index}][item_type]`, it.item_type || 'material');
+            if (it.material_type) formData.append(`items[${index}][material_type]`, it.material_type);
+            if (it.item_category) formData.append(`items[${index}][item_category]`, it.item_category);
+            formData.append(`items[${index}][description]`, it.description || 'Draft Item');
+            if (it.material_code) formData.append(`items[${index}][material_code]`, it.material_code);
+            if (it.supplier_material_number || it.manufacturer_part_number) {
+                formData.append(`items[${index}][supplier_material_number]`, it.manufacturer_part_number || it.supplier_material_number || '');
+                formData.append(`items[${index}][manufacturer_part_number]`, it.manufacturer_part_number || it.supplier_material_number || '');
+            }
+            if (it.batch) formData.append(`items[${index}][batch]`, it.batch);
+            if (it.revision_level) formData.append(`items[${index}][revision_level]`, it.revision_level);
+            formData.append(`items[${index}][material_group]`, it.material_group || 'YBPM01');
+            if (it.desired_supplier || it.fixed_vendor) {
+                formData.append(`items[${index}][desired_supplier]`, it.desired_supplier || it.fixed_vendor || '');
+                formData.append(`items[${index}][fixed_vendor]`, it.fixed_vendor || '');
+            }
+            if (it.supplying_plant) formData.append(`items[${index}][supplying_plant]`, it.supplying_plant);
+            if (it.agreement_number) formData.append(`items[${index}][agreement_number]`, it.agreement_number);
+            if (it.agreement_item) formData.append(`items[${index}][agreement_item]`, it.agreement_item);
+            if (it.info_record) formData.append(`items[${index}][info_record]`, it.info_record);
+            formData.append(`items[${index}][quantity]`, String(Number(it.quantity) > 0 ? it.quantity : 1));
+            formData.append(`items[${index}][unit_of_measure]`, it.unit_of_measure || 'PC');
+            formData.append(`items[${index}][unit_price]`, String(Number(it.unit_price) >= 0 ? it.unit_price : 0));
+            formData.append(`items[${index}][price_unit]`, String(it.price_unit || 1));
+            formData.append(`items[${index}][currency]`, it.currency || currency);
+            if (it.tax_code) formData.append(`items[${index}][tax_code]`, it.tax_code);
+            if (it.po_price_type) formData.append(`items[${index}][po_price_type]`, it.po_price_type);
+            formData.append(`items[${index}][plant]`, it.plant || currentItem?.plant || '1000');
+            if (it.storage_location) formData.append(`items[${index}][storage_location]`, it.storage_location);
+            if (it.account_assignment_category) formData.append(`items[${index}][account_assignment_category]`, it.account_assignment_category);
+            if (it.requirement_tracking_number) formData.append(`items[${index}][requirement_tracking_number]`, it.requirement_tracking_number);
+            if (it.cost_center) formData.append(`items[${index}][cost_center]`, it.cost_center);
+            if (it.gl_account) formData.append(`items[${index}][gl_account]`, it.gl_account);
+            formData.append(`items[${index}][purchasing_organization]`, it.purchasing_organization || '1100');
+            formData.append(`items[${index}][purchasing_group]`, it.purchasing_group || defaultPurchasingGroup);
+            if (it.delivery_date) formData.append(`items[${index}][delivery_date]`, it.delivery_date);
+            if (it.requisition_date) formData.append(`items[${index}][requisition_date]`, it.requisition_date);
+            if (it.release_date) formData.append(`items[${index}][release_date]`, it.release_date);
+            if (it.planned_delivery_time !== undefined) formData.append(`items[${index}][planned_delivery_time]`, String(it.planned_delivery_time));
+            if (it.gr_processing_time !== undefined) formData.append(`items[${index}][gr_processing_time]`, String(it.gr_processing_time));
+            if (it.item_text) formData.append(`items[${index}][item_text]`, it.item_text);
+            if (it.item_note) formData.append(`items[${index}][item_note]`, it.item_note);
+            if (it.delivery_text) formData.append(`items[${index}][delivery_text]`, it.delivery_text);
+            if (it.material_po_text) formData.append(`items[${index}][material_po_text]`, it.material_po_text);
+            if (it.closure_comment) formData.append(`items[${index}][closure_comment]`, it.closure_comment);
+            if (it.attachment_doc_type) formData.append(`items[${index}][attachment_doc_type]`, it.attachment_doc_type);
+            if (it.attachment_name) formData.append(`items[${index}][attachment_name]`, it.attachment_name);
+            if (it.attachment_file) formData.append(`items[${index}][attachment_file]`, it.attachment_file);
+        });
+
+        try {
+            const csrfToken = getCsrfToken();
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+                },
+            });
+
+            const data = await res.json().catch(() => null);
+
+            setSubmitting(false);
+            setIsDrafting(false);
+
+            if (res.status === 422 && data?.errors) {
+                const newFieldErrors: Record<string, string> = {};
+                Object.keys(data.errors).forEach((errKey) => {
+                    const normalized = errKey.replace(/^items\.(\d+)\./, 'item_$1_');
+                    newFieldErrors[normalized] = Array.isArray(data.errors[errKey])
+                        ? data.errors[errKey][0]
+                        : data.errors[errKey];
+                });
+                setFieldErrors(newFieldErrors);
+                const firstMsg = Object.values(newFieldErrors)[0];
+                setErrorMessage(firstMsg || 'Please correct the highlighted validation errors.');
+                setConfirmModal(null);
+                return;
+            }
+
+            if (!res.ok || (data && data.success === false)) {
+                setErrorMessage(data?.message || 'Failed to save Purchase Requisition.');
+                setConfirmModal(null);
+                return;
+            }
+
+            // Success! Open Success Modal
+            setConfirmModal(null);
+            setSuccessModal({
+                isOpen: true,
+                prNumber: data?.pr_number || (initialData?.pr_number ?? 'PR-SUCCESS'),
+                sapPrNumber: data?.sap_pr_number || undefined,
+                isDraft: Boolean(data?.is_draft),
+                message: data?.message || (isDraft ? 'Purchase Requisition saved as Draft in local database.' : 'Purchase Requisition created and synced with SAP S/4HANA Cloud!'),
+                prId: data?.pr_id || (initialData?.id ?? ''),
+                totalAmount: data?.total_amount || calculateTotal(),
+                currency: data?.currency || currency,
+            });
+        } catch (err: any) {
+            setSubmitting(false);
+            setIsDrafting(false);
+            setConfirmModal(null);
+            setErrorMessage(err?.message || 'Network error occurred while connecting to server.');
+        }
+    };
+
+    const handleCreateAnotherPr = () => {
+        setDescription('');
+        setHeaderNote('');
+        setPrType(defaultDocType);
+        setHeaderOptionId('');
+        const initialItem = createEmptyPrItem('00010');
+        setItems([initialItem]);
+        setActiveItemIndex(0);
+        setActiveItemTab('general');
+        setFieldErrors({});
+        setErrorMessage(null);
+        setSuccessModal(null);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        submitForm(false);
+        handleInitiateSubmit(false);
     };
 
     const handleSaveDraft = (e: React.MouseEvent) => {
         e.preventDefault();
-        submitForm(true);
+        handleInitiateSubmit(true);
     };
 
     return (
@@ -2172,16 +2718,29 @@ export default function PurchaseRequisitionForm({
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
-                                    Purchase Requisition Description
+                                    Purchase Requisition Description <span className="text-slate-400 font-normal">(Header)</span>
                                 </label>
                             </div>
                             <input
                                 type="text"
                                 value={description}
-                                onChange={(e) => setDescription(e.target.value)}
+                                onChange={(e) => {
+                                    setDescription(e.target.value);
+                                    clearFieldError('header_description');
+                                }}
                                 placeholder="Enter purchase requisition description..."
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                    fieldErrors['header_description']
+                                        ? 'border-rose-500 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-rose-900'
+                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                }`}
                             />
+                            {fieldErrors['header_description'] && (
+                                <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3 shrink-0" />
+                                    <span>{fieldErrors['header_description']}</span>
+                                </p>
+                            )}
                         </div>
 
                         {/* Document Type */}
@@ -2193,8 +2752,15 @@ export default function PurchaseRequisitionForm({
                             </div>
                             <select
                                 value={prType}
-                                onChange={(e) => setPrType(e.target.value)}
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none bg-white"
+                                onChange={(e) => {
+                                    setPrType(e.target.value);
+                                    clearFieldError('header_pr_type');
+                                }}
+                                className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none bg-white transition-colors ${
+                                    fieldErrors['header_pr_type']
+                                        ? 'border-rose-500 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-rose-900'
+                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                }`}
                                 required
                             >
                                 {dataCatalog.documentTypes.map((dt) => (
@@ -2203,7 +2769,12 @@ export default function PurchaseRequisitionForm({
                                     </option>
                                 ))}
                             </select>
-                            {(() => {
+                            {fieldErrors['header_pr_type'] ? (
+                                <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3 shrink-0" />
+                                    <span>{fieldErrors['header_pr_type']}</span>
+                                </p>
+                            ) : (() => {
                                 const activeDocType = dataCatalog.documentTypes.find((dt) => dt.code === prType);
                                 return activeDocType?.extra ? (
                                     <span className="mt-1 block text-[10px] text-[#0070f2] font-medium line-clamp-1">
@@ -2222,47 +2793,58 @@ export default function PurchaseRequisitionForm({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-3 border-t border-slate-100">
                         {/* 1. Requisitioner Name */}
                         <div>
-                            <label className="block text-xs font-semibold text-[#1c2d42] mb-1.5">
-                                Requisitioner Name
-                            </label>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Requisitioner Name
+                                </label>
+                                <span className="text-[10px] text-slate-400 font-medium">Auto (User Model)</span>
+                            </div>
                             <input
                                 type="text"
-                                value={contractRequisition.requisitioner_name || requisitioner || ''}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setRequisitioner(val);
-                                    updateContractRequisition({ requisitioner_name: val });
-                                }}
-                                placeholder="e.g. Ashish Borgohain"
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                value={contractRequisition.requisitioner_name || requisitioner || defaultRequisitioner || ''}
+                                disabled
+                                readOnly
+                                placeholder="Requisitioner Name"
+                                title="Auto-filled from User profile (read-only)"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] bg-slate-100 px-3 text-xs font-medium text-[#556b82] placeholder-[#8c9ba5] cursor-not-allowed select-none focus:outline-none"
                             />
                         </div>
 
                         {/* 2. Req. Designation */}
                         <div>
-                            <label className="block text-xs font-semibold text-[#1c2d42] mb-1.5">
-                                Req. Designation
-                            </label>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Req. Designation
+                                </label>
+                                <span className="text-[10px] text-slate-400 font-medium">Auto (User Model)</span>
+                            </div>
                             <input
                                 type="text"
-                                value={contractRequisition.req_designation || ''}
-                                onChange={(e) => updateContractRequisition({ req_designation: e.target.value })}
-                                placeholder="e.g. Senior Manager (Projects)"
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                value={contractRequisition.req_designation || defaultDesignation || ''}
+                                disabled
+                                readOnly
+                                placeholder="Req. Designation"
+                                title="Auto-filled from User profile designation (read-only)"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] bg-slate-100 px-3 text-xs font-medium text-[#556b82] placeholder-[#8c9ba5] cursor-not-allowed select-none focus:outline-none"
                             />
                         </div>
 
                         {/* 3. Req. Department */}
                         <div>
-                            <label className="block text-xs font-semibold text-[#1c2d42] mb-1.5">
-                                Req. Department
-                            </label>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Req. Department
+                                </label>
+                                <span className="text-[10px] text-slate-400 font-medium">Auto (User Model)</span>
+                            </div>
                             <input
                                 type="text"
-                                value={contractRequisition.req_department || ''}
-                                onChange={(e) => updateContractRequisition({ req_department: e.target.value })}
-                                placeholder="e.g. Chemical Operations"
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                value={contractRequisition.req_department || defaultDepartment || ''}
+                                disabled
+                                readOnly
+                                placeholder="Req. Department"
+                                title="Auto-filled from User profile department (read-only)"
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] bg-slate-100 px-3 text-xs font-medium text-[#556b82] placeholder-[#8c9ba5] cursor-not-allowed select-none focus:outline-none"
                             />
                         </div>
                     </div>
@@ -2352,36 +2934,28 @@ export default function PurchaseRequisitionForm({
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
                                     Total PR Value ({currency})
                                 </label>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const tot = calculateTotal();
-                                        updateContractRequisition({
-                                            total_pr_value: tot,
-                                            total_pr_value_in_word: convertAmountToWords(tot),
-                                        });
-                                    }}
-                                    className="text-[11px] font-semibold text-[#0070f2] hover:underline"
-                                    title="Auto-calculate from line items total"
-                                >
-                                    Sync Total from Items
-                                </button>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                    Auto-calculated from items
+                                </span>
                             </div>
                             <div className="relative">
                                 <input
-                                    type="number"
-                                    step="0.01"
-                                    value={contractRequisition.total_pr_value !== undefined ? contractRequisition.total_pr_value : ''}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        const numVal = parseFloat(val);
-                                        updateContractRequisition({
-                                            total_pr_value: val,
-                                            ...(!isNaN(numVal) && numVal > 0 ? { total_pr_value_in_word: convertAmountToWords(numVal) } : {}),
-                                        });
-                                    }}
+                                    type="text"
+                                    disabled
+                                    readOnly
+                                    value={
+                                        contractRequisition.total_pr_value !== undefined && contractRequisition.total_pr_value !== ''
+                                            ? Number(contractRequisition.total_pr_value).toLocaleString(undefined, {
+                                                  minimumFractionDigits: 2,
+                                                  maximumFractionDigits: 2,
+                                              })
+                                            : calculateTotal().toLocaleString(undefined, {
+                                                  minimumFractionDigits: 2,
+                                                  maximumFractionDigits: 2,
+                                              })
+                                    }
                                     placeholder="0.00"
-                                    className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                    className="h-9 w-full rounded-md border border-[#d9e2ec] bg-slate-100 px-3 text-xs font-bold font-mono text-[#1c2d42] cursor-not-allowed select-none focus:outline-none"
                                 />
                             </div>
                         </div>
@@ -2392,33 +2966,26 @@ export default function PurchaseRequisitionForm({
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
                                     Total PR Value in Words
                                 </label>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const numVal = Number(contractRequisition.total_pr_value || calculateTotal());
-                                        if (numVal > 0) {
-                                            updateContractRequisition({
-                                                total_pr_value_in_word: convertAmountToWords(numVal),
-                                            });
-                                        }
-                                    }}
-                                    className="text-[11px] font-semibold text-[#0070f2] hover:underline"
-                                >
-                                    Auto Convert to Words
-                                </button>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                    Auto-generated in words
+                                </span>
                             </div>
                             <input
                                 type="text"
-                                value={contractRequisition.total_pr_value_in_word || ''}
-                                onChange={(e) => updateContractRequisition({ total_pr_value_in_word: e.target.value })}
-                                placeholder="e.g. One Lakh Fifty Thousand Rupees Only"
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                disabled
+                                readOnly
+                                value={
+                                    contractRequisition.total_pr_value_in_word ||
+                                    (calculateTotal() > 0 ? convertAmountToWords(calculateTotal()) : '')
+                                }
+                                placeholder="Auto-generated in words..."
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] bg-slate-100 px-3 text-xs text-[#1c2d42] cursor-not-allowed select-none focus:outline-none font-medium"
                             />
                         </div>
                     </div>
 
                     {/* Automatic Source Determination Checkbox */}
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                    {/* <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input
                                 type="checkbox"
@@ -2430,7 +2997,7 @@ export default function PurchaseRequisitionForm({
                                 Automatic Source Determination
                             </span>
                         </label>
-                    </div>
+                    </div> */}
                 </div>
             </div>
 
@@ -2707,34 +3274,50 @@ export default function PurchaseRequisitionForm({
                                         {/* Item Type Badge / Selector: Material vs Service */}
                                         <td className="py-2 px-2.5">
                                             {!it.item_type ? (
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setActiveItemIndex(idx);
-                                                            setItemType(idx, 'material');
-                                                        }}
-                                                        className="inline-flex items-center gap-0.5 rounded bg-blue-50 border border-blue-300 px-1.5 py-0.5 text-[10px] font-bold text-[#0070f2] hover:bg-[#0070f2] hover:text-white transition-all shadow-xs"
-                                                        title="Select Material type (Auto-collects from SAP)"
-                                                    >
-                                                        <Package className="h-3 w-3" /> Mat.
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setActiveItemIndex(idx);
-                                                            setItemType(idx, 'service');
-                                                        }}
-                                                        className="inline-flex items-center gap-0.5 rounded bg-purple-50 border border-purple-300 px-1.5 py-0.5 text-[10px] font-bold text-purple-700 hover:bg-purple-700 hover:text-white transition-all shadow-xs"
-                                                        title="Select Service type"
-                                                    >
-                                                        <Wrench className="h-3 w-3" /> Serv.
-                                                    </button>
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveItemIndex(idx);
+                                                                setItemType(idx, 'material');
+                                                            }}
+                                                            className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold transition-all shadow-xs ${
+                                                                fieldErrors[`item_${idx}_item_type`]
+                                                                    ? 'bg-rose-50 border border-rose-400 text-rose-700 hover:bg-rose-100'
+                                                                    : 'bg-blue-50 border border-blue-300 text-[#0070f2] hover:bg-[#0070f2] hover:text-white'
+                                                            }`}
+                                                            title="Select Material type (Auto-collects from SAP)"
+                                                        >
+                                                            <Package className="h-3 w-3" /> Mat.
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveItemIndex(idx);
+                                                                setItemType(idx, 'service');
+                                                            }}
+                                                            className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold transition-all shadow-xs ${
+                                                                fieldErrors[`item_${idx}_item_type`]
+                                                                    ? 'bg-rose-50 border border-rose-400 text-rose-700 hover:bg-rose-100'
+                                                                    : 'bg-purple-50 border border-purple-300 text-purple-700 hover:bg-purple-700 hover:text-white'
+                                                            }`}
+                                                            title="Select Service type"
+                                                        >
+                                                            <Wrench className="h-3 w-3" /> Serv.
+                                                        </button>
+                                                    </div>
+                                                    {fieldErrors[`item_${idx}_item_type`] && (
+                                                        <p className="text-[10px] text-rose-600 font-semibold leading-tight flex items-center gap-0.5">
+                                                            <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                                                            <span>Select Type</span>
+                                                        </p>
+                                                    )}
                                                 </div>
                                             ) : (
-                                                <div className="relative inline-flex items-center">
+                                                <div className="relative flex flex-col">
                                                     <select
                                                         value={it.item_type}
                                                         onClick={(e) => e.stopPropagation()}
@@ -2743,7 +3326,9 @@ export default function PurchaseRequisitionForm({
                                                             setItemType(idx, e.target.value as 'material' | 'service');
                                                         }}
                                                         className={`h-7 rounded border text-[10px] font-bold pl-1.5 pr-5 py-0.5 focus:outline-none cursor-pointer transition-colors ${
-                                                            it.item_type === 'material'
+                                                            fieldErrors[`item_${idx}_item_type`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500'
+                                                                : it.item_type === 'material'
                                                                 ? 'border-blue-300 bg-blue-50 text-[#0070f2] focus:border-[#0070f2]'
                                                                 : 'border-purple-300 bg-purple-50 text-purple-700 focus:border-purple-500'
                                                         }`}
@@ -2756,180 +3341,31 @@ export default function PurchaseRequisitionForm({
                                         </td>
                                          {/* Item Category with F4 */}
                                         <td className="py-2 px-2.5">
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={it.item_category || ''}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { item_category: e.target.value })}
-                                                    onKeyDown={(e) => {
-                                                         if (e.key === 'F4') {
-                                                            e.preventDefault();
-                                                            openSearchHelp(
-                                                                'item_category',
-                                                                'Select Item Category (Search Help)',
-                                                                dataCatalog.itemCategories,
-                                                                it.item_category,
-                                                                idx
-                                                            );
-                                                        }
-                                                    }}
-                                                    placeholder="Standard"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        openSearchHelp(
-                                                            'item_category',
-                                                            'Select Item Category (Search Help)',
-                                                            dataCatalog.itemCategories,
-                                                            it.item_category,
-                                                            idx
-                                                        );
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Item Category Search Help (F4)"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                        {/* Account Assignment Category with F4 */}
-                                        <td className="py-2 px-2.5">
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={it.account_assignment_category || ''}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onClick={() => handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category)}
-                                                    onChange={(e) => updateItemById(it.id, { account_assignment_category: e.target.value })}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'F4') {
-                                                            e.preventDefault();
-                                                            handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
-                                                        }
-                                                    }}
-                                                    placeholder={it.item_type === 'service' ? 'K' : 'Blank'}
-                                                    title={it.item_type === 'service' ? "Account Assignment: 'K' (Cost Center) typically required for Service line items" : "Account Assignment: Blank for Stock/Inventory materials, K for Cost Center"}
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-center text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Account Assignment Search Help (F4) - Hits SAP CDS View YY1_AccountAssignmentCat"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                        {/* Material Number with F4 Search Help (Optional for Service) */}
-                                        <td className="py-2 px-2.5">
-                                            {!it.item_type ? (
-                                                <div className="h-8 w-full rounded border border-dashed border-amber-300 bg-amber-50/50 px-2 flex items-center justify-center text-[10px] font-semibold text-amber-700 select-none">
-                                                    <span>Select Type first</span>
-                                                </div>
-                                            ) : (
+                                            <div className="relative flex flex-col">
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={it.material_code || ''}
+                                                        value={it.item_category || ''}
                                                         onFocus={() => setActiveItemIndex(idx)}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            updateItemById(it.id, { material_code: val });
-                                                            handleMaterialCodeInputChange(idx, val, it.plant);
-                                                        }}
-                                                        onBlur={(e) => {
-                                                            if (e.target.value.trim()) {
-                                                                triggerMaterialValuationLookup(idx, e.target.value, it.plant);
-                                                            }
-                                                        }}
+                                                        onChange={(e) => updateItemById(it.id, { item_category: e.target.value })}
                                                         onKeyDown={(e) => {
-                                                            if (e.key === 'F4') {
-                                                                e.preventDefault();
-                                                                handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
-                                                            } else if (e.key === 'Enter') {
-                                                                e.preventDefault();
-                                                                if (it.material_code?.trim()) {
-                                                                    triggerMaterialValuationLookup(idx, it.material_code, it.plant);
-                                                                }
-                                                            }
-                                                        }}
-                                                        placeholder={it.item_type === 'service' ? "Optional (F4)" : "DINING CHAIR (F4)"}
-                                                        title={it.item_type === 'service' ? "Material Number (Optional for Service - Enter or select with F4)" : "Material Search Help (F4) - Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS"}
-                                                        className={`h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none ${it.item_type === 'service' && !it.material_code ? 'placeholder:italic' : ''}`}
-                                                    />
-                                                    {fetchingValuation[it.id] ? (
-                                                        <div className="absolute right-1.5 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
-                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                        </div>
-                                                    ) : (
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setActiveItemIndex(idx);
-                                                                handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
-                                                            }}
-                                                            className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                            title={it.item_type === 'service' ? "Material Search Help (F4) - Optional for Service" : "Material Search Help (F4) - Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS"}
-                                                        >
-                                                            <Search className="h-3 w-3" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </td>
-                                        {/* Description */}
-                                        <td className="py-2 px-2.5">
-                                            <input
-                                                type="text"
-                                                value={it.description || ''}
-                                                onFocus={() => setActiveItemIndex(idx)}
-                                                onChange={(e) => updateItemById(it.id, { description: e.target.value })}
-                                                placeholder={!it.item_type ? "Select Material or Service first" : it.item_type === 'material' ? "Material Description (Auto-collected)" : "Service Description (Required)"}
-                                                className="h-8 w-full rounded border border-[#d9e2ec] bg-white px-2 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                            />
-                                        </td>
-                                         {/* Quantity & Unit of Measure with F4 */}
-                                        <td className="py-2 px-2.5">
-                                            <div className="flex items-center gap-1 justify-end">
-                                                <input
-                                                    type="number"
-                                                    value={it.quantity}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { quantity: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
-                                                    placeholder="Qty"
-                                                    className="h-8 w-14 rounded border border-[#d9e2ec] bg-white px-1.5 text-xs text-right font-mono text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="text"
-                                                        value={it.unit_of_measure || ''}
-                                                        onFocus={() => setActiveItemIndex(idx)}
-                                                        onChange={(e) => updateItemById(it.id, { unit_of_measure: e.target.value })}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'F4') {
+                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
                                                                 openSearchHelp(
-                                                                    'unit_of_measure',
-                                                                    'Select Unit of Measure',
-                                                                    dataCatalog.unitsOfMeasure,
-                                                                    it.unit_of_measure,
+                                                                    'item_category',
+                                                                    'Select Item Category (Search Help)',
+                                                                    dataCatalog.itemCategories,
+                                                                    it.item_category,
                                                                     idx
                                                                 );
                                                             }
                                                         }}
-                                                        placeholder="UoM"
-                                                        className="h-8 w-16 rounded border border-[#d9e2ec] bg-white pr-5 pl-1.5 text-xs font-mono uppercase text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                        placeholder="Standard"
+                                                        className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_item_category`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
                                                     />
                                                     <button
                                                         type="button"
@@ -2937,130 +3373,402 @@ export default function PurchaseRequisitionForm({
                                                             e.stopPropagation();
                                                             setActiveItemIndex(idx);
                                                             openSearchHelp(
-                                                                'unit_of_measure',
-                                                                'Select Unit of Measure',
-                                                                dataCatalog.unitsOfMeasure,
-                                                                it.unit_of_measure,
+                                                                'item_category',
+                                                                'Select Item Category (Search Help)',
+                                                                dataCatalog.itemCategories,
+                                                                it.item_category,
                                                                 idx
                                                             );
                                                         }}
-                                                        className="absolute right-0.5 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                        title="UoM Search Help (F4)"
+                                                        className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                        title="Item Category Search Help (F4)"
                                                     >
-                                                        <Search className="h-2.5 w-2.5" />
+                                                        <Search className="h-3 w-3" />
                                                     </button>
                                                 </div>
+                                                {fieldErrors[`item_${idx}_item_category`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_item_category`]}</span>
+                                                    </p>
+                                                )}
                                             </div>
                                         </td>
-                                        {/* Plant with F4 (Populated from API for materials) */}
+                                        {/* Account Assignment Category with F4 */}
                                         <td className="py-2 px-2.5">
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={it.plant || ''}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        updateItemById(it.id, { plant: val });
-                                                        if (it.material_code) {
-                                                            triggerMaterialValuationLookup(idx, it.material_code, val);
-                                                        }
-                                                    }}
-                                                    onBlur={(e) => {
-                                                        if (it.material_code) {
-                                                            triggerMaterialValuationLookup(idx, it.material_code, e.target.value);
-                                                        }
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'F4') {
-                                                            e.preventDefault();
-                                                            handleOpenPlantSearchHelp(idx, it.plant);
-                                                        }
-                                                    }}
-                                                    placeholder="Plant"
-                                                    title={it.item_type === 'material' ? "Plant: auto-collected from SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS, or select with F4" : "Plant (F4)"}
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveItemIndex(idx);
-                                                        handleOpenPlantSearchHelp(idx, it.plant);
-                                                    }}
-                                                    className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                    title="Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH"
-                                                >
-                                                    <Search className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </td>
-                                       
-                                        {/* Purchasing Group */}
-                                        <td className="py-2 px-2.5">
-                                            <div className="relative flex items-center">
-                                                <input
-                                                    type="text"
-                                                    value={it.purchasing_group || ''}
-                                                    onFocus={() => setActiveItemIndex(idx)}
-                                                    onChange={(e) => updateItemById(it.id, { purchasing_group: e.target.value })}
-                                                    placeholder="103"
-                                                    title="Purchasing Group"
-                                                    className="h-8 w-full rounded border border-[#d9e2ec] bg-white px-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
-                                                />
-                                            </div>
-                                        </td>
-                                        {/* Material Group */}
-                                        <td className="py-2 px-2.5">
-                                            {it.item_type === 'material' ? (
-                                                /* Material: Auto-selected from SAP CDS View */
+                                            <div className="relative flex flex-col">
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={it.material_group || ''}
-                                                        readOnly
-                                                        placeholder="Auto"
-                                                        title="Material Group: Auto-selected for Material from SAP CDS View YY1_MATERIALGROUP_CDS"
-                                                        className="h-8 w-full rounded border border-slate-200 bg-slate-50/80 pr-12 pl-2 text-xs font-mono font-medium text-slate-700 cursor-not-allowed focus:outline-none"
-                                                    />
-                                                    <span className="absolute right-1.5 inline-flex items-center rounded bg-blue-50 border border-blue-200 px-1 py-0.2 text-[9px] font-bold text-blue-700" title="Auto-selected for Material from SAP CDS View">
-                                                        Auto
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                /* Service or unselected: Selected by F4 Search Help */
-                                                <div className="relative flex items-center">
-                                                    <input
-                                                        type="text"
-                                                        value={it.material_group || ''}
+                                                        value={it.account_assignment_category || ''}
                                                         onFocus={() => setActiveItemIndex(idx)}
-                                                        onChange={(e) => updateItemById(it.id, { material_group: e.target.value })}
-                                                        onClick={() => handleOpenMaterialGroupSearchHelp(idx, it.material_group)}
+                                                        onClick={() => handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category)}
+                                                        onChange={(e) => updateItemById(it.id, { account_assignment_category: e.target.value })}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
-                                                                handleOpenMaterialGroupSearchHelp(idx, it.material_group);
+                                                                handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                             }
                                                         }}
-                                                        placeholder={it.item_type === 'service' ? "F4 Search" : "Group (F4)"}
-                                                        title={it.item_type === 'service' ? "Material Group (F4) - Select from SAP CDS View YY1_MATERIALGROUP_CDS" : "Material Group (F4)"}
-                                                        className="h-8 w-full rounded border border-[#d9e2ec] bg-white pr-7 pl-2 text-xs font-mono text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                        placeholder={it.item_type === 'service' ? 'K' : 'Blank'}
+                                                        title={it.item_type === 'service' ? "Account Assignment: 'K' (Cost Center) typically required for Service line items" : "Account Assignment: Blank for Stock/Inventory materials, K for Cost Center"}
+                                                        className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono text-center placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_account_assignment_category`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleOpenMaterialGroupSearchHelp(idx, it.material_group);
+                                                            setActiveItemIndex(idx);
+                                                            handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                         }}
                                                         className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                        title="Material Group Search Help (F4) - Hits SAP CDS View YY1_MATERIALGROUP_CDS"
+                                                        title="Account Assignment Search Help (F4) - Hits SAP CDS View YY1_AccountAssignmentCat"
                                                     >
                                                         <Search className="h-3 w-3" />
                                                     </button>
                                                 </div>
+                                                {fieldErrors[`item_${idx}_account_assignment_category`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_account_assignment_category`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                        {/* Material Number with F4 Search Help (Optional for Service) */}
+                                        <td className="py-2 px-2.5">
+                                            {!it.item_type ? (
+                                                <div className={`h-8 w-full rounded border border-dashed px-2 flex items-center justify-center text-[10px] font-semibold select-none ${
+                                                    fieldErrors[`item_${idx}_material_code`]
+                                                        ? 'border-rose-400 bg-rose-50/50 text-rose-700'
+                                                        : 'border-amber-300 bg-amber-50/50 text-amber-700'
+                                                }`}>
+                                                    <span>Select Type first</span>
+                                                </div>
+                                            ) : (
+                                                <div className="relative flex flex-col">
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={it.material_code || ''}
+                                                            onFocus={() => setActiveItemIndex(idx)}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                updateItemById(it.id, { material_code: val });
+                                                                handleMaterialCodeInputChange(idx, val, it.plant);
+                                                            }}
+                                                            onBlur={(e) => {
+                                                                if (e.target.value.trim()) {
+                                                                    triggerMaterialValuationLookup(idx, e.target.value, it.plant);
+                                                                }
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'F4') {
+                                                                    e.preventDefault();
+                                                                    handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
+                                                                } else if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    if (it.material_code?.trim()) {
+                                                                        triggerMaterialValuationLookup(idx, it.material_code, it.plant);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            placeholder={it.item_type === 'service' ? "Optional (F4)" : "DINING CHAIR (F4)"}
+                                                            title={it.item_type === 'service' ? "Material Number (Optional for Service - Enter or select with F4)" : "Material Search Help (F4) - Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS"}
+                                                            className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                                fieldErrors[`item_${idx}_material_code`]
+                                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                    : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                            } ${it.item_type === 'service' && !it.material_code ? 'placeholder:italic' : ''}`}
+                                                        />
+                                                        {fetchingValuation[it.id] ? (
+                                                            <div className="absolute right-1.5 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
+                                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setActiveItemIndex(idx);
+                                                                    handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
+                                                                }}
+                                                                className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                                title={it.item_type === 'service' ? "Material Search Help (F4) - Optional for Service" : "Material Search Help (F4) - Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS"}
+                                                            >
+                                                                <Search className="h-3 w-3" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {fieldErrors[`item_${idx}_material_code`] && (
+                                                        <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                            <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                            <span>{fieldErrors[`item_${idx}_material_code`]}</span>
+                                                        </p>
+                                                    )}
+                                                </div>
                                             )}
                                         </td>
-                                       
+                                        {/* Description */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex flex-col">
+                                                <input
+                                                    type="text"
+                                                    value={it.description || ''}
+                                                    onFocus={() => setActiveItemIndex(idx)}
+                                                    onChange={(e) => updateItemById(it.id, { description: e.target.value })}
+                                                    placeholder={!it.item_type ? "Select Material or Service first" : it.item_type === 'material' ? "Material Description (Auto-collected)" : "Service Description (Required)"}
+                                                    className={`h-8 w-full rounded border px-2 text-xs placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                        fieldErrors[`item_${idx}_description`]
+                                                            ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                            : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                    }`}
+                                                />
+                                                {fieldErrors[`item_${idx}_description`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_description`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                         {/* Quantity & Unit of Measure with F4 */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex flex-col">
+                                                <div className="flex items-center gap-1 justify-end">
+                                                    <input
+                                                        type="number"
+                                                        value={it.quantity}
+                                                        onFocus={() => setActiveItemIndex(idx)}
+                                                        onChange={(e) => updateItemById(it.id, { quantity: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                                                        placeholder="Qty"
+                                                        className={`h-8 w-14 rounded border px-1.5 text-xs text-right font-mono focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_quantity`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
+                                                    />
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={it.unit_of_measure || ''}
+                                                            readOnly={Boolean(it.item_type === 'material' && it.material_code)}
+                                                            onFocus={() => setActiveItemIndex(idx)}
+                                                            onChange={(e) => updateItemById(it.id, { unit_of_measure: e.target.value })}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'F4') {
+                                                                    e.preventDefault();
+                                                                    if (!(it.item_type === 'material' && it.material_code)) {
+                                                                        handleOpenUnitOfMeasureSearchHelp(idx, it.unit_of_measure);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            placeholder="UoM"
+                                                            title={it.item_type === 'material' && it.material_code ? "Auto-filled from Material Master" : "Unit of Measure (F4) - SAP CDS View YY1_UNITOFMEASUREMENT_CDS"}
+                                                            className={`h-8 w-16 rounded border text-xs font-mono uppercase focus:outline-none transition-colors ${
+                                                                it.item_type === 'material' && it.material_code
+                                                                    ? 'bg-slate-100/80 text-slate-700 border-[#d9e2ec] cursor-not-allowed px-1.5 font-bold'
+                                                                    : 'pr-5 pl-1.5 ' + (fieldErrors[`item_${idx}_unit_of_measure`]
+                                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                        : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]')
+                                                            }`}
+                                                        />
+                                                        {(!(it.item_type === 'material' && it.material_code)) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setActiveItemIndex(idx);
+                                                                    handleOpenUnitOfMeasureSearchHelp(idx, it.unit_of_measure);
+                                                                }}
+                                                                className="absolute right-0.5 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                                title="UoM Search Help (F4) - SAP CDS View YY1_UNITOFMEASUREMENT_CDS"
+                                                            >
+                                                                <Search className="h-2.5 w-2.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                </div>
+                                                {(fieldErrors[`item_${idx}_quantity`] || fieldErrors[`item_${idx}_unit_of_measure`]) && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5 justify-end">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_quantity`] || fieldErrors[`item_${idx}_unit_of_measure`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                        {/* Plant with F4 (Populated from API for materials) */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex flex-col">
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="text"
+                                                        value={it.plant || ''}
+                                                        onFocus={() => setActiveItemIndex(idx)}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            updateItemById(it.id, { plant: val });
+                                                            if (it.material_code) {
+                                                                triggerMaterialValuationLookup(idx, it.material_code, val);
+                                                            }
+                                                        }}
+                                                        onBlur={(e) => {
+                                                            if (it.material_code) {
+                                                                triggerMaterialValuationLookup(idx, it.material_code, e.target.value);
+                                                            }
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'F4') {
+                                                                e.preventDefault();
+                                                                handleOpenPlantSearchHelp(idx, it.plant);
+                                                            }
+                                                        }}
+                                                        placeholder="Plant"
+                                                        title={it.item_type === 'material' ? "Plant: auto-collected from SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS, or select with F4" : "Plant (F4)"}
+                                                        className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_plant`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveItemIndex(idx);
+                                                            handleOpenPlantSearchHelp(idx, it.plant);
+                                                        }}
+                                                        className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                        title="Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH"
+                                                    >
+                                                        <Search className="h-3 w-3" />
+                                                    </button>
+                                                </div>
+                                                {fieldErrors[`item_${idx}_plant`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_plant`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                        
+                                        {/* Purchasing Group */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex flex-col">
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="text"
+                                                        value={it.purchasing_group || ''}
+                                                        onFocus={() => setActiveItemIndex(idx)}
+                                                        onChange={(e) => updateItemById(it.id, { purchasing_group: e.target.value })}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'F4') {
+                                                                e.preventDefault();
+                                                                handleOpenPurchasingGroupSearchHelp(idx, it.purchasing_group);
+                                                            }
+                                                        }}
+                                                        placeholder={defaultPurchasingGroup || '103'}
+                                                        title="Purchasing Group (Press F4 for Help)"
+                                                        className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_purchasing_group`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveItemIndex(idx);
+                                                            handleOpenPurchasingGroupSearchHelp(idx, it.purchasing_group);
+                                                        }}
+                                                        className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                        title="Purchasing Group Search Help (F4)"
+                                                    >
+                                                        <Search className="h-3 w-3" />
+                                                    </button>
+                                                </div>
+                                                {fieldErrors[`item_${idx}_purchasing_group`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_purchasing_group`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                        {/* Material Group */}
+                                        <td className="py-2 px-2.5">
+                                            <div className="relative flex flex-col">
+                                                {it.item_type === 'material' ? (
+                                                    /* Material: Auto-selected from SAP CDS View */
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={it.material_group || ''}
+                                                            readOnly
+                                                            placeholder="Auto"
+                                                            title="Material Group: Auto-selected for Material from SAP CDS View YY1_MATERIALGROUP_CDS"
+                                                            className={`h-8 w-full rounded border pr-12 pl-2 text-xs font-mono font-medium text-slate-700 cursor-not-allowed focus:outline-none ${
+                                                                fieldErrors[`item_${idx}_material_group`]
+                                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900'
+                                                                    : 'border-slate-200 bg-slate-50/80'
+                                                            }`}
+                                                        />
+                                                        <span className="absolute right-1.5 inline-flex items-center rounded bg-blue-50 border border-blue-200 px-1 py-0.2 text-[9px] font-bold text-blue-700" title="Auto-selected for Material from SAP CDS View">
+                                                            Auto
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    /* Service or unselected: Selected by F4 Search Help */
+                                                    <div className="relative flex items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={it.material_group || ''}
+                                                            onFocus={() => setActiveItemIndex(idx)}
+                                                            onChange={(e) => updateItemById(it.id, { material_group: e.target.value })}
+                                                            onClick={() => handleOpenMaterialGroupSearchHelp(idx, it.material_group)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'F4') {
+                                                                    e.preventDefault();
+                                                                    handleOpenMaterialGroupSearchHelp(idx, it.material_group);
+                                                                }
+                                                            }}
+                                                            placeholder={it.item_type === 'service' ? "F4 Search" : "Group (F4)"}
+                                                            title={it.item_type === 'service' ? "Material Group (F4) - Select from SAP CDS View YY1_MATERIALGROUP_CDS" : "Material Group (F4)"}
+                                                            className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                                fieldErrors[`item_${idx}_material_group`]
+                                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                    : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                            }`}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenMaterialGroupSearchHelp(idx, it.material_group);
+                                                            }}
+                                                            className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                            title="Material Group Search Help (F4) - Hits SAP CDS View YY1_MATERIALGROUP_CDS"
+                                                        >
+                                                            <Search className="h-3 w-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {fieldErrors[`item_${idx}_material_group`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_material_group`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                        
                                         {/* Valuation Price */}
                                         <td className="py-2 px-2.5">
                                             <div className="flex flex-col items-end gap-0.5">
@@ -3072,11 +3780,23 @@ export default function PurchaseRequisitionForm({
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => updateItemById(it.id, { unit_price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
                                                         placeholder="0.00"
-                                                        className={`h-8 w-20 rounded border border-[#d9e2ec] px-1.5 text-xs text-right font-mono font-medium text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none ${it.item_type === 'material' ? 'bg-slate-50/70 font-semibold text-[#0070f2]' : 'bg-white'}`}
+                                                        className={`h-8 w-20 rounded border px-1.5 text-xs text-right font-mono font-medium focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_unit_price`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : it.item_type === 'material'
+                                                                ? 'border-[#d9e2ec] bg-slate-50/70 font-semibold text-[#0070f2] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
                                                         title={it.item_type === 'material' ? 'Auto-collected valuation price from SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS' : 'Service Valuation / Rate'}
                                                     />
                                                     <span className="text-[10px] font-semibold text-[#556b82]">{it.currency || currency}</span>
                                                 </div>
+                                                {fieldErrors[`item_${idx}_unit_price`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5 justify-end">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_unit_price`]}</span>
+                                                    </p>
+                                                )}
                                                 {it.item_type === 'material' && it.inventory_valuation_procedure === 'V' && (
                                                     <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200" title={`Price Control V: Moving Average Price = ${it.moving_average_price || it.unit_price} ${it.currency || currency}`}>
                                                         V (MAP)
@@ -3219,18 +3939,24 @@ export default function PurchaseRequisitionForm({
                             { id: 'notes', label: 'Notes & Attachments' },
                         ].map((tab) => {
                             const isActive = activeItemTab === tab.id;
+                            const hasError = getItemTabHasError(tab.id, activeItemIndex);
                             return (
                                 <button
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setActiveItemTab(tab.id as any)}
-                                    className={`border-b-2 px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+                                    className={`relative border-b-2 px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                                         isActive
                                             ? 'border-[#0070f2] text-[#0070f2]'
+                                            : hasError
+                                            ? 'border-transparent text-rose-600 hover:text-rose-700'
                                             : 'border-transparent text-[#556b82] hover:border-slate-300 hover:text-[#1c2d42]'
                                     }`}
                                 >
-                                    {tab.label}
+                                    <span>{tab.label}</span>
+                                    {hasError && (
+                                        <span className="h-2 w-2 rounded-full bg-rose-500 ring-2 ring-rose-200 animate-pulse" />
+                                    )}
                                 </button>
                             );
                         })}
@@ -3281,6 +4007,8 @@ export default function PurchaseRequisitionForm({
                                             className={`flex items-center justify-center gap-1.5 rounded-md border text-xs font-bold transition-all ${
                                                 currentItem?.item_type === 'material'
                                                     ? 'border-[#0070f2] bg-blue-50 text-[#0070f2] shadow-xs ring-1 ring-[#0070f2]'
+                                                    : fieldErrors[`item_${activeItemIndex}_item_type`]
+                                                    ? 'border-rose-400 bg-rose-50/20 text-[#556b82] hover:bg-slate-50'
                                                     : 'border-[#d9e2ec] bg-white text-[#556b82] hover:bg-slate-50'
                                             }`}
                                         >
@@ -3293,6 +4021,8 @@ export default function PurchaseRequisitionForm({
                                             className={`flex items-center justify-center gap-1.5 rounded-md border text-xs font-bold transition-all ${
                                                 currentItem?.item_type === 'service'
                                                     ? 'border-purple-600 bg-purple-50 text-purple-700 shadow-xs ring-1 ring-purple-600'
+                                                    : fieldErrors[`item_${activeItemIndex}_item_type`]
+                                                    ? 'border-rose-400 bg-rose-50/20 text-[#556b82] hover:bg-slate-50'
                                                     : 'border-[#d9e2ec] bg-white text-[#556b82] hover:bg-slate-50'
                                             }`}
                                         >
@@ -3300,6 +4030,12 @@ export default function PurchaseRequisitionForm({
                                             <span>Service (2)</span>
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_item_type`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_item_type`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         Choose Material (stock items) or Service (labor / contract)
                                     </span>
@@ -3333,7 +4069,11 @@ export default function PurchaseRequisitionForm({
                                         )}
                                     </div>
                                     {!currentItem?.item_type ? (
-                                        <div className="h-9 w-full rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-3 flex items-center text-xs text-amber-800 font-medium">
+                                        <div className={`h-9 w-full rounded-md border border-dashed px-3 flex items-center text-xs font-medium ${
+                                            fieldErrors[`item_${activeItemIndex}_material_code`]
+                                                ? 'border-rose-400 bg-rose-50/50 text-rose-800'
+                                                : 'border-amber-300 bg-amber-50/50 text-amber-800'
+                                        }`}>
                                             <span>Select Material or Service above to enable fields</span>
                                         </div>
                                     ) : (
@@ -3363,7 +4103,11 @@ export default function PurchaseRequisitionForm({
                                                     }
                                                 }}
                                                 placeholder={currentItem?.item_type === 'service' ? "Optional: Service Material # or leave blank (F4)" : "DINING CHAIR (Type or press F4 for Search Help)"}
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                    fieldErrors[`item_${activeItemIndex}_material_code`]
+                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                        : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                }`}
                                             />
                                             {fetchingValuation[currentItem?.id || ''] ? (
                                                 <div className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
@@ -3380,6 +4124,12 @@ export default function PurchaseRequisitionForm({
                                                 </button>
                                             )}
                                         </div>
+                                    )}
+                                    {fieldErrors[`item_${activeItemIndex}_material_code`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_material_code`]}</span>
+                                        </p>
                                     )}
                                     <div className="mt-1 flex items-center justify-between text-[10px]">
                                         <span className="text-[#556b82]">
@@ -3404,7 +4154,7 @@ export default function PurchaseRequisitionForm({
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Purchasing Group
+                                            Purchasing Group <span className="text-rose-500">*</span> (F4)
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">Buyer / Org Code</span>
                                     </div>
@@ -3413,14 +4163,44 @@ export default function PurchaseRequisitionForm({
                                             type="text"
                                             value={currentItem?.purchasing_group || ''}
                                             onChange={(e) => updateCurrentItem({ purchasing_group: e.target.value })}
-                                            placeholder="e.g. 103"
-                                            title="Purchasing Group"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'F4') {
+                                                    e.preventDefault();
+                                                    handleOpenPurchasingGroupSearchHelp(activeItemIndex, currentItem?.purchasing_group);
+                                                }
+                                            }}
+                                            placeholder={`e.g. ${defaultPurchasingGroup || '103'}`}
+                                            title="Purchasing Group (Press F4 for Help)"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_purchasing_group`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenPurchasingGroupSearchHelp(activeItemIndex, currentItem?.purchasing_group)}
+                                            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                            title="Select Purchasing Group (F4 Help)"
+                                        >
+                                            <Search className="h-3.5 w-3.5" />
+                                        </button>
                                     </div>
-                                    <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Purchasing Group (Key for a buyer or group of buyers responsible for procurement activities)
-                                    </span>
+                                    {fieldErrors[`item_${activeItemIndex}_purchasing_group`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_purchasing_group`]}</span>
+                                        </p>
+                                    )}
+                                    {getPurchasingGroupLabel(currentItem?.purchasing_group) ? (
+                                        <span className="mt-1 block text-[11px] font-medium text-teal-700">
+                                            {getPurchasingGroupLabel(currentItem?.purchasing_group)}
+                                        </span>
+                                    ) : (
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Purchasing Group (Key for a buyer or group of buyers responsible for procurement activities)
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* Plant * (Search help) */}
@@ -3455,7 +4235,11 @@ export default function PurchaseRequisitionForm({
                                             }}
                                             placeholder="1200"
                                             required
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_plant`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -3466,6 +4250,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_plant`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_plant`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         Receiving manufacturing or warehouse plant (SAP PlantVH)
                                     </span>
@@ -3497,7 +4287,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="Standard"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_item_category`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -3516,6 +4310,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_item_category`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_item_category`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         Procurement mechanism (Standard, Consignment, Subcontracting...)
                                     </span>
@@ -3566,7 +4366,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="Leave blank for Stock/Inventory, or 'K' for Cost Center"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_account_assignment_category`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -3582,6 +4386,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_account_assignment_category`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_account_assignment_category`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         {!currentItem?.account_assignment_category
                                             ? 'Standard Stock / Inventory procurement (no cost center required)'
@@ -3605,8 +4415,18 @@ export default function PurchaseRequisitionForm({
                                         onChange={(e) => updateCurrentItem({ description: e.target.value })}
                                         placeholder="Material/ Service Detail description"
                                         required
-                                        className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                        className={`h-9 w-full rounded-md border px-3 text-xs focus:outline-none transition-colors ${
+                                            fieldErrors[`item_${activeItemIndex}_description`]
+                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                        }`}
                                     />
+                                    {fieldErrors[`item_${activeItemIndex}_description`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_description`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         Material / Service Detail description
                                     </span>
@@ -3642,7 +4462,11 @@ export default function PurchaseRequisitionForm({
                                                     readOnly
                                                     placeholder="Auto-selected on Material selection"
                                                     title="Material Group: Auto-selected for Material from SAP CDS View YY1_MATERIALGROUP_CDS"
-                                                    className="h-9 w-full rounded-md border border-slate-200 bg-slate-50 pr-24 pl-3 text-xs text-[#1c2d42] font-mono font-medium cursor-not-allowed focus:outline-none"
+                                                    className={`h-9 w-full rounded-md border pr-24 pl-3 text-xs font-mono font-medium cursor-not-allowed focus:outline-none ${
+                                                        fieldErrors[`item_${activeItemIndex}_material_group`]
+                                                            ? 'border-rose-500 bg-rose-50/20 text-rose-900'
+                                                            : 'border-slate-200 bg-slate-50 text-[#1c2d42]'
+                                                    }`}
                                                 />
                                                 <div className="absolute top-1/2 right-2 -translate-y-1/2 flex items-center gap-1 text-[10px] font-bold text-[#0070f2] bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
                                                     <span>Auto-Selected</span>
@@ -3671,7 +4495,11 @@ export default function PurchaseRequisitionForm({
                                                     }}
                                                     placeholder="Click or press F4 to search Material Group..."
                                                     required
-                                                    className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                    className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                        fieldErrors[`item_${activeItemIndex}_material_group`]
+                                                            ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                            : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                    }`}
                                                 />
                                                 <button
                                                     type="button"
@@ -3689,6 +4517,12 @@ export default function PurchaseRequisitionForm({
                                             </>
                                         )}
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_material_group`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_material_group`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         {currentItem?.item_type === 'material'
                                             ? 'Auto-populated from SAP CDS View YY1_MATERIALGROUP_CDS when Material is selected.'
@@ -3951,8 +4785,18 @@ export default function PurchaseRequisitionForm({
                                             updateCurrentItem({ quantity: parseFloat(e.target.value) || 0 })
                                         }
                                         required
-                                        className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                        className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors ${
+                                            fieldErrors[`item_${activeItemIndex}_quantity`]
+                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                        }`}
                                     />
+                                    {fieldErrors[`item_${activeItemIndex}_quantity`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_quantity`]}</span>
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Delivery Date * (Search help / Date) */}
@@ -4160,7 +5004,11 @@ export default function PurchaseRequisitionForm({
                                                 updateCurrentItem({ unit_price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })
                                             }
                                             required
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] font-semibold focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border px-3 text-xs font-semibold focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_unit_price`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         {fetchingValuation[currentItem?.id || ''] && (
                                             <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[#0070f2]">
@@ -4168,6 +5016,12 @@ export default function PurchaseRequisitionForm({
                                             </div>
                                         )}
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_unit_price`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_unit_price`]}</span>
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Currency (Search help) - Option beside Valuation Price */}
@@ -4196,7 +5050,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="INR"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_currency`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -4214,6 +5072,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_currency`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_currency`]}</span>
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Unit of Measure * (Search help) */}
@@ -4222,46 +5086,62 @@ export default function PurchaseRequisitionForm({
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Unit of Measure <span className="text-rose-500">*</span> (F4)
                                         </label>
-                                        <span className="text-[10px] text-rose-600 font-medium"></span>
+                                        {currentItem?.item_type === 'material' && currentItem?.material_code ? (
+                                            <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
+                                                Auto-filled from Material Master
+                                            </span>
+                                        ) : (
+                                            <span className="text-[10px] text-[#556b82]">F4 Search Help (CDS: YY1_UNITOFMEASUREMENT_CDS)</span>
+                                        )}
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
                                             value={currentItem?.unit_of_measure || ''}
+                                            readOnly={Boolean(currentItem?.item_type === 'material' && currentItem?.material_code)}
                                             onChange={(e) => updateCurrentItem({ unit_of_measure: e.target.value })}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
-                                                    openSearchHelp(
-                                                        'unit_of_measure',
-                                                        'Select Unit of Measure (Search Help)',
-                                                        dataCatalog.unitsOfMeasure,
-                                                        currentItem?.unit_of_measure,
-                                                        activeItemIndex
-                                                    );
+                                                    if (!(currentItem?.item_type === 'material' && currentItem?.material_code)) {
+                                                        handleOpenUnitOfMeasureSearchHelp(activeItemIndex, currentItem?.unit_of_measure);
+                                                    }
                                                 }
                                             }}
-                                            placeholder="KG"
+                                            placeholder={currentItem?.item_type === 'material' && currentItem?.material_code ? "Auto-filled" : "Select UoM (F4)"}
                                             required
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border text-xs font-mono uppercase focus:outline-none transition-colors ${
+                                                currentItem?.item_type === 'material' && currentItem?.material_code
+                                                    ? 'bg-slate-100/80 text-slate-700 border-[#d9e2ec] cursor-not-allowed px-3 font-bold'
+                                                    : 'pr-9 pl-3 ' + (fieldErrors[`item_${activeItemIndex}_unit_of_measure`]
+                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                        : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]')
+                                            }`}
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                openSearchHelp(
-                                                    'unit_of_measure',
-                                                    'Select Unit of Measure (Search Help)',
-                                                    dataCatalog.unitsOfMeasure,
-                                                    currentItem?.unit_of_measure,
-                                                    activeItemIndex
-                                                )
-                                            }
-                                            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                        >
-                                            <Search className="h-3.5 w-3.5" />
-                                        </button>
+                                        {(!(currentItem?.item_type === 'material' && currentItem?.material_code)) && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    handleOpenUnitOfMeasureSearchHelp(
+                                                        activeItemIndex,
+                                                        currentItem?.unit_of_measure
+                                                    )
+                                                }
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Unit of Measure Search Help (F4) - SAP CDS View YY1_UNITOFMEASUREMENT_CDS"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_unit_of_measure`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_unit_of_measure`]}</span>
+                                        </p>
+                                    )}
                                 </div>
+
 
                                 {/* Price Unit * (Input) */}
                                 <div>
@@ -4422,7 +5302,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="Leave blank for Stock, or 'K' for Cost Center"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_account_assignment_category`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -4438,6 +5322,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_account_assignment_category`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_account_assignment_category`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         {!currentItem?.account_assignment_category
                                             ? 'Standard Stock / Inventory procurement (automatic inventory valuation)'
@@ -4464,7 +5354,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="12545200"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_gl_account`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -4475,6 +5369,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_gl_account`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_gl_account`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         {(() => {
                                             const selectedGl = (sapGlAccountsCache.length > 0 ? sapGlAccountsCache : (dataCatalog.glAccounts || [])).find(
@@ -4487,7 +5387,7 @@ export default function PurchaseRequisitionForm({
                                                     </span>
                                                 );
                                             }
-                                            return 'General Ledger account (YY1_I_GLACCOUNTINCOMPANYCO_CDS)';
+                                            // return 'General Ledger account (YY1_I_GLACCOUNTINCOMPANYCO_CDS)';
                                         })()}
                                     </span>
                                 </div>
@@ -4509,7 +5409,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="10101PCC01"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_cost_center`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -4520,6 +5424,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_cost_center`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_cost_center`]}</span>
+                                        </p>
+                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
                                         {(() => {
                                             const selectedCc = (sapCostCentersCache.length > 0 ? sapCostCentersCache : (dataCatalog.costCenters || [])).find(
@@ -4532,7 +5442,7 @@ export default function PurchaseRequisitionForm({
                                                     </span>
                                                 );
                                             }
-                                            return 'Controlling area cost center for cost allocation (YY1_COSTCENTER_CDS)';
+                                            // return 'Controlling area cost center for cost allocation (YY1_COSTCENTER_CDS)';
                                         })()}
                                     </span>
                                 </div>
@@ -5123,18 +6033,23 @@ export default function PurchaseRequisitionForm({
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 {/* Requisitioner (Input) */}
                                 <div>
-                                    <label className="block text-xs font-semibold text-[#1c2d42] mb-1">
-                                        Requisitioner
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-semibold text-[#1c2d42]">
+                                            Requisitioner
+                                        </label>
+                                        <span className="text-[10px] text-slate-400 font-medium">Auto (User Model)</span>
+                                    </div>
                                     <input
                                         type="text"
-                                        value={requisitioner}
-                                        onChange={(e) => setRequisitioner(e.target.value)}
+                                        value={requisitioner || defaultRequisitioner || ''}
+                                        disabled
+                                        readOnly
                                         placeholder="e.g. Requester Name / Employee ID"
-                                        className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                        title="Auto-filled from User profile (read-only)"
+                                        className="h-9 w-full rounded-md border border-[#d9e2ec] bg-slate-100 px-3 text-xs font-medium text-[#556b82] cursor-not-allowed select-none focus:outline-none"
                                     />
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Name of individual or department requesting goods
+                                        Name of individual or department requesting goods (from user profile)
                                     </span>
                                 </div>
 
@@ -5176,7 +6091,11 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder="1200"
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_purchasing_organization`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
@@ -5189,6 +6108,12 @@ export default function PurchaseRequisitionForm({
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_purchasing_organization`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_purchasing_organization`]}</span>
+                                        </p>
+                                    )}
                                     {getPurchasingOrgLabel(currentItem?.purchasing_organization) && (
                                         <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
@@ -5202,7 +6127,7 @@ export default function PurchaseRequisitionForm({
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Purchasing Group <span className="text-rose-500">*</span>
+                                            Purchasing Group <span className="text-rose-500">*</span> (F4)
                                         </label>
                                         <span className="text-[10px] text-rose-600 font-medium"></span>
                                     </div>
@@ -5213,25 +6138,46 @@ export default function PurchaseRequisitionForm({
                                             onChange={(e) =>
                                                 updateCurrentItem({ purchasing_group: e.target.value })
                                             }
-                                            placeholder="103"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'F4') {
+                                                    e.preventDefault();
+                                                    handleOpenPurchasingGroupSearchHelp(activeItemIndex, currentItem?.purchasing_group);
+                                                }
+                                            }}
+                                            placeholder={defaultPurchasingGroup || '103'}
+                                            title="Purchasing Group (Press F4 for Help)"
                                             required
-                                            className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_purchasing_group`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                openSearchHelp(
-                                                    'purchasing_group',
-                                                    'Select Purchasing Group (Search Help)',
-                                                    dataCatalog.purchasingGroups,
+                                                handleOpenPurchasingGroupSearchHelp(
+                                                    activeItemIndex,
                                                     currentItem?.purchasing_group
                                                 )
                                             }
                                             className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                            title="Select Purchasing Group (F4 Help)"
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
+                                    {fieldErrors[`item_${activeItemIndex}_purchasing_group`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_purchasing_group`]}</span>
+                                        </p>
+                                    )}
+                                    {getPurchasingGroupLabel(currentItem?.purchasing_group) && (
+                                        <span className="mt-1 block text-[11px] font-medium text-teal-700">
+                                            {getPurchasingGroupLabel(currentItem?.purchasing_group)}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -5532,6 +6478,285 @@ export default function PurchaseRequisitionForm({
                 onSelect={handleSelectSearchHelp}
                 initialPlant={searchHelpState.targetPlant || currentItem?.plant}
             />
+
+            {/* Confirmation Modal before Creation / Sync */}
+            {confirmModal?.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+                        {/* Header Banner */}
+                        <div className={`px-6 py-5 border-b ${
+                            confirmModal.isDraft 
+                                ? 'bg-amber-50/70 border-amber-200' 
+                                : 'bg-blue-50/70 border-blue-200'
+                        }`}>
+                            <div className="flex items-center gap-3">
+                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                                    confirmModal.isDraft
+                                        ? 'bg-amber-100 text-amber-700'
+                                        : 'bg-blue-100 text-[#0070f2]'
+                                }`}>
+                                    {confirmModal.isDraft ? (
+                                        <Save className="h-5 w-5" />
+                                    ) : (
+                                        <Send className="h-5 w-5" />
+                                    )}
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-[#1c2d42]">
+                                        {confirmModal.isDraft
+                                            ? (isEdit ? 'Confirm Update Draft PR' : 'Confirm Save PR as Draft')
+                                            : (isEdit ? 'Confirm Save & Sync to SAP S/4HANA' : 'Confirm Create & Sync to SAP S/4HANA')}
+                                    </h3>
+                                    <p className="text-xs text-[#556b82] mt-0.5">
+                                        {confirmModal.isDraft
+                                            ? 'Save locally in database without sending to SAP Cloud'
+                                            : 'Synchronize and post requisition directly into SAP S/4HANA Cloud'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Body: PR Summary */}
+                        <div className="p-6 space-y-4">
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                                {confirmModal.isDraft
+                                    ? 'You are about to save this purchase requisition as a draft in the local database. You can continue editing, add line items, and sync it to SAP S/4HANA at any time.'
+                                    : 'Please review the requisition summary below before submitting. Once confirmed, this will call the SAP OData APIs to create the official Purchase Requisition in SAP S/4HANA Cloud.'}
+                            </p>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-2.5 text-xs">
+                                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                                    <span className="text-[#556b82]">Description:</span>
+                                    <span className="font-semibold text-[#1c2d42] max-w-[260px] truncate text-right" title={description || 'Draft Requisition'}>
+                                        {description || 'Draft Requisition'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[#556b82]">Document Type:</span>
+                                    <span className="font-mono font-semibold text-[#1c2d42]">{prType}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[#556b82]">Requisitioner:</span>
+                                    <span className="font-semibold text-[#1c2d42]">{requisitioner || defaultRequisitioner}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[#556b82]">Line Items:</span>
+                                    <span className="font-semibold text-[#1c2d42]">{items.length} item(s)</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[#556b82]">Receiving Plant(s):</span>
+                                    <span className="font-mono font-semibold text-[#1c2d42]">
+                                        {[...new Set(items.map((i) => i.plant).filter(Boolean))].join(', ') || defaultPlant}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-200/80">
+                                    <span className="font-semibold text-[#1c2d42]">Total Estimated Value:</span>
+                                    <span className="font-bold text-sm text-[#0070f2]">
+                                        {calculateTotal().toLocaleString(undefined, {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                        })}{' '}
+                                        <span className="text-xs">{currency}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer Actions */}
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setConfirmModal(null)}
+                                disabled={submitting || isDrafting}
+                                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-[#1c2d42] hover:bg-slate-100 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => submitForm(confirmModal.isDraft)}
+                                disabled={submitting || isDrafting}
+                                className={`flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50 ${
+                                    confirmModal.isDraft
+                                        ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
+                                        : 'bg-[#0070f2] hover:bg-[#0057c2] active:bg-[#003884]'
+                                }`}
+                            >
+                                {(submitting || isDrafting) ? (
+                                    <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        <span>{confirmModal.isDraft ? 'Saving Draft...' : 'Syncing with SAP Cloud...'}</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        {confirmModal.isDraft ? <Save className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+                                        <span>
+                                            {confirmModal.isDraft
+                                                ? (isEdit ? 'Confirm & Update Draft' : 'Confirm & Save as Draft')
+                                                : (isEdit ? 'Confirm & Sync to SAP' : 'Confirm & Create in SAP')}
+                                        </span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Success Popup Modal */}
+            {successModal?.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+                        {/* Green Top Highlight Bar */}
+                        <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-blue-500" />
+
+                        <div className="p-6 text-center space-y-5">
+                            {/* Success Icon */}
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50 shadow-inner">
+                                <Check className="h-7 w-7 stroke-[2.5]" />
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-bold text-[#1c2d42]">
+                                    {successModal.isDraft
+                                        ? 'Purchase Requisition Saved as Draft!'
+                                        : 'Purchase Requisition Created Successfully!'}
+                                </h3>
+                                <p className="text-xs text-[#556b82] mt-1 max-w-sm mx-auto">
+                                    {successModal.message}
+                                </p>
+                            </div>
+
+                            {/* Reference Numbers Card */}
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-left space-y-3">
+                                {/* Local PR Number */}
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-[#556b82] block">
+                                            Application PR Number
+                                        </span>
+                                        <span className="font-mono font-bold text-sm text-[#1c2d42]">
+                                            {successModal.prNumber}
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard?.writeText(successModal.prNumber);
+                                            setCopiedPrNumber(true);
+                                            setTimeout(() => setCopiedPrNumber(false), 2000);
+                                        }}
+                                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                                        title="Copy PR Number"
+                                    >
+                                        {copiedPrNumber ? (
+                                            <>
+                                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                                <span className="text-emerald-700 font-bold">Copied!</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Copy className="h-3.5 w-3.5 text-slate-500" />
+                                                <span>Copy</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* SAP S/4HANA Cloud PR Number (if available) */}
+                                {successModal.sapPrNumber && (
+                                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-200">
+                                        <div>
+                                            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#0070f2] block flex items-center gap-1">
+                                                <span>SAP Cloud PR Number</span>
+                                                <span className="rounded bg-blue-100 text-[#0070f2] px-1 py-0.2 text-[9px] font-bold">Live SAP</span>
+                                            </span>
+                                            <span className="font-mono font-bold text-sm text-[#0070f2]">
+                                                {successModal.sapPrNumber}
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (successModal.sapPrNumber) {
+                                                    navigator.clipboard?.writeText(successModal.sapPrNumber);
+                                                    setCopiedSapPrNumber(true);
+                                                    setTimeout(() => setCopiedSapPrNumber(false), 2000);
+                                                }
+                                            }}
+                                            className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors shadow-2xs"
+                                            title="Copy SAP PR Number"
+                                        >
+                                            {copiedSapPrNumber ? (
+                                                <>
+                                                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                                    <span className="text-emerald-700 font-bold">Copied!</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Copy className="h-3.5 w-3.5 text-blue-600" />
+                                                    <span>Copy</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Total Amount & Status */}
+                                <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[#556b82]">Status:</span>
+                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                            successModal.isDraft
+                                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                                : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                        }`}>
+                                            {successModal.isDraft ? 'Draft' : 'Synced with SAP'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[#556b82] mr-1">Total:</span>
+                                        <strong className="text-[#1c2d42]">
+                                            {Number(successModal.totalAmount).toLocaleString(undefined, {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                            })}{' '}
+                                            {successModal.currency}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={handleCreateAnotherPr}
+                                    className="w-full sm:flex-1 rounded-lg border border-slate-300 bg-white py-2.5 text-xs font-semibold text-[#1c2d42] hover:bg-slate-50 transition-colors"
+                                >
+                                    Create Another PR
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => router.visit('/dashboard')}
+                                    className="w-full sm:flex-1 rounded-lg border border-[#0070f2] bg-blue-50 py-2.5 text-xs font-semibold text-[#0070f2] hover:bg-blue-100 transition-colors"
+                                >
+                                    Go to Dashboard
+                                </button>
+                                {successModal.prId && (
+                                    <button
+                                        type="button"
+                                        onClick={() => router.visit(`/purchase-requisitions/${successModal.prId}`)}
+                                        className="w-full sm:flex-1 rounded-lg bg-[#0070f2] py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] transition-colors"
+                                    >
+                                        View PR Details
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </form>
     );
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\HeaderOptionController;
 use App\Http\Controllers\ItemCategoryController;
 use App\Http\Controllers\PrDocumentTypeController;
 use App\Http\Controllers\PurchasingOrganizationController;
+use App\Http\Controllers\PurchasingGroupController;
 use App\Http\Controllers\PurchaseRequisitionController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,9 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('sap-cost-centers', [PurchaseRequisitionController::class, 'getCostCenters'])->name('sap-cost-centers.index');
     Route::get('sap-suppliers', [PurchaseRequisitionController::class, 'getSuppliers'])->name('sap-suppliers.index');
     Route::get('sap-purchasing-organizations', [PurchasingOrganizationController::class, 'getForPr'])->name('sap-purchasing-organizations.index');
+    Route::get('sap-purchasing-groups', [PurchasingGroupController::class, 'getForPr'])->name('sap-purchasing-groups.index');
+    Route::get('sap-units-of-measure', [PurchaseRequisitionController::class, 'getUnitsOfMeasure'])->name('sap-units-of-measure.index');
+
 
     // Super Administrator only: System Configuration (User Management & Department Management) & PR Configuration
     Route::middleware(['role:superadmin'])->group(function () {
@@ -97,6 +101,16 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
         Route::put('purchasing-organizations/{purchasingOrganization}', [PurchasingOrganizationController::class, 'update'])->name('purchasing-organizations.update');
         Route::delete('purchasing-organizations/{purchasingOrganization}', [PurchasingOrganizationController::class, 'destroy'])->name('purchasing-organizations.destroy');
         Route::post('purchasing-organizations/{purchasingOrganization}/toggle-status', [PurchasingOrganizationController::class, 'toggleStatus'])->name('purchasing-organizations.toggle-status');
+
+        // Purchasing Groups Management (SAP CDS View YY1_PURCHASINGGROUPAPI_CDS)
+        Route::get('purchasing-groups', [PurchasingGroupController::class, 'index'])->name('purchasing-groups.index');
+        Route::post('purchasing-groups/fetch-sap', [PurchasingGroupController::class, 'fetchSap'])->name('purchasing-groups.fetch-sap');
+        Route::post('purchasing-groups/save-sap', [PurchasingGroupController::class, 'saveSap'])->name('purchasing-groups.save-sap');
+        Route::post('purchasing-groups/sync-sap', [PurchasingGroupController::class, 'syncSap'])->name('purchasing-groups.sync-sap');
+        Route::post('purchasing-groups', [PurchasingGroupController::class, 'store'])->name('purchasing-groups.store');
+        Route::put('purchasing-groups/{purchasingGroup}', [PurchasingGroupController::class, 'update'])->name('purchasing-groups.update');
+        Route::delete('purchasing-groups/{purchasingGroup}', [PurchasingGroupController::class, 'destroy'])->name('purchasing-groups.destroy');
+        Route::post('purchasing-groups/{purchasingGroup}/toggle-status', [PurchasingGroupController::class, 'toggleStatus'])->name('purchasing-groups.toggle-status');
     });
 
 });

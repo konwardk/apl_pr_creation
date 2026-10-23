@@ -27,6 +27,13 @@ export type User = {
     designation?: string | null;
     phone?: string | null;
     plant?: string | null;
+    purchasing_group?: string | null;
+    purchasing_group_detail?: {
+        id: number;
+        code: string;
+        name: string;
+        description?: string | null;
+    } | null;
     is_active?: boolean;
     role?: Role | null;
     department?: Department | null;

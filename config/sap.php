@@ -83,6 +83,19 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION?$format=json'
         ),
 
+        // CDS View for Purchasing Groups (YY1_PURCHASINGGROUPAPI_CDS)
+        'purchasing_groups' => env(
+            'SAP_PURCHASING_GROUP_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI?$format=json'
+        ),
+
+        // CDS View for Unit of Measurement (YY1_UNITOFMEASUREMENT_CDS)
+        'units_of_measure' => env(
+            'SAP_UOM_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_UNITOFMEASUREMENT_CDS/YY1_UnitOfMeasurement?$format=json'
+        ),
+
+
         // OData V4 PR Service Root (for CSRF Token Fetch)
         'service_root' => env(
             'SAP_SERVICE_ROOT_ENDPOINT',

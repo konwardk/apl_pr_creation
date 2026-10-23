@@ -13,6 +13,7 @@ import {
     FileText,
     CheckCircle2,
     AlertCircle,
+    AlertTriangle,
     Building2,
     DollarSign,
     Package,
@@ -177,6 +178,7 @@ export default function PurchaseRequisitionForm({
     };
 
     const isEdit = Boolean(initialData && initialData.id);
+    const isFailed = Boolean(initialData?.sap_sync_status === 'failed');
 
     // Header State
     const [description, setDescription] = useState(initialData?.description || '');
@@ -605,8 +607,9 @@ export default function PurchaseRequisitionForm({
     const [sapPurchasingOrgsCache, setSapPurchasingOrgsCache] = useState<SearchHelpOption[]>([]);
     const [sapPurchasingGroupsCache, setSapPurchasingGroupsCache] = useState<SearchHelpOption[]>([]);
     const [sapUnitsOfMeasureCache, setSapUnitsOfMeasureCache] = useState<SearchHelpOption[]>([]);
+    const [sapInfoRecordsCache, setSapInfoRecordsCache] = useState<SearchHelpOption[]>([]);
 
-    // Silently pre-fetch plants, purchasing groups, AACs, and units of measure to enhance validation & F4 responsiveness
+    // Silently pre-fetch plants, purchasing groups, AACs, units of measure, and info records to enhance validation & F4 responsiveness
     React.useEffect(() => {
         fetch('/sap-plants', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then((r) => r.json())
@@ -640,6 +643,13 @@ export default function PurchaseRequisitionForm({
             .then((r) => r.json())
             .then((d) => {
                 if (d?.items?.length) setSapUnitsOfMeasureCache(d.items);
+            })
+            .catch(() => {});
+
+        fetch('/sap-info-records', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapInfoRecordsCache(d.items);
             })
             .catch(() => {});
     }, []);
@@ -1699,6 +1709,72 @@ export default function PurchaseRequisitionForm({
         }
     };
 
+    /**
+     * Hit SAP S/4HANA Cloud CDS View (YY1_INFORECORD_CDS) API for Purchasing Info Record F4 Search Help.
+     * Uses PurchasingInfoRecord field for showing values and provides search functionality across PIR, Supplier, and Material.
+     */
+    const handleOpenInfoRecordSearchHelp = async (targetIndex: number, currentCode?: string) => {
+        setActiveItemIndex(targetIndex);
+
+        if (sapInfoRecordsCache.length > 0) {
+            setSearchHelpState({
+                isOpen: true,
+                title: 'Select Purchasing Info Record - SAP S/4HANA Cloud (CDS: YY1_INFORECORD_CDS)',
+                subtitle: `SAP Purchasing Info Records (${sapInfoRecordsCache.length} records)`,
+                options: sapInfoRecordsCache,
+                selectedCode: currentCode || '',
+                field: 'info_record',
+                targetIndex,
+                isLoading: false,
+            });
+            return;
+        }
+
+        // Open modal immediately with loading state
+        setSearchHelpState({
+            isOpen: true,
+            title: 'Select Purchasing Info Record - SAP S/4HANA Cloud (CDS: YY1_INFORECORD_CDS)',
+            subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_INFORECORD_CDS)...',
+            options: (dataCatalog as any).infoRecords || [],
+            selectedCode: currentCode || '',
+            field: 'info_record',
+            targetIndex,
+            isLoading: true,
+        });
+
+        try {
+            const res = await fetch('/sap-info-records', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data.items && data.items.length > 0) {
+                setSapInfoRecordsCache(data.items);
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: data.items,
+                    subtitle: `SAP Purchasing Info Records (${data.items.length} records)`,
+                    isLoading: false,
+                }));
+            } else {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    subtitle: 'No purchasing info records returned from SAP CDS View',
+                    isLoading: false,
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to fetch purchasing info records from SAP CDS view:', err);
+            setSearchHelpState((prev) => ({
+                ...prev,
+                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                isLoading: false,
+            }));
+        }
+    };
+
     const handleSelectSearchHelp = (opt: SearchHelpOption) => {
         const { field, targetIndex } = searchHelpState;
         const targetIdx = targetIndex !== undefined ? targetIndex : activeItemIndex;
@@ -1863,12 +1939,23 @@ export default function PurchaseRequisitionForm({
 
         // Special handling when selecting Purchasing Info Record:
         if (field === 'info_record') {
+            const pirCode = opt.PurchasingInfoRecord || opt.code;
+            const supplierCode = opt.Supplier || opt.supplier || opt.raw_data?.Supplier;
+            const supplierName = opt.SupplierName || opt.supplierName || opt.raw_data?.SupplierName || '';
+            const materialCode = opt.Material || opt.material || opt.raw_data?.Material;
             setItems((prev) =>
                 prev.map((item, idx) => {
                     if (idx !== targetIdx) return item;
                     return {
                         ...item,
-                        info_record: opt.code,
+                        info_record: pirCode,
+                        ...(supplierCode ? {
+                            desired_supplier: supplierCode,
+                            supplier_name: supplierName || item.supplier_name,
+                        } : {}),
+                        ...(materialCode && !item.material_code ? {
+                            material_code: materialCode,
+                        } : {}),
                         source_assigned: true,
                     };
                 })
@@ -2609,9 +2696,15 @@ export default function PurchaseRequisitionForm({
                                 {isEdit ? `Edit PR: ${initialData.pr_number}` : 'New Purchase Requisition'}
                             </h1>
                             {isEdit ? (
-                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-300">
-                                    Draft Mode (Editable)
-                                </span>
+                                isFailed ? (
+                                    <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-semibold text-rose-800 border border-rose-300">
+                                        Sync Failed (Editable)
+                                    </span>
+                                ) : (
+                                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-300">
+                                        Draft Mode (Editable)
+                                    </span>
+                                )
                             ) : (
                                 <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-[#0070f2]">
                                     SAP S/4HANA Cloud (Public Edition)
@@ -2620,7 +2713,9 @@ export default function PurchaseRequisitionForm({
                         </div>
                         <p className="mt-1 text-xs text-[#556b82]">
                             {isEdit
-                                ? `Editing draft PR in local database (is_draft = 1) • Modify fields or sync directly to SAP Cloud`
+                                ? isFailed
+                                    ? `Editing failed PR in local database • Correct any invalid fields and re-sync to SAP Cloud or update as draft`
+                                    : `Editing draft PR in local database (is_draft = 1) • Modify fields or sync directly to SAP Cloud`
                                 : (description || 'New Requisition')}
                         </p>
                     </div>
@@ -2690,6 +2785,20 @@ export default function PurchaseRequisitionForm({
                     </div>
                 </div>
             </div>
+
+            {/* SAP Sync Failure Banner when editing failed PR */}
+            {isFailed && initialData?.sap_sync_message && (
+                <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50/90 p-4 text-xs text-rose-800 shadow-2xs">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                    <div className="space-y-1">
+                        <strong className="font-semibold text-rose-900">Previous SAP S/4HANA Cloud Sync Failed:</strong>
+                        <p className="text-rose-800 leading-relaxed font-mono text-[11px] bg-white/70 p-2 rounded border border-rose-100">{initialData.sap_sync_message}</p>
+                        <p className="text-[11px] text-rose-600">
+                            You can edit any incorrect line items, plant, cost center, or parameters below. Click <strong>"Save & Sync to SAP"</strong> to retry syncing with SAP Cloud, or <strong>"Update Draft"</strong> to save your changes in the local database.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Error Notification Banner */}
             {errorMessage && (
@@ -5902,27 +6011,21 @@ export default function PurchaseRequisitionForm({
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'F4') {
                                                         e.preventDefault();
-                                                        openSearchHelp(
-                                                            'info_record',
-                                                            'Select Purchasing Info Record (Search Help - F4)',
-                                                            (dataCatalog as any).infoRecords || [],
-                                                            currentItem?.info_record,
-                                                            activeItemIndex
+                                                        handleOpenInfoRecordSearchHelp(
+                                                            activeItemIndex,
+                                                            currentItem?.info_record
                                                         );
                                                     }
                                                 }}
-                                                placeholder="e.g. 5300001201"
+                                                placeholder="e.g. 5300000000"
                                                 className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
                                             />
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    openSearchHelp(
-                                                        'info_record',
-                                                        'Select Purchasing Info Record (Search Help - F4)',
-                                                        (dataCatalog as any).infoRecords || [],
-                                                        currentItem?.info_record,
-                                                        activeItemIndex
+                                                    handleOpenInfoRecordSearchHelp(
+                                                        activeItemIndex,
+                                                        currentItem?.info_record
                                                     )
                                                 }
                                                 className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
@@ -5931,9 +6034,25 @@ export default function PurchaseRequisitionForm({
                                                 <Search className="h-3.5 w-3.5" />
                                             </button>
                                         </div>
-                                        <span className="mt-1 block text-[10px] text-[#556b82]">
-                                            SAP Purchasing Info Record linking vendor and material (INFNR)
-                                        </span>
+                                        {currentItem?.info_record ? (
+                                            <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-indigo-700">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500"></span>
+                                                PIR #{currentItem.info_record}
+                                                {(() => {
+                                                    const matched = sapInfoRecordsCache.find((r) => (r.PurchasingInfoRecord || r.code) === currentItem.info_record);
+                                                    if (matched) {
+                                                        const suppName = matched.SupplierName || matched.supplierName || matched.raw_data?.SupplierName;
+                                                        const suppText = suppName ? `${matched.Supplier} (${suppName})` : (matched.Supplier || '-');
+                                                        return ` (Vendor ${suppText} • Mat ${matched.Material || '-'})`;
+                                                    }
+                                                    return '';
+                                                })()}
+                                            </span>
+                                        ) : (
+                                            <span className="mt-1 block text-[10px] text-[#556b82]">
+                                                SAP Purchasing Info Record linking vendor and material (YY1_INFORECORD_CDS)
+                                            </span>
+                                        )}
                                     </div>
 
                                     {/* 8. Manufacture Part Number */}

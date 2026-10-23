@@ -737,19 +737,23 @@ export default function Dashboard({
                                                             <span>Payload</span>
                                                         </button>
 
-                                                        {pr.is_draft ? (
+                                                        {Boolean(pr.is_draft) || pr.sap_sync_status === 'failed' ? (
                                                             <>
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => handleEditPr(pr)}
-                                                                    className="flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-[#0070f2] hover:bg-blue-100 active:bg-blue-200 transition-colors"
-                                                                    title="Edit Draft Purchase Requisition"
+                                                                    className={`flex items-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                                                                        pr.sap_sync_status === 'failed'
+                                                                            ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 active:bg-amber-200'
+                                                                            : 'border-blue-200 bg-blue-50 text-[#0070f2] hover:bg-blue-100 active:bg-blue-200'
+                                                                    }`}
+                                                                    title={pr.sap_sync_status === 'failed' ? "Edit Failed Purchase Requisition" : "Edit Draft Purchase Requisition"}
                                                                 >
                                                                     <Edit3 className="h-3 w-3" />
                                                                     <span>Edit</span>
                                                                 </button>
 
-                                                                {!isEmployee && (
+                                                                {pr.is_draft && !isEmployee && (
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handleFinalizePr(pr)}
@@ -759,6 +763,19 @@ export default function Dashboard({
                                                                     >
                                                                         <CheckCircle2 className={`h-3 w-3 ${finalizingId === pr.id ? 'animate-spin' : ''}`} />
                                                                         <span>{finalizingId === pr.id ? 'Finalizing...' : 'Finalize Draft'}</span>
+                                                                    </button>
+                                                                )}
+
+                                                                {pr.sap_sync_status === 'failed' && !isEmployee && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleSyncPr(pr)}
+                                                                        disabled={syncingId === pr.id}
+                                                                        className="flex items-center gap-1 rounded bg-[#0070f2] px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
+                                                                        title="Retry Posting / Syncing to SAP S/4HANA Cloud"
+                                                                    >
+                                                                        <Send className={`h-3 w-3 ${syncingId === pr.id ? 'animate-spin' : ''}`} />
+                                                                        <span>{syncingId === pr.id ? 'Posting...' : 'Sync to SAP'}</span>
                                                                     </button>
                                                                 )}
                                                             </>

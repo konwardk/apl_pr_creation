@@ -293,55 +293,56 @@ export default function ShowPurchaseRequisitionPage({
                                 <span>SAP Payload</span>
                             </button>
 
-                            {/* Conditional Actions: If in draft, provide Edit and Sync with SAP */}
-                            {isDraft ? (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={() => router.visit(`/purchase-requisitions/${pr.id}/edit`)}
-                                        className="flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-[#0070f2] shadow-2xs hover:bg-blue-100 transition-colors"
-                                        title="Edit this Draft Purchase Requisition"
-                                    >
-                                        <Edit3 className="h-4 w-4" />
-                                        <span>Edit PR</span>
-                                    </button>
+                            {/* Conditional Actions: If in draft or sync failed, provide Edit and Sync with SAP */}
+                            {(isDraft || pr.sap_sync_status === 'failed') && (
+                                <button
+                                    type="button"
+                                    onClick={() => router.visit(`/purchase-requisitions/${pr.id}/edit`)}
+                                    className={`flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-xs font-semibold shadow-2xs transition-colors ${
+                                        pr.sap_sync_status === 'failed'
+                                            ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                            : 'border-blue-200 bg-blue-50 text-[#0070f2] hover:bg-blue-100'
+                                    }`}
+                                    title={pr.sap_sync_status === 'failed' ? "Edit Failed Purchase Requisition" : "Edit Draft Purchase Requisition"}
+                                >
+                                    <Edit3 className="h-4 w-4" />
+                                    <span>Edit PR</span>
+                                </button>
+                            )}
 
-                                    <button
-                                        type="button"
-                                        onClick={handleSyncToSap}
-                                        disabled={isSyncing}
-                                        className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
-                                        title="Finalize Draft and Post/Sync directly to SAP S/4HANA Cloud"
-                                    >
-                                        <Send className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                                        <span>{isSyncing ? 'Syncing to SAP Cloud...' : 'Sync with SAP'}</span>
-                                    </button>
-                                </>
-                            ) : (
-                                !isSynced && (
-                                    <button
-                                        type="button"
-                                        onClick={handleSyncToSap}
-                                        disabled={isSyncing}
-                                        className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
-                                        title="Sync this PR to SAP S/4HANA Cloud"
-                                    >
-                                        <Send className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                                        <span>{isSyncing ? 'Syncing to SAP Cloud...' : 'Sync with SAP'}</span>
-                                    </button>
-                                )
+                            {!isSynced && (
+                                <button
+                                    type="button"
+                                    onClick={handleSyncToSap}
+                                    disabled={isSyncing}
+                                    className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
+                                    title={isDraft ? "Finalize Draft and Post/Sync directly to SAP S/4HANA Cloud" : "Post / Sync this PR to SAP S/4HANA Cloud"}
+                                >
+                                    <Send className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    <span>{isSyncing ? 'Syncing to SAP Cloud...' : 'Sync with SAP'}</span>
+                                </button>
                             )}
                         </div>
                     </div>
 
                     {/* Sync Message Alert if Failed */}
                     {pr.sap_sync_status === 'failed' && pr.sap_sync_message && (
-                        <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-                            <div>
-                                <strong className="font-semibold">SAP S/4HANA Cloud Sync Notice:</strong>
-                                <p className="mt-0.5">{pr.sap_sync_message}</p>
+                        <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800">
+                            <div className="flex items-start gap-2.5">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                                <div>
+                                    <strong className="font-semibold text-rose-900">SAP S/4HANA Cloud Sync Notice:</strong>
+                                    <p className="mt-0.5 text-rose-800 leading-relaxed">{pr.sap_sync_message}</p>
+                                </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => router.visit(`/purchase-requisitions/${pr.id}/edit`)}
+                                className="inline-flex shrink-0 items-center gap-1.5 self-start sm:self-center rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 transition-colors"
+                            >
+                                <Edit3 className="h-3.5 w-3.5" />
+                                <span>Edit Requisition</span>
+                            </button>
                         </div>
                     )}
                 </div>

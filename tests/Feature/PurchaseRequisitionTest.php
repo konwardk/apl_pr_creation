@@ -617,6 +617,67 @@ class PurchaseRequisitionTest extends TestCase
                 ->has('masterData.materialGroups')
         );
     }
+
+    public function test_failed_sync_purchase_requisition_is_editable(): void
+    {
+        $user = User::factory()->create();
+
+        $pr = PurchaseRequisition::create([
+            'pr_number' => 'PR-2026-FAIL1',
+            'user_id' => $user->id,
+            'description' => 'Failed PR Edit Test',
+            'pr_type' => 'ZMAT',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'total_amount' => 1250.00,
+            'currency' => 'INR',
+            'approval_status' => 'approved',
+            'is_draft' => 0,
+            'sap_sync_status' => 'failed',
+            'sap_sync_message' => 'Material NUTS not maintained in Plant 1200',
+        ]);
+
+        $this->assertTrue($pr->isEditable());
+        $this->assertTrue($pr->is_editable);
+
+        $response = $this->actingAs($user)->get(route('purchase-requisitions.edit', $pr));
+
+        $response->assertOk();
+        $response->assertInertia(fn($page) =>
+            $page->component('purchase-requisitions/edit')
+                ->has('purchaseRequisition')
+                ->where('purchaseRequisition.id', $pr->id)
+                ->where('purchaseRequisition.sap_sync_status', 'failed')
+        );
+    }
+
+    public function test_synced_purchase_requisition_cannot_be_edited(): void
+    {
+        $user = User::factory()->create();
+
+        $pr = PurchaseRequisition::create([
+            'pr_number' => 'PR-2026-SYNC1',
+            'user_id' => $user->id,
+            'description' => 'Synced PR Test',
+            'pr_type' => 'ZMAT',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'total_amount' => 500.00,
+            'currency' => 'INR',
+            'approval_status' => 'approved',
+            'is_draft' => 0,
+            'sap_sync_status' => 'synced',
+            'sap_pr_number' => '0010009999',
+        ]);
+
+        $this->assertFalse($pr->isEditable());
+        $this->assertFalse($pr->is_editable);
+
+        $response = $this->actingAs($user)->get(route('purchase-requisitions.edit', $pr));
+
+        $response->assertRedirect(route('dashboard'));
+        $response->assertSessionHas('error');
+    }
 }
 
 

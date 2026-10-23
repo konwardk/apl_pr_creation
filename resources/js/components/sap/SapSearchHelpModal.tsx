@@ -99,6 +99,10 @@ export default function SapSearchHelpModal({
             const plants = Array.isArray(opt.plants) ? opt.plants.join(' ').toLowerCase() : '';
             const proc = (opt.InventoryValuationProcedure || opt.priceControl || '').toLowerCase();
             const currency = (opt.Currency || opt.currency || '').toLowerCase();
+            const infoRecord = (opt.PurchasingInfoRecord || '').toLowerCase();
+            const infoSupplier = (opt.Supplier || opt.supplier || '').toLowerCase();
+            const infoSupplierName = (opt.SupplierName || '').toLowerCase();
+            const infoMat = (opt.Material || '').toLowerCase();
 
             return (
                 product.includes(q) ||
@@ -124,7 +128,11 @@ export default function SapSearchHelpModal({
                 type.includes(q) ||
                 proc.includes(q) ||
                 currency.includes(q) ||
-                extId.includes(q)
+                extId.includes(q) ||
+                infoRecord.includes(q) ||
+                infoSupplier.includes(q) ||
+                infoSupplierName.includes(q) ||
+                infoMat.includes(q)
             );
         });
     }, [options, searchQuery, isStorageLocationSearch, selectedPlantFilter]);
@@ -145,28 +153,33 @@ export default function SapSearchHelpModal({
         filteredOptions.some((o) => o.CostCenter || o.ControllingArea) ||
         title.toLowerCase().includes('cost center')
     );
-    const isSupplierSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && (
-        filteredOptions.some((o) => o.Supplier || o.SupplierName || o.supplierName || o.SupplierFullName) ||
+    const isInfoRecordSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && (
+        filteredOptions.some((o) => o.PurchasingInfoRecord) ||
+        title.toLowerCase().includes('info record') ||
+        title.toLowerCase().includes('inforecord')
+    );
+    const isSupplierSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isInfoRecordSearch && (
+        filteredOptions.some((o) => (o.Supplier || o.SupplierName || o.supplierName || o.SupplierFullName) && !o.PurchasingInfoRecord) ||
         title.toLowerCase().includes('supplier') ||
         title.toLowerCase().includes('vendor')
     );
-    const isPurchasingOrgSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && (
+    const isPurchasingOrgSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isInfoRecordSearch && (
         filteredOptions.some((o) => o.PurchasingOrganization || o.purchasingOrgName || o.PurchasingOrganizationName) ||
         title.toLowerCase().includes('purchasing organization') ||
         title.toLowerCase().includes('purchase organisation') ||
         title.toLowerCase().includes('purchasing org')
     );
-    const isPurchasingGroupSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isPurchasingOrgSearch && (
+    const isPurchasingGroupSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isPurchasingOrgSearch && !isInfoRecordSearch && (
         filteredOptions.some((o) => o.PurchasingGroup || o.PurchasingGroupName) ||
         title.toLowerCase().includes('purchasing group') ||
         title.toLowerCase().includes('purchase group')
     );
-    const isUnitOfMeasureSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isPurchasingOrgSearch && !isPurchasingGroupSearch && (
+    const isUnitOfMeasureSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isPurchasingOrgSearch && !isPurchasingGroupSearch && !isInfoRecordSearch && (
         filteredOptions.some((o) => o.UnitOfMeasure || o.UnitOfMeasureCommercialName || o.UnitOfMeasureLongName) ||
         title.toLowerCase().includes('unit of measure') ||
         title.toLowerCase().includes('uom')
     );
-    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isSupplierSearch || isPurchasingOrgSearch || isPurchasingGroupSearch || isStorageLocationSearch || isUnitOfMeasureSearch || filteredOptions.some((o) => o.materialType);
+    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isSupplierSearch || isPurchasingOrgSearch || isPurchasingGroupSearch || isStorageLocationSearch || isUnitOfMeasureSearch || isInfoRecordSearch || filteredOptions.some((o) => o.materialType);
 
 
 
@@ -216,6 +229,8 @@ export default function SapSearchHelpModal({
                                     ? "Search by Purchase Group Code (e.g. 103, 001) or description..."
                                     : isUnitOfMeasureSearch
                                     ? "Search by Unit (e.g. NO, EA), Commercial Name (e.g. NO, PC), or Long Name (e.g. Number, Piece)..."
+                                    : isInfoRecordSearch
+                                    ? "Search by Purchasing Info Record (e.g. 5300000000), Supplier (e.g. V1200, Namrup), or Material (e.g. 1000000005)..."
                                     : isStorageLocationSearch
                                     ? "Search by Storage Location (e.g. SL01, M100), Plant (e.g. 1200), or description..."
                                     : "Type to search code or description..."
@@ -353,6 +368,13 @@ export default function SapSearchHelpModal({
                                             <th className="py-2.5 px-4 w-44 font-mono">Commercial Name (UnitOfMeasureCommercialName)</th>
                                             <th className="py-2.5 px-4">Description (UnitOfMeasureLongName)</th>
                                         </>
+                                    ) : isInfoRecordSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-44 font-mono">Purchasing Info Record</th>
+                                            <th className="py-2.5 px-4 w-52 font-mono">Supplier (Vendor)</th>
+                                            <th className="py-2.5 px-4 font-mono">Material #</th>
+                                            <th className="py-2.5 px-4">Description / SAP Spec</th>
+                                        </>
                                     ) : (
                                         <>
                                             <th className="py-2.5 px-4 w-32">Code / ID</th>
@@ -367,9 +389,9 @@ export default function SapSearchHelpModal({
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt, idx) => {
-                                    const optCode = opt.UnitOfMeasure ?? opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.PurchasingGroup ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
+                                    const optCode = opt.PurchasingInfoRecord ?? opt.UnitOfMeasure ?? opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.PurchasingGroup ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
                                     const optName = opt.UnitOfMeasureLongName ?? opt.UnitOfMeasureCommercialName ?? opt.StorageLocationName ?? opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.PurchasingGroupName ?? opt.description ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
-                                    const isSelected = selectedCode === optCode || (opt.UnitOfMeasure && selectedCode === opt.UnitOfMeasure) || (opt.UnitOfMeasureCommercialName && selectedCode === opt.UnitOfMeasureCommercialName) || selectedCode === opt.code;
+                                    const isSelected = selectedCode === optCode || (opt.PurchasingInfoRecord && selectedCode === opt.PurchasingInfoRecord) || (opt.UnitOfMeasure && selectedCode === opt.UnitOfMeasure) || (opt.UnitOfMeasureCommercialName && selectedCode === opt.UnitOfMeasureCommercialName) || selectedCode === opt.code;
 
 
 
@@ -633,6 +655,42 @@ export default function SapSearchHelpModal({
                                                     </td>
                                                     <td className="py-2.5 px-4 text-xs font-medium text-[#1c2d42]">
                                                         {opt.UnitOfMeasureLongName || opt.name || opt.extra || '-'}
+                                                    </td>
+                                                </>
+                                             ) : isInfoRecordSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs font-mono font-bold text-indigo-800">
+                                                            {opt.PurchasingInfoRecord || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-mono text-xs font-semibold text-slate-700">
+                                                        {(opt.Supplier || opt.raw_data?.Supplier || opt.supplier) ? (
+                                                            <div className="flex flex-col">
+                                                                <span className="rounded w-fit bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-mono text-slate-700">
+                                                                    {opt.Supplier || opt.raw_data?.Supplier || opt.supplier}
+                                                                </span>
+                                                                {(opt.SupplierName || opt.raw_data?.SupplierName || opt.supplierName) && (
+                                                                    <span className="text-[11px] font-normal text-slate-600 truncate max-w-[200px] mt-0.5">
+                                                                        {opt.SupplierName || opt.raw_data?.SupplierName || opt.supplierName}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-slate-400 italic text-[11px]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-mono text-xs font-medium text-[#1c2d42]">
+                                                        {(opt.Material || opt.raw_data?.Material || opt.material) ? (
+                                                            <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-mono text-[#0070f2]">
+                                                                {opt.Material || opt.raw_data?.Material || opt.material}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400 italic text-[11px]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-4 text-xs text-[#556b82]">
+                                                        {opt.extra || opt.name || 'SAP Purchasing Info Record'}
                                                     </td>
                                                 </>
                                             ) : (

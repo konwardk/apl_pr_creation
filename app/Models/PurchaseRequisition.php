@@ -50,11 +50,11 @@ class PurchaseRequisition extends Model
     ];
 
     /**
-     * Determine if this PR can currently be edited (only while in draft mode and not already synced).
+     * Determine if this PR can currently be edited (draft mode or failed sync, and not synced to SAP).
      */
     public function getIsEditableAttribute(): bool
     {
-        return (bool) $this->is_draft && $this->sap_sync_status !== 'synced';
+        return ((bool) $this->is_draft || $this->sap_sync_status === 'failed') && $this->sap_sync_status !== 'synced';
     }
 
     public function isDraft(): bool
@@ -64,7 +64,7 @@ class PurchaseRequisition extends Model
 
     public function isEditable(): bool
     {
-        return (bool) $this->is_draft && $this->sap_sync_status !== 'synced';
+        return ((bool) $this->is_draft || $this->sap_sync_status === 'failed') && $this->sap_sync_status !== 'synced';
     }
 
     public function user(): BelongsTo

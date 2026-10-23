@@ -140,6 +140,19 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Fetch Purchasing Info Records from SAP S/4HANA Cloud CDS View (YY1_INFORECORD_CDS)
+     */
+    public function getInfoRecords(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $supplier = $request->query('supplier');
+        $material = $request->query('material');
+        $result = $this->sapService->fetchInfoRecordsFromCdsView($search, $supplier, $material);
+
+        return response()->json($result);
+    }
+
+    /**
      * Display the purchase requisition creation page.
      */
 
@@ -198,14 +211,14 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
-     * Display the purchase requisition edit page (only for draft PRs).
+     * Display the purchase requisition edit page (for draft PRs and failed sync PRs).
      */
     public function edit(Request $request, PurchaseRequisition $purchaseRequisition): Response|RedirectResponse
     {
-        if (!$purchaseRequisition->is_draft) {
+        if (!$purchaseRequisition->is_draft && $purchaseRequisition->sap_sync_status !== 'failed') {
             return redirect()->route('dashboard')->with(
                 'error',
-                "Purchase Requisition {$purchaseRequisition->pr_number} is not in draft mode (is_draft = 0) and cannot be edited."
+                "Purchase Requisition {$purchaseRequisition->pr_number} is already synced to SAP and cannot be edited."
             );
         }
 
@@ -900,13 +913,11 @@ class PurchaseRequisitionController extends Controller
             return back()->with('error', 'You are not authorized to trigger SAP Cloud dispatch for this purchase requisition.');
         }
 
-        // If the PR is in draft, automatically finalize it for SAP Cloud dispatch
         if ($purchaseRequisition->is_draft) {
-            $purchaseRequisition->update([
-                'is_draft' => 0,
-                'approval_status' => 'approved',
-                'sap_sync_message' => 'Draft finalized. Dispatching to SAP S/4HANA Cloud...',
-            ]);
+            return back()->with(
+                'error',
+                "Draft Purchase Requisition ({$purchaseRequisition->pr_number}) cannot be synced to SAP server until Draft status is 0."
+            );
         }
 
         $purchaseRequisition->load(['items', 'attachments']);
@@ -989,21 +1000,21 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
-     * Update an existing draft purchase requisition in local DB and optionally sync with SAP S/4HANA Cloud.
+     * Update an existing draft or failed purchase requisition in local DB and optionally sync with SAP S/4HANA Cloud.
      */
     public function update(Request $request, PurchaseRequisition $purchaseRequisition): RedirectResponse|JsonResponse
     {
-        if (!$purchaseRequisition->is_draft) {
+        if (!$purchaseRequisition->is_draft && $purchaseRequisition->sap_sync_status !== 'failed') {
             if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
                 return response()->json([
                     'success' => false,
-                    'message' => "Purchase Requisition {$purchaseRequisition->pr_number} is not in draft mode (is_draft = 0) and cannot be edited.",
+                    'message' => "Purchase Requisition {$purchaseRequisition->pr_number} is already synced to SAP and cannot be edited.",
                 ], 422);
             }
 
             return redirect()->route('dashboard')->with(
                 'error',
-                "Purchase Requisition {$purchaseRequisition->pr_number} is not in draft mode (is_draft = 0) and cannot be edited."
+                "Purchase Requisition {$purchaseRequisition->pr_number} is already synced to SAP and cannot be edited."
             );
         }
 

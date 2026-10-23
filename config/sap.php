@@ -95,6 +95,12 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_UNITOFMEASUREMENT_CDS/YY1_UnitOfMeasurement?$format=json'
         ),
 
+        // CDS View for Purchasing Info Records (YY1_INFORECORD_CDS)
+        'info_records' => env(
+            'SAP_INFO_RECORDS_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_INFORECORD_CDS/YY1_INFORECORD?$format=json'
+        ),
+
 
         // OData V4 PR Service Root (for CSRF Token Fetch)
         'service_root' => env(

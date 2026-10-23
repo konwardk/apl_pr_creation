@@ -3388,5 +3388,270 @@ class SapMasterDataService
 
         return !empty($parsed) ? $parsed : $this->getFormattedFallbackUnitsOfMeasure();
     }
+
+    /**
+     * Fetch Purchasing Info Records from SAP S/4HANA Cloud CDS View:
+     * YY1_INFORECORD_CDS / YY1_INFORECORD
+     *
+     * @param string|null $search Filter keyword matching PurchasingInfoRecord, Supplier, or Material
+     * @param string|null $supplier Optional supplier filter
+     * @param string|null $material Optional material filter
+     * @param string|null $username Optional basic auth user override
+     * @param string|null $password Optional basic auth password override
+     * @param string|null $endpointUrl Optional endpoint override
+     * @return array
+     */
+    public function fetchInfoRecordsFromCdsView(
+        ?string $search = null,
+        ?string $supplier = null,
+        ?string $material = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.info_records',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_INFORECORD_CDS/YY1_INFORECORD?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $cacheKey = 'sap_info_records_all_v1';
+                $cachedItems = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+                if (is_array($cachedItems) && !empty($cachedItems)) {
+                    $items = $cachedItems;
+                    $durationMs = round((microtime(true) - $startTime) * 1000);
+                } else {
+                    $request = Http::timeout(15)
+                        ->withBasicAuth($authUser, $authPass)
+                        ->withHeaders([
+                            'Accept' => 'application/json',
+                            'Content-Type' => 'application/json',
+                        ]);
+
+                    if (!$verifySsl) {
+                        $request = $request->withoutVerifying();
+                    }
+
+                    $baseUri = explode('?', $endpoint)[0];
+                    $targetUrl = $baseUri . "?\$format=json";
+
+                    $response = $request->get($targetUrl);
+                    $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                    if ($response->successful()) {
+                        $json = $response->json();
+                        $items = $this->parseInfoRecordODataItems($json);
+                        if (!empty($items)) {
+                            \Illuminate\Support\Facades\Cache::put($cacheKey, $items, 3600);
+                        }
+                    } else {
+                        $errorBody = $response->body();
+                        Log::warning('SAP Info Record CDS View fetch non-200: ' . $response->status(), [
+                            'body' => substr($errorBody, 0, 500),
+                        ]);
+
+                        return [
+                            'success' => false,
+                            'is_live' => false,
+                            'status' => $response->status(),
+                            'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                            'endpoint' => $endpoint,
+                            'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                                ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                            'items' => $this->getFormattedFallbackInfoRecords(),
+                            'error_details' => substr($errorBody, 0, 300),
+                        ];
+                    }
+                }
+
+                // Apply filtering if $supplier, $material, or $search is provided
+                if (!empty($supplier)) {
+                    $suppTerm = strtolower(trim($supplier));
+                    $items = array_values(array_filter($items, function ($it) use ($suppTerm) {
+                        return strtolower(trim($it['Supplier'] ?? '')) === $suppTerm;
+                    }));
+                }
+
+                if (!empty($material)) {
+                    $matTerm = strtolower(trim($material));
+                    $items = array_values(array_filter($items, function ($it) use ($matTerm) {
+                        return strtolower(trim($it['Material'] ?? '')) === $matTerm;
+                    }));
+                }
+
+                if (!empty($search)) {
+                    $term = strtolower(trim($search));
+                    $items = array_values(array_filter($items, function ($it) use ($term) {
+                        return str_contains(strtolower($it['PurchasingInfoRecord'] ?? $it['code'] ?? ''), $term)
+                            || str_contains(strtolower($it['Supplier'] ?? ''), $term)
+                            || str_contains(strtolower($it['Material'] ?? ''), $term)
+                            || str_contains(strtolower($it['name'] ?? ''), $term);
+                    }));
+                }
+
+                return [
+                    'success' => true,
+                    'is_live' => true,
+                    'status' => 200,
+                    'latency_ms' => $durationMs,
+                    'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_INFORECORD_CDS)',
+                    'endpoint' => $endpoint,
+                    'count' => count($items),
+                    'items' => $items,
+                    'message' => "Successfully fetched " . count($items) . " purchasing info records live from SAP CDS View in {$durationMs}ms.",
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Info Record CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackInfoRecords(),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Fallback Master Data (SAP Credentials Not Configured)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackInfoRecords()),
+            'items' => $this->getFormattedFallbackInfoRecords(),
+            'message' => 'Serving fallback purchasing info records (SAP credentials not configured).',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Purchasing Info Record items.
+     * Response fields supported:
+     * - PurchasingInfoRecord (e.g. "5300000000")
+     * - Supplier (e.g. "V1200")
+     * - Material (e.g. "1000000005")
+     */
+    protected function parseInfoRecordODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $pir = trim((string)($rec['PurchasingInfoRecord'] ?? $rec['code'] ?? ''));
+            if ($pir === '') {
+                continue;
+            }
+
+            $supplier = trim((string)($rec['Supplier'] ?? ''));
+            $supplierName = trim((string)($rec['SupplierName'] ?? ''));
+            $material = trim((string)($rec['Material'] ?? ''));
+
+            $nameParts = ["Info Record {$pir}"];
+            if ($supplier !== '') {
+                $nameParts[] = $supplierName !== '' ? "Vendor {$supplier} ({$supplierName})" : "Vendor {$supplier}";
+            }
+            if ($material !== '') {
+                $nameParts[] = "Mat {$material}";
+            }
+            $name = implode(' • ', $nameParts);
+
+            $extraParts = [];
+            if ($supplier !== '') {
+                $extraParts[] = $supplierName !== '' ? "Supplier: {$supplier} ({$supplierName})" : "Supplier: {$supplier}";
+            }
+            if ($material !== '') $extraParts[] = "Material: {$material}";
+            $extra = !empty($extraParts) ? implode(' • ', $extraParts) : "Purchasing Info Record {$pir}";
+
+            $parsed[] = [
+                'code' => $pir,
+                'name' => $name,
+                'extra' => $extra,
+                'PurchasingInfoRecord' => $pir,
+                'Supplier' => $supplier,
+                'SupplierName' => $supplierName,
+                'Material' => $material,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackInfoRecords();
+    }
+
+    /**
+     * Fallback purchasing info records for offline development or testing.
+     */
+    public function getFormattedFallbackInfoRecords(): array
+    {
+        return [
+            [
+                'code' => '5300000000',
+                'name' => 'Info Record 5300000000 • Vendor V1200 • Mat 1000000005',
+                'extra' => 'Supplier: V1200 • Material: 1000000005',
+                'PurchasingInfoRecord' => '5300000000',
+                'Supplier' => 'V1200',
+                'Material' => '1000000005',
+            ],
+            [
+                'code' => '5300000001',
+                'name' => 'Info Record 5300000001 • Vendor 2000001 • Mat 500000000',
+                'extra' => 'Supplier: 2000001 • Material: 500000000',
+                'PurchasingInfoRecord' => '5300000001',
+                'Supplier' => '2000001',
+                'Material' => '500000000',
+            ],
+            [
+                'code' => '5300000002',
+                'name' => 'Info Record 5300000002 • Vendor 2000001 • Mat 600000014',
+                'extra' => 'Supplier: 2000001 • Material: 600000014',
+                'PurchasingInfoRecord' => '5300000002',
+                'Supplier' => '2000001',
+                'Material' => '600000014',
+            ],
+            [
+                'code' => '5300000003',
+                'name' => 'Info Record 5300000003 • Vendor 1000012 • Mat 500000000',
+                'extra' => 'Supplier: 1000012 • Material: 500000000',
+                'PurchasingInfoRecord' => '5300000003',
+                'Supplier' => '1000012',
+                'Material' => '500000000',
+            ],
+            [
+                'code' => '5300000004',
+                'name' => 'Info Record 5300000004 • Vendor 1000012 • Mat 1000000005',
+                'extra' => 'Supplier: 1000012 • Material: 1000000005',
+                'PurchasingInfoRecord' => '5300000004',
+                'Supplier' => '1000012',
+                'Material' => '1000000005',
+            ],
+            [
+                'code' => '5300000005',
+                'name' => 'Info Record 5300000005 • Vendor 1000011 • Mat 1200000000',
+                'extra' => 'Supplier: 1000011 • Material: 1200000000',
+                'PurchasingInfoRecord' => '5300000005',
+                'Supplier' => '1000011',
+                'Material' => '1200000000',
+            ],
+        ];
+    }
 }
 

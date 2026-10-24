@@ -103,6 +103,15 @@ export default function SapSearchHelpModal({
             const infoSupplier = (opt.Supplier || opt.supplier || '').toLowerCase();
             const infoSupplierName = (opt.SupplierName || '').toLowerCase();
             const infoMat = (opt.Material || '').toLowerCase();
+            const taxCode = (opt.TaxCode || opt.code || '').toLowerCase();
+            const taxCodeName = (opt.TaxCodeName || opt.name || '').toLowerCase();
+            const vatCondType = (opt.VATConditionType || '').toLowerCase();
+            const taxCalcProc = (opt.TaxCalculationProcedure || '').toLowerCase();
+            const country = (opt.Country || '').toLowerCase();
+            const rate = (opt.ConditionRateRatio !== undefined && opt.ConditionRateRatio !== null ? String(opt.ConditionRateRatio) : '').toLowerCase();
+            const contractType = (opt.PurchaseContractType || opt.PurchasingDocumentType || '').toLowerCase();
+            const contractTypeName = (opt.PurchasingDocumentTypeName || '').toLowerCase();
+            const contractCat = (opt.PurchasingDocumentCategory || '').toLowerCase();
 
             return (
                 product.includes(q) ||
@@ -132,7 +141,16 @@ export default function SapSearchHelpModal({
                 infoRecord.includes(q) ||
                 infoSupplier.includes(q) ||
                 infoSupplierName.includes(q) ||
-                infoMat.includes(q)
+                infoMat.includes(q) ||
+                taxCode.includes(q) ||
+                taxCodeName.includes(q) ||
+                vatCondType.includes(q) ||
+                taxCalcProc.includes(q) ||
+                country.includes(q) ||
+                rate.includes(q) ||
+                contractType.includes(q) ||
+                contractTypeName.includes(q) ||
+                contractCat.includes(q)
             );
         });
     }, [options, searchQuery, isStorageLocationSearch, selectedPlantFilter]);
@@ -179,13 +197,23 @@ export default function SapSearchHelpModal({
         title.toLowerCase().includes('unit of measure') ||
         title.toLowerCase().includes('uom')
     );
-    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isSupplierSearch || isPurchasingOrgSearch || isPurchasingGroupSearch || isStorageLocationSearch || isUnitOfMeasureSearch || isInfoRecordSearch || filteredOptions.some((o) => o.materialType);
+    const isTaxCodeSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isPurchasingOrgSearch && !isPurchasingGroupSearch && !isInfoRecordSearch && !isUnitOfMeasureSearch && (
+        filteredOptions.some((o) => o.TaxCode || o.TaxCodeName || o.VATConditionType || o.TaxCalculationProcedure) ||
+        title.toLowerCase().includes('tax code')
+    );
+    const isOutlineContractSearch = !isMaterialSearch && !isMaterialGroupSearch && !isGlAccountSearch && !isCostCenterSearch && !isSupplierSearch && !isPurchasingOrgSearch && !isPurchasingGroupSearch && !isInfoRecordSearch && !isUnitOfMeasureSearch && !isTaxCodeSearch && (
+        filteredOptions.some((o) => o.PurchaseContractType || o.PurchasingDocumentTypeName || o.PurchasingDocumentCategory) ||
+        title.toLowerCase().includes('outline contract') ||
+        title.toLowerCase().includes('agreement item') ||
+        title.toLowerCase().includes('outline agreement')
+    );
+    const hasExtendedColumns = isMaterialSearch || isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isSupplierSearch || isPurchasingOrgSearch || isPurchasingGroupSearch || isStorageLocationSearch || isUnitOfMeasureSearch || isInfoRecordSearch || isTaxCodeSearch || isOutlineContractSearch || filteredOptions.some((o) => o.materialType);
 
 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className={`relative w-full ${isMaterialSearch ? 'max-w-5xl' : (isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || hasExtendedColumns) ? 'max-w-4xl' : 'max-w-xl'} rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}>
+            <div className={`relative w-full ${isMaterialSearch ? 'max-w-5xl' : (isMaterialGroupSearch || isGlAccountSearch || isCostCenterSearch || isTaxCodeSearch || isOutlineContractSearch || hasExtendedColumns) ? 'max-w-4xl' : 'max-w-xl'} rounded-xl border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}>
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-[#d9e2ec] px-5 py-3.5 bg-[#f8fafc]">
                     <div className="flex items-center gap-2.5">
@@ -229,11 +257,16 @@ export default function SapSearchHelpModal({
                                     ? "Search by Purchase Group Code (e.g. 103, 001) or description..."
                                     : isUnitOfMeasureSearch
                                     ? "Search by Unit (e.g. NO, EA), Commercial Name (e.g. NO, PC), or Long Name (e.g. Number, Piece)..."
+                                    : isTaxCodeSearch
+                                    ? "Search by Tax Code (e.g. J2, G3), Description, Rate, Condition Type (e.g. JICG), or Country..."
+                                    : isOutlineContractSearch
+                                    ? "Search by Contract Type (e.g. CMK, MK), Name (e.g. Quantity Contract), or Category (K)..."
                                     : isInfoRecordSearch
                                     ? "Search by Purchasing Info Record (e.g. 5300000000), Supplier (e.g. V1200, Namrup), or Material (e.g. 1000000005)..."
                                     : isStorageLocationSearch
                                     ? "Search by Storage Location (e.g. SL01, M100), Plant (e.g. 1200), or description..."
                                     : "Type to search code or description..."
+
 
                             }
                             autoFocus
@@ -368,6 +401,22 @@ export default function SapSearchHelpModal({
                                             <th className="py-2.5 px-4 w-44 font-mono">Commercial Name (UnitOfMeasureCommercialName)</th>
                                             <th className="py-2.5 px-4">Description (UnitOfMeasureLongName)</th>
                                         </>
+                                    ) : isTaxCodeSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-28 font-mono">Tax Code</th>
+                                            <th className="py-2.5 px-4">Tax Code Name / Description</th>
+                                            <th className="py-2.5 px-3 w-32 text-center">Tax Rate / Ratio</th>
+                                            <th className="py-2.5 px-3 w-28 text-center font-mono">Condition Type</th>
+                                            <th className="py-2.5 px-3 w-28 text-center font-mono">Tax Procedure</th>
+                                            <th className="py-2.5 px-3 w-24 text-center">Country</th>
+                                        </>
+                                    ) : isOutlineContractSearch ? (
+                                        <>
+                                            <th className="py-2.5 px-4 w-36 font-mono">Contract Type</th>
+                                            <th className="py-2.5 px-4">Contract Type Name / Description</th>
+                                            <th className="py-2.5 px-3 w-28 text-center font-mono">Category</th>
+                                            <th className="py-2.5 px-3 w-32 text-center font-mono">Document Type</th>
+                                        </>
                                     ) : isInfoRecordSearch ? (
                                         <>
                                             <th className="py-2.5 px-4 w-44 font-mono">Purchasing Info Record</th>
@@ -389,15 +438,15 @@ export default function SapSearchHelpModal({
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt, idx) => {
-                                    const optCode = opt.PurchasingInfoRecord ?? opt.UnitOfMeasure ?? opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.PurchasingGroup ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
-                                    const optName = opt.UnitOfMeasureLongName ?? opt.UnitOfMeasureCommercialName ?? opt.StorageLocationName ?? opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.PurchasingGroupName ?? opt.description ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
-                                    const isSelected = selectedCode === optCode || (opt.PurchasingInfoRecord && selectedCode === opt.PurchasingInfoRecord) || (opt.UnitOfMeasure && selectedCode === opt.UnitOfMeasure) || (opt.UnitOfMeasureCommercialName && selectedCode === opt.UnitOfMeasureCommercialName) || selectedCode === opt.code;
+                                    const optCode = opt.PurchaseContractType ?? opt.TaxCode ?? opt.PurchasingInfoRecord ?? opt.UnitOfMeasure ?? opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.PurchasingGroup ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
+                                    const optName = opt.PurchasingDocumentTypeName ?? opt.TaxCodeName ?? opt.UnitOfMeasureLongName ?? opt.UnitOfMeasureCommercialName ?? opt.StorageLocationName ?? opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.PurchasingGroupName ?? opt.description ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
+                                    const isSelected = selectedCode === optCode || (opt.PurchaseContractType && selectedCode === opt.PurchaseContractType) || (opt.TaxCode && selectedCode === opt.TaxCode) || (opt.PurchasingInfoRecord && selectedCode === opt.PurchasingInfoRecord) || (opt.UnitOfMeasure && selectedCode === opt.UnitOfMeasure) || (opt.UnitOfMeasureCommercialName && selectedCode === opt.UnitOfMeasureCommercialName) || selectedCode === opt.code;
 
 
 
                                     return (
                                         <tr
-                                            key={`${optCode}-${opt.Plant || idx}`}
+                                            key={`${optCode}-${opt.VATConditionType || opt.Plant || idx}`}
                                             onClick={() => {
                                                 onSelect(opt);
                                                 onClose();
@@ -657,6 +706,58 @@ export default function SapSearchHelpModal({
                                                         {opt.UnitOfMeasureLongName || opt.name || opt.extra || '-'}
                                                     </td>
                                                 </>
+                                             ) : isTaxCodeSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs font-mono font-bold text-[#0070f2]">
+                                                            {opt.TaxCode || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-semibold text-[#1c2d42]">
+                                                        <div>{opt.TaxCodeName || opt.name}</div>
+                                                        {(opt.CndnRecordValidityStartDate || opt.CndnRecordValidityEndDate) && (
+                                                            <div className="text-[10px] text-slate-400 mt-0.5 font-normal">
+                                                                Valid: {opt.CndnRecordValidityStartDate || '1900-01-01'} to {opt.CndnRecordValidityEndDate || '9999-12-31'}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        {opt.ConditionRateRatio !== undefined && opt.ConditionRateRatio !== null && opt.ConditionRateRatio !== '' ? (
+                                                            <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold ${
+                                                                parseFloat(opt.ConditionRateRatio) < 0
+                                                                    ? 'bg-rose-50 border border-rose-200 text-rose-700'
+                                                                    : parseFloat(opt.ConditionRateRatio) > 0
+                                                                    ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                                                                    : 'bg-slate-100 border border-slate-200 text-slate-700'
+                                                            }`}>
+                                                                {opt.ConditionRateRatio} {opt.ConditionRateRatioUnit || '%'}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400 text-[11px]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono">
+                                                        {opt.VATConditionType ? (
+                                                            <span className="inline-flex rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-mono text-slate-700">
+                                                                {opt.VATConditionType}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400 text-[11px]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono text-xs text-slate-600">
+                                                        {opt.TaxCalculationProcedure || '0TXIN'}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono text-xs text-slate-600">
+                                                        {opt.Country ? (
+                                                            <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                                                                {opt.Country}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400 text-[11px]">-</span>
+                                                        )}
+                                                    </td>
+                                                </>
                                              ) : isInfoRecordSearch ? (
                                                 <>
                                                     <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
@@ -691,6 +792,27 @@ export default function SapSearchHelpModal({
                                                     </td>
                                                     <td className="py-2.5 px-4 text-xs text-[#556b82]">
                                                         {opt.extra || opt.name || 'SAP Purchasing Info Record'}
+                                                    </td>
+                                                </>
+                                            ) : isOutlineContractSearch ? (
+                                                <>
+                                                    <td className="py-2.5 px-4 font-mono font-bold text-[#0070f2]">
+                                                        <span className="rounded bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-xs font-mono font-bold text-indigo-800">
+                                                            {opt.PurchaseContractType || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-4 font-medium text-[#1c2d42]">
+                                                        {opt.PurchasingDocumentTypeName || opt.name}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono">
+                                                        <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-700">
+                                                            {opt.PurchasingDocumentCategory || 'K'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono text-xs text-slate-600">
+                                                        <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[11px] font-mono text-slate-700">
+                                                            {opt.PurchasingDocumentType || opt.code}
+                                                        </span>
                                                     </td>
                                                 </>
                                             ) : (

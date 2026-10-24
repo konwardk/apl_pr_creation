@@ -101,6 +101,19 @@ return [
             'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_INFORECORD_CDS/YY1_INFORECORD?$format=json'
         ),
 
+        // CDS View for Tax Codes (YY1_TAXCODE_CDS)
+        'tax_codes' => env(
+            'SAP_TAX_CODES_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_TAXCODE_CDS/YY1_TAXCODE?$format=json'
+        ),
+
+        // CDS View for Outline Contracts / Agreements (YY1_OUTLINECONTRACT_CDS)
+        'outline_contracts' => env(
+            'SAP_OUTLINE_CONTRACTS_ENDPOINT',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_OUTLINECONTRACT_CDS/YY1_OUTLINECONTRACT?$format=json'
+        ),
+
+
 
         // OData V4 PR Service Root (for CSRF Token Fetch)
         'service_root' => env(

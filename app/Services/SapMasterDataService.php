@@ -3653,5 +3653,626 @@ class SapMasterDataService
             ],
         ];
     }
+
+    /**
+     * Fetch Tax Codes from SAP S/4HANA Cloud CDS View (YY1_TAXCODE_CDS)
+     *
+     * @param string|null $search Optional search filter query
+     * @param string|null $username Optional communication user override
+     * @param string|null $password Optional communication password override
+     * @param string|null $endpointUrl Optional endpoint URL override
+     * @return array
+     */
+    public function fetchTaxCodesFromCdsView(
+        ?string $search = null,
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.tax_codes',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_TAXCODE_CDS/YY1_TAXCODE?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+
+                $cacheKey = 'sap_tax_codes_all_v1';
+                $cachedItems = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+                if (is_array($cachedItems) && !empty($cachedItems)) {
+                    $items = $cachedItems;
+                    $durationMs = round((microtime(true) - $startTime) * 1000);
+                } else {
+                    $request = Http::timeout(15)
+                        ->withBasicAuth($authUser, $authPass)
+                        ->withHeaders([
+                            'Accept' => 'application/json',
+                            'Content-Type' => 'application/json',
+                        ]);
+
+                    if (!$verifySsl) {
+                        $request = $request->withoutVerifying();
+                    }
+
+                    $baseUri = explode('?', $endpoint)[0];
+                    $targetUrl = $baseUri . "?\$format=json";
+
+                    $response = $request->get($targetUrl);
+                    $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                    if ($response->successful()) {
+                        $json = $response->json();
+                        $items = $this->parseTaxCodeODataItems($json);
+                        if (!empty($items)) {
+                            \Illuminate\Support\Facades\Cache::put($cacheKey, $items, 3600);
+                        }
+                    } else {
+                        $errorBody = $response->body();
+                        Log::warning('SAP Tax Code CDS View fetch non-200: ' . $response->status(), [
+                            'body' => substr($errorBody, 0, 500),
+                        ]);
+
+                        return [
+                            'success' => false,
+                            'is_live' => false,
+                            'status' => $response->status(),
+                            'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
+                            'endpoint' => $endpoint,
+                            'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                                ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                            'items' => $this->getFormattedFallbackTaxCodes($search),
+                            'error_details' => substr($errorBody, 0, 300),
+                        ];
+                    }
+                }
+
+                if (!empty($search)) {
+                    $term = strtolower(trim($search));
+                    $items = array_values(array_filter($items, function ($it) use ($term) {
+                        return str_contains(strtolower($it['TaxCode'] ?? $it['code'] ?? ''), $term)
+                            || str_contains(strtolower($it['TaxCodeName'] ?? $it['name'] ?? ''), $term)
+                            || str_contains(strtolower($it['VATConditionType'] ?? ''), $term)
+                            || str_contains(strtolower($it['TaxCalculationProcedure'] ?? ''), $term)
+                            || str_contains(strtolower($it['Country'] ?? ''), $term)
+                            || str_contains(strtolower($it['ConditionRateRatio'] ?? ''), $term);
+                    }));
+                }
+
+                return [
+                    'success' => true,
+                    'is_live' => true,
+                    'status' => 200,
+                    'latency_ms' => $durationMs,
+                    'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_TAXCODE_CDS)',
+                    'endpoint' => $endpoint,
+                    'count' => count($items),
+                    'items' => $items,
+                    'message' => "Successfully fetched " . count($items) . " tax codes live from SAP CDS View in {$durationMs}ms.",
+                ];
+            } catch (\Exception $e) {
+                Log::error('Exception connecting to SAP Tax Code CDS View: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => 500,
+                    'source' => 'SAP S/4HANA Cloud (Connection Error)',
+                    'endpoint' => $endpoint,
+                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'items' => $this->getFormattedFallbackTaxCodes($search),
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'status' => 200,
+            'source' => 'Fallback Master Data (SAP Credentials Not Configured)',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackTaxCodes($search)),
+            'items' => $this->getFormattedFallbackTaxCodes($search),
+            'message' => 'Serving fallback tax codes (SAP credentials not configured).',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Tax Code records.
+     * Response fields supported:
+     * - Country (e.g. "IN")
+     * - TaxCalculationProcedure (e.g. "0TXIN")
+     * - TaxCode (e.g. "J2")
+     * - VATConditionType (e.g. "JICG")
+     * - CndnRecordValidityStartDate
+     * - CndnRecordValidityEndDate
+     * - TaxCodeName (e.g. "CGST 9% +SGST 9% - Domestic input GST-RCM")
+     * - ConditionRateRatio (e.g. "9.000")
+     * - ConditionRateRatioUnit (e.g. "%")
+     */
+    public function parseTaxCodeODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $taxCode = trim((string)($rec['TaxCode'] ?? $rec['code'] ?? ''));
+            if ($taxCode === '') {
+                continue;
+            }
+
+            $country = trim((string)($rec['Country'] ?? ''));
+            $taxCalcProcedure = trim((string)($rec['TaxCalculationProcedure'] ?? ''));
+            $vatConditionType = trim((string)($rec['VATConditionType'] ?? ''));
+            $taxCodeName = trim((string)($rec['TaxCodeName'] ?? $rec['name'] ?? ''));
+            $conditionRateRatio = isset($rec['ConditionRateRatio']) ? trim((string)$rec['ConditionRateRatio']) : '';
+            $conditionRateRatioUnit = trim((string)($rec['ConditionRateRatioUnit'] ?? '%'));
+
+            $startDate = $this->formatODataDate($rec['CndnRecordValidityStartDate'] ?? null);
+            $endDate = $this->formatODataDate($rec['CndnRecordValidityEndDate'] ?? null);
+
+            $rateText = $conditionRateRatio !== '' ? "{$conditionRateRatio}{$conditionRateRatioUnit}" : '';
+            $extraParts = [];
+            if ($taxCodeName !== '') {
+                $extraParts[] = $taxCodeName;
+            }
+            if ($vatConditionType !== '') {
+                $extraParts[] = "Cond: {$vatConditionType}";
+            }
+            if ($rateText !== '') {
+                $extraParts[] = "Rate: {$rateText}";
+            }
+            if ($country !== '') {
+                $extraParts[] = "Country: {$country}";
+            }
+            $extra = !empty($extraParts) ? implode(' • ', $extraParts) : "Tax Code {$taxCode}";
+
+            $parsed[] = [
+                'code' => $taxCode,
+                'name' => $taxCodeName !== '' ? "{$taxCode} - {$taxCodeName}" : $taxCode,
+                'extra' => $extra,
+                'TaxCode' => $taxCode,
+                'TaxCodeName' => $taxCodeName,
+                'Country' => $country,
+                'TaxCalculationProcedure' => $taxCalcProcedure,
+                'VATConditionType' => $vatConditionType,
+                'ConditionRateRatio' => $conditionRateRatio,
+                'ConditionRateRatioUnit' => $conditionRateRatioUnit,
+                'CndnRecordValidityStartDate' => $startDate,
+                'CndnRecordValidityEndDate' => $endDate,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackTaxCodes();
+    }
+
+    /**
+     * Helper to format OData /Date(...)/ timestamp strings.
+     */
+    protected function formatODataDate($rawDate): string
+    {
+        if (empty($rawDate) || !is_string($rawDate)) {
+            return '';
+        }
+        if (preg_match('/\/Date\((-?\d+)\)\//', $rawDate, $matches)) {
+            $ms = (float)$matches[1];
+            if ($ms <= -2208988800000) {
+                return '1900-01-01';
+            }
+            if ($ms >= 253402214400000) {
+                return '9999-12-31';
+            }
+            return date('Y-m-d', (int)($ms / 1000));
+        }
+        return $rawDate;
+    }
+
+    /**
+     * Fallback realistic tax codes representing SAP S/4HANA Cloud India GST (0TXIN)
+     * YY1_TAXCODE_CDS view data for Assam Petro-Chemicals Ltd.
+     */
+    public function getFormattedFallbackTaxCodes(?string $search = null): array
+    {
+        $items = [
+            [
+                'code' => 'J2',
+                'name' => 'J2 - CGST 9% +SGST 9% - Domestic input GST-RCM',
+                'extra' => 'CGST 9% +SGST 9% - Domestic input GST-RCM • Cond: JICG • Rate: 9.000% • Country: IN',
+                'TaxCode' => 'J2',
+                'TaxCodeName' => 'CGST 9% +SGST 9% - Domestic input GST-RCM',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JICG',
+                'ConditionRateRatio' => '9.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'G3',
+                'name' => 'G3 - IGST 18% - Domestic input GST',
+                'extra' => 'IGST 18% - Domestic input GST • Cond: JIIG • Rate: 18.000% • Country: IN',
+                'TaxCode' => 'G3',
+                'TaxCodeName' => 'IGST 18% - Domestic input GST',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JIIG',
+                'ConditionRateRatio' => '18.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'G4',
+                'name' => 'G4 - CGST 9% +SGST 9% - Domestic input GST',
+                'extra' => 'CGST 9% +SGST 9% - Domestic input GST • Cond: JICG • Rate: 9.000% • Country: IN',
+                'TaxCode' => 'G4',
+                'TaxCodeName' => 'CGST 9% +SGST 9% - Domestic input GST',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JICG',
+                'ConditionRateRatio' => '9.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'V1',
+                'name' => 'V1 - 18% Input GST Standard',
+                'extra' => '18% Input GST Standard • Cond: JICG • Rate: 18.000% • Country: IN',
+                'TaxCode' => 'V1',
+                'TaxCodeName' => '18% Input GST Standard',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JICG',
+                'ConditionRateRatio' => '18.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'G0',
+                'name' => 'G0 - Exempted input IGST',
+                'extra' => 'Exempted input IGST • Cond: JIIG • Rate: 0.000% • Country: IN',
+                'TaxCode' => 'G0',
+                'TaxCodeName' => 'Exempted input IGST',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JIIG',
+                'ConditionRateRatio' => '0.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'G1',
+                'name' => 'G1 - Exempted input CGST + SGST',
+                'extra' => 'Exempted input CGST + SGST • Cond: JICG • Rate: 0.000% • Country: IN',
+                'TaxCode' => 'G1',
+                'TaxCodeName' => 'Exempted input CGST + SGST',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JICG',
+                'ConditionRateRatio' => '0.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'J1',
+                'name' => 'J1 - IGST 18% - Domestic input GST -RCM',
+                'extra' => 'IGST 18% - Domestic input GST -RCM • Cond: JIIG • Rate: 18.000% • Country: IN',
+                'TaxCode' => 'J1',
+                'TaxCodeName' => 'IGST 18% - Domestic input GST -RCM',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JIIG',
+                'ConditionRateRatio' => '18.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+            [
+                'code' => 'K1',
+                'name' => 'K1 - IGST 18% - Imports',
+                'extra' => 'IGST 18% - Imports • Cond: JIMN • Rate: 18.000% • Country: IN',
+                'TaxCode' => 'K1',
+                'TaxCodeName' => 'IGST 18% - Imports',
+                'Country' => 'IN',
+                'TaxCalculationProcedure' => '0TXIN',
+                'VATConditionType' => 'JIMN',
+                'ConditionRateRatio' => '18.000',
+                'ConditionRateRatioUnit' => '%',
+                'CndnRecordValidityStartDate' => '1900-01-01',
+                'CndnRecordValidityEndDate' => '9999-12-31',
+            ],
+        ];
+
+        if (!empty($search)) {
+            $term = strtolower(trim($search));
+            $items = array_values(array_filter($items, function ($it) use ($term) {
+                return str_contains(strtolower($it['TaxCode'] ?? $it['code'] ?? ''), $term)
+                    || str_contains(strtolower($it['TaxCodeName'] ?? $it['name'] ?? ''), $term)
+                    || str_contains(strtolower($it['VATConditionType'] ?? ''), $term)
+                    || str_contains(strtolower($it['TaxCalculationProcedure'] ?? ''), $term)
+                    || str_contains(strtolower($it['Country'] ?? ''), $term)
+                    || str_contains(strtolower($it['ConditionRateRatio'] ?? ''), $term);
+            }));
+        }
+
+        return $items;
+    }
+
+    /**
+     * Fetch Outline Contracts / Agreements from the SAP S/4HANA Cloud CDS View endpoint:
+     * YY1_OUTLINECONTRACT_CDS / YY1_OUTLINECONTRACT
+     *
+     * Used for F4 search help on Agreement Item / Outline Contract Type.
+     *
+     * @param string|null $username Optional communication user override
+     * @param string|null $password Optional communication password override
+     * @param string|null $endpointUrl Optional endpoint URL override
+     * @param string|null $search Optional filter query
+     * @return array
+     */
+    public function fetchOutlineContractsFromCdsView(
+        ?string $username = null,
+        ?string $password = null,
+        ?string $endpointUrl = null,
+        ?string $search = null
+    ): array {
+        $endpoint = $endpointUrl ?: config(
+            'sap.endpoints.outline_contracts',
+            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_OUTLINECONTRACT_CDS/YY1_OUTLINECONTRACT?$format=json'
+        );
+
+        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
+        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+
+        if (!empty($authUser) && !empty($authPass)) {
+            try {
+                $startTime = microtime(true);
+                $verifySsl = config('sap.verify_ssl', false);
+                $request = Http::timeout(15)
+                    ->withBasicAuth($authUser, $authPass)
+                    ->withHeaders([
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                    ]);
+
+                if (!$verifySsl) {
+                    $request = $request->withoutVerifying();
+                }
+
+                $response = $request->get($endpoint);
+                $durationMs = round((microtime(true) - $startTime) * 1000);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $parsedItems = $this->parseOutlineContractODataItems($json);
+
+                    if (!empty($search)) {
+                        $term = strtolower(trim($search));
+                        $parsedItems = array_values(array_filter($parsedItems, function ($it) use ($term) {
+                            return str_contains(strtolower($it['PurchaseContractType'] ?? $it['code'] ?? ''), $term)
+                                || str_contains(strtolower($it['PurchasingDocumentTypeName'] ?? $it['name'] ?? ''), $term)
+                                || str_contains(strtolower($it['PurchasingDocumentType'] ?? ''), $term)
+                                || str_contains(strtolower($it['PurchasingDocumentCategory'] ?? ''), $term);
+                        }));
+                    }
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => $response->status(),
+                        'latency_ms' => $durationMs,
+                        'source' => 'SAP S/4HANA Cloud (Live CDS: YY1_OUTLINECONTRACT_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($parsedItems),
+                        'items' => $parsedItems,
+                        'message' => "Successfully fetched " . count($parsedItems) . " outline contracts live from SAP S/4HANA Cloud in {$durationMs}ms.",
+                    ];
+                }
+
+                $errorBody = $response->body();
+                Log::warning('SAP Outline Contract CDS View fetch returned non-200: ' . $response->status(), [
+                    'body' => substr($errorBody, 0, 500),
+                ]);
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'status' => $response->status(),
+                    'source' => 'Fallback (Live SAP CDS Request failed)',
+                    'endpoint' => $endpoint,
+                    'items' => $this->getFormattedFallbackOutlineContracts($search),
+                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}. Serving fallback catalog.",
+                    'error_details' => substr($errorBody, 0, 300),
+                ];
+            } catch (\Exception $e) {
+                Log::error('SAP Outline Contract CDS View fetch exception: ' . $e->getMessage());
+
+                return [
+                    'success' => false,
+                    'is_live' => false,
+                    'source' => 'Fallback (Exception during SAP fetch)',
+                    'endpoint' => $endpoint,
+                    'items' => $this->getFormattedFallbackOutlineContracts($search),
+                    'message' => "Could not reach SAP S/4HANA Cloud: {$e->getMessage()}. Serving fallback catalog.",
+                ];
+            }
+        }
+
+        return [
+            'success' => true,
+            'is_live' => false,
+            'source' => 'Fallback Catalog',
+            'endpoint' => $endpoint,
+            'count' => count($this->getFormattedFallbackOutlineContracts($search)),
+            'items' => $this->getFormattedFallbackOutlineContracts($search),
+            'message' => 'Serving fallback outline contracts (SAP credentials not configured).',
+        ];
+    }
+
+    /**
+     * Parse raw SAP OData V2 or V4 payload into standardized Outline Contract records.
+     * Response fields supported:
+     * - PurchaseContractType (e.g. "CMK")
+     * - PurchasingDocumentType (e.g. "CMK")
+     * - PurchasingDocumentCategory (e.g. "K")
+     * - PurchasingDocumentTypeName (e.g. "Qty Contract-PSE")
+     */
+    public function parseOutlineContractODataItems(array $json): array
+    {
+        $rawRecords = [];
+        if (isset($json['d']['results']) && is_array($json['d']['results'])) {
+            $rawRecords = $json['d']['results'];
+        } elseif (isset($json['d']) && is_array($json['d'])) {
+            $rawRecords = $json['d'];
+        } elseif (isset($json['value']) && is_array($json['value'])) {
+            $rawRecords = $json['value'];
+        } elseif (isset($json[0]) && is_array($json[0])) {
+            $rawRecords = $json;
+        }
+
+        $parsed = [];
+        foreach ($rawRecords as $rec) {
+            $contractType = trim((string)($rec['PurchaseContractType'] ?? $rec['PurchasingDocumentType'] ?? $rec['code'] ?? ''));
+            if ($contractType === '') {
+                continue;
+            }
+
+            $docType = trim((string)($rec['PurchasingDocumentType'] ?? $contractType));
+            $docCategory = trim((string)($rec['PurchasingDocumentCategory'] ?? 'K'));
+            $docTypeName = trim((string)($rec['PurchasingDocumentTypeName'] ?? $rec['name'] ?? ''));
+
+            $extraParts = [];
+            if ($docCategory !== '') {
+                $extraParts[] = "Cat: {$docCategory}";
+            }
+            if ($docType !== '') {
+                $extraParts[] = "Type: {$docType}";
+            }
+            if ($docTypeName !== '') {
+                $extraParts[] = $docTypeName;
+            }
+            $extra = !empty($extraParts) ? implode(' • ', $extraParts) : "Contract Type {$contractType}";
+
+            $parsed[] = [
+                'code' => $contractType,
+                'name' => $docTypeName !== '' ? "{$contractType} - {$docTypeName}" : $contractType,
+                'extra' => $extra,
+                'PurchaseContractType' => $contractType,
+                'PurchasingDocumentType' => $docType,
+                'PurchasingDocumentCategory' => $docCategory,
+                'PurchasingDocumentTypeName' => $docTypeName,
+                'raw_data' => $rec,
+            ];
+        }
+
+        return !empty($parsed) ? $parsed : $this->getFormattedFallbackOutlineContracts();
+    }
+
+    /**
+     * Fallback realistic outline contract types representing SAP S/4HANA Cloud
+     * YY1_OUTLINECONTRACT_CDS view data for Assam Petro-Chemicals Ltd.
+     */
+    public function getFormattedFallbackOutlineContracts(?string $search = null): array
+    {
+        $items = [
+            [
+                'code' => 'CMK',
+                'name' => 'CMK - Qty Contract-PSE',
+                'extra' => 'Cat: K • Type: CMK • Qty Contract-PSE',
+                'PurchaseContractType' => 'CMK',
+                'PurchasingDocumentType' => 'CMK',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Qty Contract-PSE',
+            ],
+            [
+                'code' => 'CWK',
+                'name' => 'CWK - Value Contract-PSE',
+                'extra' => 'Cat: K • Type: CWK • Value Contract-PSE',
+                'PurchaseContractType' => 'CWK',
+                'PurchasingDocumentType' => 'CWK',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Value Contract-PSE',
+            ],
+            [
+                'code' => 'MK',
+                'name' => 'MK - Quantity Contract',
+                'extra' => 'Cat: K • Type: MK • Quantity Contract',
+                'PurchaseContractType' => 'MK',
+                'PurchasingDocumentType' => 'MK',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Quantity Contract',
+            ],
+            [
+                'code' => 'WK',
+                'name' => 'WK - Value Contract',
+                'extra' => 'Cat: K • Type: WK • Value Contract',
+                'PurchaseContractType' => 'WK',
+                'PurchasingDocumentType' => 'WK',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Value Contract',
+            ],
+            [
+                'code' => 'ZCMC',
+                'name' => 'ZCMC - Composite Contract',
+                'extra' => 'Cat: K • Type: ZCMC • Composite Contract',
+                'PurchaseContractType' => 'ZCMC',
+                'PurchasingDocumentType' => 'ZCMC',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Composite Contract',
+            ],
+            [
+                'code' => 'ZMAC',
+                'name' => 'ZMAC - Material Contract',
+                'extra' => 'Cat: K • Type: ZMAC • Material Contract',
+                'PurchaseContractType' => 'ZMAC',
+                'PurchasingDocumentType' => 'ZMAC',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Material Contract',
+            ],
+            [
+                'code' => 'ZSRC',
+                'name' => 'ZSRC - Service Contract',
+                'extra' => 'Cat: K • Type: ZSRC • Service Contract',
+                'PurchaseContractType' => 'ZSRC',
+                'PurchasingDocumentType' => 'ZSRC',
+                'PurchasingDocumentCategory' => 'K',
+                'PurchasingDocumentTypeName' => 'Service Contract',
+            ],
+        ];
+
+        if (!empty($search)) {
+            $term = strtolower(trim($search));
+            $items = array_values(array_filter($items, function ($it) use ($term) {
+                return str_contains(strtolower($it['PurchaseContractType'] ?? $it['code'] ?? ''), $term)
+                    || str_contains(strtolower($it['PurchasingDocumentTypeName'] ?? $it['name'] ?? ''), $term)
+                    || str_contains(strtolower($it['PurchasingDocumentType'] ?? ''), $term)
+                    || str_contains(strtolower($it['PurchasingDocumentCategory'] ?? ''), $term);
+            }));
+        }
+
+        return $items;
+    }
 }
+
+
 

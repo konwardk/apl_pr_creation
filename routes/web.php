@@ -39,6 +39,8 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('sap-purchasing-groups', [PurchasingGroupController::class, 'getForPr'])->name('sap-purchasing-groups.index');
     Route::get('sap-units-of-measure', [PurchaseRequisitionController::class, 'getUnitsOfMeasure'])->name('sap-units-of-measure.index');
     Route::get('sap-info-records', [PurchaseRequisitionController::class, 'getInfoRecords'])->name('sap-info-records.index');
+    Route::get('sap-tax-codes', [PurchaseRequisitionController::class, 'getTaxCodes'])->name('sap-tax-codes.index');
+    Route::get('sap-outline-contracts', [PurchaseRequisitionController::class, 'getOutlineContracts'])->name('sap-outline-contracts.index');
 
 
     // Super Administrator only: System Configuration (User Management & Department Management) & PR Configuration

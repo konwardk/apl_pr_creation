@@ -153,6 +153,28 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
+     * Fetch Tax Codes from SAP S/4HANA Cloud CDS View (YY1_TAXCODE_CDS)
+     */
+    public function getTaxCodes(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchTaxCodesFromCdsView($search);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Fetch Outline Contracts / Agreements from SAP S/4HANA Cloud CDS View (YY1_OUTLINECONTRACT_CDS)
+     */
+    public function getOutlineContracts(Request $request): JsonResponse
+    {
+        $search = $request->query('query') ?? $request->query('search');
+        $result = $this->sapService->fetchOutlineContractsFromCdsView(null, null, null, $search);
+
+        return response()->json($result);
+    }
+
+    /**
      * Display the purchase requisition creation page.
      */
 
@@ -623,7 +645,11 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
-        DB::transaction(function () use ($validated, $request, $isDraft, &$pr, &$prNumber) {
+        $pr = null;
+        $prNumber = null;
+        $totalAmount = 0;
+
+        DB::transaction(function () use ($validated, $request, $isDraft, &$pr, &$prNumber, &$totalAmount) {
             $nextSeq = (PurchaseRequisition::max('id') ?? 0) + 1;
             $prNumber = 'PR-' . date('Y') . '-' . str_pad($nextSeq, 5, '0', STR_PAD_LEFT);
 
@@ -1138,7 +1164,9 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
-        DB::transaction(function () use ($validated, $request, $isDraft, $purchaseRequisition, $prNumber) {
+        $totalAmount = 0;
+
+        DB::transaction(function () use ($validated, $request, $isDraft, $purchaseRequisition, $prNumber, &$totalAmount) {
             $totalAmount = 0;
             foreach ($validated['items'] as $item) {
                 $pu = !empty($item['price_unit']) && (float)$item['price_unit'] > 0 ? (float)$item['price_unit'] : 1;

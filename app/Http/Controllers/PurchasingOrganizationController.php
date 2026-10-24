@@ -268,11 +268,11 @@ class PurchasingOrganizationController extends Controller
             $formatted = $dbItems->map(function ($org) {
                 $plantsStr = !empty($org->plants) ? implode(', ', $org->plants) : '';
                 return [
-                    'code' => $org->code,
-                    'name' => $org->name,
-                    'PurchasingOrganization' => $org->code,
-                    'PurchasingOrganizationName' => $org->name,
-                    'company_code' => $org->company_code,
+                    'code' => (string)$org->code,
+                    'name' => (string)$org->name,
+                    'PurchasingOrganization' => (string)$org->code,
+                    'PurchasingOrganizationName' => (string)$org->name,
+                    'company_code' => (string)$org->company_code,
                     'plants' => $org->plants ?? [],
                     'extra' => $plantsStr ? "Mapped Plants: {$plantsStr}" : 'Company Code: 1000',
                     'description' => $org->description,

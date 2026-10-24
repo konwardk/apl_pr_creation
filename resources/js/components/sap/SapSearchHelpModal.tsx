@@ -75,43 +75,43 @@ export default function SapSearchHelpModal({
         const q = searchQuery.toLowerCase().trim();
         if (!q) return base;
         return base.filter((opt) => {
-            const product = (opt.Product || opt.MaterialGroup || opt.GLAccount || opt.CostCenter || opt.code || '').toLowerCase();
-            const productName = (opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.GLAccountName || opt.name || '').toLowerCase();
-            const storLoc = (opt.StorageLocation || '').toLowerCase();
-            const storLocName = (opt.StorageLocationName || '').toLowerCase();
-            const companyCode = (opt.CompanyCode || opt.companyCode || '').toLowerCase();
-            const controllingArea = (opt.ControllingArea || opt.controllingArea || '').toLowerCase();
-            const profitCenter = (opt.ProfitCenter || opt.profitCenter || '').toLowerCase();
-            const longName = (opt.GLAccountLongName || '').toLowerCase();
-            const plant = (opt.Plant || opt.plant || opt.ValuationArea || '').toLowerCase();
-            const extra = (opt.extra || '').toLowerCase();
-            const uom = (opt.BaseUnit || opt.UnitOfMeasure || opt.uom || '').toLowerCase();
-            const uomCommercial = (opt.UnitOfMeasureCommercialName || '').toLowerCase();
-            const uomLong = (opt.UnitOfMeasureLongName || '').toLowerCase();
-            const group = (opt.ProductGroup || opt.materialGroup || opt.MaterialGroup || '').toLowerCase();
-            const extId = (opt.ProductExternalID || '').toLowerCase();
-            const type = (opt.ProductType || opt.materialType || '').toLowerCase();
-            const supplier = (opt.Supplier || opt.supplierName || opt.SupplierName || '').toLowerCase();
-            const purchOrg = (opt.PurchasingOrganization || opt.purchasing_organization || opt.purchasingOrg || '').toLowerCase();
-            const purchOrgName = (opt.PurchasingOrganizationName || opt.purchasingOrgName || '').toLowerCase();
-            const purchGroup = (opt.PurchasingGroup || opt.purchasing_group || '').toLowerCase();
-            const purchGroupName = (opt.PurchasingGroupName || opt.description || '').toLowerCase();
+            const product = String(opt.Product || opt.MaterialGroup || opt.GLAccount || opt.CostCenter || opt.code || '').toLowerCase();
+            const productName = String(opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.GLAccountName || opt.name || '').toLowerCase();
+            const storLoc = String(opt.StorageLocation || '').toLowerCase();
+            const storLocName = String(opt.StorageLocationName || '').toLowerCase();
+            const companyCode = String(opt.CompanyCode || opt.companyCode || '').toLowerCase();
+            const controllingArea = String(opt.ControllingArea || opt.controllingArea || '').toLowerCase();
+            const profitCenter = String(opt.ProfitCenter || opt.profitCenter || '').toLowerCase();
+            const longName = String(opt.GLAccountLongName || '').toLowerCase();
+            const plant = String(opt.Plant || opt.plant || opt.ValuationArea || '').toLowerCase();
+            const extra = String(opt.extra || '').toLowerCase();
+            const uom = String(opt.BaseUnit || opt.UnitOfMeasure || opt.uom || '').toLowerCase();
+            const uomCommercial = String(opt.UnitOfMeasureCommercialName || '').toLowerCase();
+            const uomLong = String(opt.UnitOfMeasureLongName || '').toLowerCase();
+            const group = String(opt.ProductGroup || opt.materialGroup || opt.MaterialGroup || '').toLowerCase();
+            const extId = String(opt.ProductExternalID || '').toLowerCase();
+            const type = String(opt.ProductType || opt.materialType || '').toLowerCase();
+            const supplier = String(opt.Supplier || opt.supplierName || opt.SupplierName || '').toLowerCase();
+            const purchOrg = String(opt.PurchasingOrganization || opt.purchasing_organization || opt.purchasingOrg || '').toLowerCase();
+            const purchOrgName = String(opt.PurchasingOrganizationName || opt.purchasingOrgName || '').toLowerCase();
+            const purchGroup = String(opt.PurchasingGroup || opt.purchasing_group || '').toLowerCase();
+            const purchGroupName = String(opt.PurchasingGroupName || opt.description || '').toLowerCase();
             const plants = Array.isArray(opt.plants) ? opt.plants.join(' ').toLowerCase() : '';
-            const proc = (opt.InventoryValuationProcedure || opt.priceControl || '').toLowerCase();
-            const currency = (opt.Currency || opt.currency || '').toLowerCase();
-            const infoRecord = (opt.PurchasingInfoRecord || '').toLowerCase();
-            const infoSupplier = (opt.Supplier || opt.supplier || '').toLowerCase();
-            const infoSupplierName = (opt.SupplierName || '').toLowerCase();
-            const infoMat = (opt.Material || '').toLowerCase();
-            const taxCode = (opt.TaxCode || opt.code || '').toLowerCase();
-            const taxCodeName = (opt.TaxCodeName || opt.name || '').toLowerCase();
-            const vatCondType = (opt.VATConditionType || '').toLowerCase();
-            const taxCalcProc = (opt.TaxCalculationProcedure || '').toLowerCase();
-            const country = (opt.Country || '').toLowerCase();
+            const proc = String(opt.InventoryValuationProcedure || opt.priceControl || '').toLowerCase();
+            const currency = String(opt.Currency || opt.currency || '').toLowerCase();
+            const infoRecord = String(opt.PurchasingInfoRecord || '').toLowerCase();
+            const infoSupplier = String(opt.Supplier || opt.supplier || '').toLowerCase();
+            const infoSupplierName = String(opt.SupplierName || '').toLowerCase();
+            const infoMat = String(opt.Material || '').toLowerCase();
+            const taxCode = String(opt.TaxCode || opt.code || '').toLowerCase();
+            const taxCodeName = String(opt.TaxCodeName || opt.name || '').toLowerCase();
+            const vatCondType = String(opt.VATConditionType || '').toLowerCase();
+            const taxCalcProc = String(opt.TaxCalculationProcedure || '').toLowerCase();
+            const country = String(opt.Country || '').toLowerCase();
             const rate = (opt.ConditionRateRatio !== undefined && opt.ConditionRateRatio !== null ? String(opt.ConditionRateRatio) : '').toLowerCase();
-            const contractType = (opt.PurchaseContractType || opt.PurchasingDocumentType || '').toLowerCase();
-            const contractTypeName = (opt.PurchasingDocumentTypeName || '').toLowerCase();
-            const contractCat = (opt.PurchasingDocumentCategory || '').toLowerCase();
+            const contractType = String(opt.PurchaseContractType || opt.PurchasingDocumentType || '').toLowerCase();
+            const contractTypeName = String(opt.PurchasingDocumentTypeName || '').toLowerCase();
+            const contractCat = String(opt.PurchasingDocumentCategory || '').toLowerCase();
 
             return (
                 product.includes(q) ||
@@ -438,9 +438,9 @@ export default function SapSearchHelpModal({
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredOptions.map((opt, idx) => {
-                                    const optCode = opt.PurchaseContractType ?? opt.TaxCode ?? opt.PurchasingInfoRecord ?? opt.UnitOfMeasure ?? opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.PurchasingGroup ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '';
-                                    const optName = opt.PurchasingDocumentTypeName ?? opt.TaxCodeName ?? opt.UnitOfMeasureLongName ?? opt.UnitOfMeasureCommercialName ?? opt.StorageLocationName ?? opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.PurchasingGroupName ?? opt.description ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '';
-                                    const isSelected = selectedCode === optCode || (opt.PurchaseContractType && selectedCode === opt.PurchaseContractType) || (opt.TaxCode && selectedCode === opt.TaxCode) || (opt.PurchasingInfoRecord && selectedCode === opt.PurchasingInfoRecord) || (opt.UnitOfMeasure && selectedCode === opt.UnitOfMeasure) || (opt.UnitOfMeasureCommercialName && selectedCode === opt.UnitOfMeasureCommercialName) || selectedCode === opt.code;
+                                    const optCode = String(opt.PurchaseContractType ?? opt.TaxCode ?? opt.PurchasingInfoRecord ?? opt.UnitOfMeasure ?? opt.StorageLocation ?? opt.PurchasingOrganization ?? opt.PurchasingGroup ?? opt.Supplier ?? opt.MaterialGroup ?? opt.Product ?? opt.GLAccount ?? opt.CostCenter ?? opt.AccountAssignmentCategory ?? opt.code ?? '');
+                                    const optName = String(opt.PurchasingDocumentTypeName ?? opt.TaxCodeName ?? opt.UnitOfMeasureLongName ?? opt.UnitOfMeasureCommercialName ?? opt.StorageLocationName ?? opt.PurchasingOrganizationName ?? opt.purchasingOrgName ?? opt.PurchasingGroupName ?? opt.description ?? opt.SupplierName ?? opt.supplierName ?? opt.MaterialGroupName ?? opt.ProductName ?? opt.GLAccountName ?? opt.AcctAssignmentCategoryName ?? opt.name ?? '');
+                                    const isSelected = String(selectedCode) === optCode || (opt.PurchaseContractType && String(selectedCode) === String(opt.PurchaseContractType)) || (opt.TaxCode && String(selectedCode) === String(opt.TaxCode)) || (opt.PurchasingInfoRecord && String(selectedCode) === String(opt.PurchasingInfoRecord)) || (opt.UnitOfMeasure && String(selectedCode) === String(opt.UnitOfMeasure)) || (opt.UnitOfMeasureCommercialName && String(selectedCode) === String(opt.UnitOfMeasureCommercialName)) || String(selectedCode) === String(opt.code);
 
 
 

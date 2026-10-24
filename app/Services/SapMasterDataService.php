@@ -2830,10 +2830,10 @@ class SapMasterDataService
             sort($data['plants']);
             $plantsStr = implode(', ', $data['plants']);
             $parsed[] = [
-                'code' => $code,
-                'name' => $data['name'],
-                'PurchasingOrganization' => $code,
-                'PurchasingOrganizationName' => $data['name'],
+                'code' => (string)$code,
+                'name' => (string)$data['name'],
+                'PurchasingOrganization' => (string)$code,
+                'PurchasingOrganizationName' => (string)$data['name'],
                 'company_code' => '1000',
                 'plants' => $data['plants'],
                 'extra' => $plantsStr ? "Mapped Plants: {$plantsStr}" : 'Company Code: 1000',

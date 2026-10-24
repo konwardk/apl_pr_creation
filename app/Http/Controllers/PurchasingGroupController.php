@@ -314,11 +314,12 @@ class PurchasingGroupController extends Controller
         if ($dbGroups->isNotEmpty()) {
             $formatted = $dbGroups->map(function ($group) {
                 $description = $group->description ?: $group->name;
+                $code = (string) $group->code;
                 return [
-                    'code' => $group->code,
-                    'name' => "{$group->code} - {$description}",
+                    'code' => $code,
+                    'name' => "{$code} - {$description}",
                     'groupName' => $description,
-                    'PurchasingGroup' => $group->code,
+                    'PurchasingGroup' => $code,
                     'PurchasingGroupName' => $description,
                     'description' => $description,
                     'extra' => $description,
@@ -341,7 +342,7 @@ class PurchasingGroupController extends Controller
         $items = $liveResult['items'] ?? [];
 
         $formatted = array_map(function ($g) {
-            $code = $g['code'] ?? $g['PurchasingGroup'] ?? '';
+            $code = (string) ($g['code'] ?? $g['PurchasingGroup'] ?? '');
             $desc = $g['description'] ?? $g['PurchasingGroupName'] ?? $g['name'] ?? '';
             return [
                 'code' => $code,

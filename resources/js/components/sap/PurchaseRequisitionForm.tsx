@@ -146,7 +146,7 @@ export default function PurchaseRequisitionForm({
 
     const activePrDocTypes = prDocumentTypes && prDocumentTypes.length > 0
         ? prDocumentTypes.filter((dt) => dt.is_active).map((dt) => ({
-            code: dt.code,
+            code: String(dt.code),
             name: dt.name,
             extra: dt.description || dt.category || '',
         }))
@@ -154,7 +154,7 @@ export default function PurchaseRequisitionForm({
 
     const activeItemCategories = itemCategories && itemCategories.length > 0
         ? itemCategories.filter((ic) => ic.is_active).map((ic) => ({
-            code: ic.code,
+            code: String(ic.code),
             name: ic.name,
             extra: ic.description || '',
         }))
@@ -167,9 +167,9 @@ export default function PurchaseRequisitionForm({
         ...(activeItemCategories ? { itemCategories: activeItemCategories } : {}),
     };
 
-    const defaultPlant = dataCatalog.plants && dataCatalog.plants.length > 0 ? dataCatalog.plants[0].code : '1200';
-    const defaultDocType = dataCatalog.documentTypes?.find((dt) => dt.code === 'ZMAT')?.code
-        || (dataCatalog.documentTypes && dataCatalog.documentTypes.length > 0 ? dataCatalog.documentTypes[0].code : 'ZMAT');
+    const defaultPlant = dataCatalog.plants && dataCatalog.plants.length > 0 ? String(dataCatalog.plants[0].code) : '1200';
+    const defaultDocType = dataCatalog.documentTypes?.find((dt) => String(dt.code) === 'ZMAT')?.code
+        || (dataCatalog.documentTypes && dataCatalog.documentTypes.length > 0 ? String(dataCatalog.documentTypes[0].code) : 'ZMAT');
 
     const getTodayString = (addDays = 0) => {
         const d = new Date();
@@ -616,35 +616,35 @@ export default function PurchaseRequisitionForm({
         fetch('/sap-plants', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then((r) => r.json())
             .then((d) => {
-                if (d?.items?.length) setSapPlantsCache(d.items);
+                if (d?.items?.length) setSapPlantsCache(d.items.map((it: any) => ({ ...it, code: String(it?.code ?? it?.Plant ?? '') })));
             })
             .catch(() => {});
 
         fetch('/sap-purchasing-groups', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then((r) => r.json())
             .then((d) => {
-                if (d?.items?.length) setSapPurchasingGroupsCache(d.items);
+                if (d?.items?.length) setSapPurchasingGroupsCache(d.items.map((it: any) => ({ ...it, code: String(it?.code ?? it?.PurchasingGroup ?? '') })));
             })
             .catch(() => {});
 
         fetch('/sap-purchasing-organizations', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then((r) => r.json())
             .then((d) => {
-                if (d?.items?.length) setSapPurchasingOrgsCache(d.items);
+                if (d?.items?.length) setSapPurchasingOrgsCache(d.items.map((it: any) => ({ ...it, code: String(it?.code ?? it?.PurchasingOrganization ?? '') })));
             })
             .catch(() => {});
 
         fetch('/sap-account-assignment-categories', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then((r) => r.json())
             .then((d) => {
-                if (d?.items?.length) setSapAccountAssignmentCategoriesCache(d.items);
+                if (d?.items?.length) setSapAccountAssignmentCategoriesCache(d.items.map((it: any) => ({ ...it, code: String(it?.code ?? it?.AccountAssignmentCategory ?? '') })));
             })
             .catch(() => {});
 
         fetch('/sap-units-of-measure', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
             .then((r) => r.json())
             .then((d) => {
-                if (d?.items?.length) setSapUnitsOfMeasureCache(d.items);
+                if (d?.items?.length) setSapUnitsOfMeasureCache(d.items.map((it: any) => ({ ...it, code: String(it?.code ?? it?.UnitOfMeasure ?? '') })));
             })
             .catch(() => {});
 
@@ -777,10 +777,10 @@ export default function PurchaseRequisitionForm({
             if (matData.ProductType === 'ROH') {
                 matGroup = '100005'; // Raw Materials
             } else if (dataCatalog.materialGroups && dataCatalog.materialGroups.length > 0) {
-                const rawMat = dataCatalog.materialGroups.find((g) => g.code === '100005' || g.name?.toLowerCase().includes('raw'));
+                const rawMat = dataCatalog.materialGroups.find((g) => g.code === '100005' || String(g.name || '').toLowerCase().includes('raw'));
                 matGroup = rawMat ? rawMat.code : dataCatalog.materialGroups[0].code;
             } else if (sapMaterialGroupsCache.length > 0) {
-                const rawMat = sapMaterialGroupsCache.find((g) => g.code === '100005' || g.name?.toLowerCase().includes('raw'));
+                const rawMat = sapMaterialGroupsCache.find((g) => g.code === '100005' || String(g.name || '').toLowerCase().includes('raw'));
                 matGroup = rawMat ? rawMat.code : sapMaterialGroupsCache[0].code;
             } else {
                 matGroup = '100005';
@@ -1537,11 +1537,12 @@ export default function PurchaseRequisitionForm({
             });
             const data = await res.json();
             if (data.items && data.items.length > 0) {
-                setSapPurchasingOrgsCache(data.items);
+                const normalized = data.items.map((it: any) => ({ ...it, code: String(it?.code ?? it?.PurchasingOrganization ?? '') }));
+                setSapPurchasingOrgsCache(normalized);
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    options: data.items,
-                    subtitle: `SAP Purchasing Organizations (${data.items.length} organizations)`,
+                    options: normalized,
+                    subtitle: `SAP Purchasing Organizations (${normalized.length} organizations)`,
                     isLoading: false,
                 }));
             } else {
@@ -1563,10 +1564,11 @@ export default function PurchaseRequisitionForm({
         }
     };
 
-    const getPurchasingOrgLabel = (code?: string) => {
+    const getPurchasingOrgLabel = (code?: string | number) => {
         if (!code) return '';
+        const searchCode = String(code);
         const allOrgs = sapPurchasingOrgsCache.length > 0 ? sapPurchasingOrgsCache : (dataCatalog.purchasingOrganizations || []);
-        const found = allOrgs.find((o) => (o.PurchasingOrganization || o.code) === code);
+        const found = allOrgs.find((o) => String(o.PurchasingOrganization || o.code) === searchCode);
         return found ? (found.PurchasingOrganizationName || found.purchasingOrgName || found.name || '') : '';
     };
 
@@ -1617,10 +1619,11 @@ export default function PurchaseRequisitionForm({
             if (groups && groups.length > 0) {
                 const formatted = groups.map((g: any) => {
                     const desc = g.description || g.PurchasingGroupName || g.name || '';
+                    const code = String(g.code ?? g.PurchasingGroup ?? '');
                     return {
-                        code: g.code,
+                        code,
                         name: desc,
-                        PurchasingGroup: g.code,
+                        PurchasingGroup: code,
                         PurchasingGroupName: desc,
                         description: desc,
                         extra: desc,
@@ -1652,10 +1655,11 @@ export default function PurchaseRequisitionForm({
         }
     };
 
-    const getPurchasingGroupLabel = (code?: string) => {
+    const getPurchasingGroupLabel = (code?: string | number) => {
         if (!code) return '';
+        const searchCode = String(code);
         const allGroups = sapPurchasingGroupsCache.length > 0 ? sapPurchasingGroupsCache : (dataCatalog.purchasingGroups || []);
-        const found = allGroups.find((g) => (g.PurchasingGroup || g.code) === code);
+        const found = allGroups.find((g) => String(g.PurchasingGroup || g.code) === searchCode);
         return found ? (found.description || found.PurchasingGroupName || found.name || '') : '';
     };
 
@@ -2475,14 +2479,16 @@ export default function PurchaseRequisitionForm({
         const errs: Record<string, string> = {};
 
         // 1. Header Validation
-        if (!isDraft && !description.trim()) {
+        if (!isDraft && !String(description || '').trim()) {
             errs['header_description'] = 'Requisition Header Description is mandatory to sync with SAP.';
         }
 
-        const validDocTypes = (dataCatalog.documentTypes || []).map((dt) => dt.code.toUpperCase());
+        const validDocTypes = (dataCatalog.documentTypes || [])
+            .map((dt) => String(dt?.code || '').trim().toUpperCase())
+            .filter(Boolean);
         if (!prType) {
             errs['header_pr_type'] = 'Document Type is mandatory. Please select a Document Type.';
-        } else if (validDocTypes.length > 0 && !validDocTypes.includes(prType.toUpperCase())) {
+        } else if (validDocTypes.length > 0 && !validDocTypes.includes(String(prType).trim().toUpperCase())) {
             errs['header_pr_type'] = `Invalid Document Type '${prType}'. Please select a valid document type from the list.`;
         }
 
@@ -2493,42 +2499,42 @@ export default function PurchaseRequisitionForm({
         }
 
         const validPlants = Array.from(new Set([
-            ...(dataCatalog.plants || []).map((p) => p.code.toUpperCase()),
-            ...sapPlantsCache.map((p) => p.code.toUpperCase()),
+            ...(dataCatalog.plants || []).map((p) => String(p?.code || p?.Plant || '').trim().toUpperCase()),
+            ...sapPlantsCache.map((p) => String(p?.code || p?.Plant || '').trim().toUpperCase()),
             '1100', '1200', '1300', '1400',
-        ]));
+        ])).filter(Boolean);
 
         const validPurchasingGroups = Array.from(new Set([
-            ...(dataCatalog.purchasingGroups || []).map((pg) => pg.code.toUpperCase()),
-            ...sapPurchasingGroupsCache.map((pg) => pg.code.toUpperCase()),
-            ...(defaultPurchasingGroup ? [defaultPurchasingGroup.toUpperCase()] : []),
+            ...(dataCatalog.purchasingGroups || []).map((pg) => String(pg?.code || pg?.PurchasingGroup || '').trim().toUpperCase()),
+            ...sapPurchasingGroupsCache.map((pg) => String(pg?.code || pg?.PurchasingGroup || '').trim().toUpperCase()),
+            ...(defaultPurchasingGroup ? [String(defaultPurchasingGroup).trim().toUpperCase()] : []),
             '101', '102', '103', '104', '105', '106', '107', '108', '109', '110',
-        ]));
+        ])).filter(Boolean);
 
         const validPurchasingOrgs = Array.from(new Set([
-            ...(dataCatalog.purchasingOrganizations || []).map((po) => po.code.toUpperCase()),
-            ...sapPurchasingOrgsCache.map((po) => po.code.toUpperCase()),
+            ...(dataCatalog.purchasingOrganizations || []).map((po) => String(po?.code || po?.PurchasingOrganization || '').trim().toUpperCase()),
+            ...sapPurchasingOrgsCache.map((po) => String(po?.code || po?.PurchasingOrganization || '').trim().toUpperCase()),
             '1100', '1000',
-        ]));
+        ])).filter(Boolean);
 
         const validItemCats = Array.from(new Set([
             '',
-            ...(dataCatalog.itemCategories || []).map((ic) => ic.code.toUpperCase()),
+            ...(dataCatalog.itemCategories || []).map((ic) => String(ic?.code || '').trim().toUpperCase()),
             'B', 'D', 'L', 'S', 'U',
         ]));
 
         const validAacs = Array.from(new Set([
             '',
-            ...(dataCatalog.accountAssignmentCategories || []).map((aac) => aac.code.toUpperCase()),
-            ...sapAccountAssignmentCategoriesCache.map((aac) => aac.code.toUpperCase()),
+            ...(dataCatalog.accountAssignmentCategories || []).map((aac) => String(aac?.code || aac?.AccountAssignmentCategory || '').trim().toUpperCase()),
+            ...sapAccountAssignmentCategoriesCache.map((aac) => String(aac?.code || aac?.AccountAssignmentCategory || '').trim().toUpperCase()),
             'K', 'P', 'U', 'A', 'C', 'F',
         ]));
 
         const validUoms = Array.from(new Set([
-            ...(dataCatalog.unitsOfMeasure || []).map((u) => u.code.toUpperCase()),
-            ...sapUnitsOfMeasureCache.map((u) => (u.UnitOfMeasure || u.UnitOfMeasureCommercialName || u.code || '').toUpperCase()),
+            ...(dataCatalog.unitsOfMeasure || []).map((u) => String(u?.code || u?.UnitOfMeasure || '').trim().toUpperCase()),
+            ...sapUnitsOfMeasureCache.map((u) => String(u?.UnitOfMeasure || u?.UnitOfMeasureCommercialName || u?.code || '').trim().toUpperCase()),
             'NO', 'EA', 'PC', 'KG', 'M', 'L', 'HR', 'DAY', 'SET', 'AU', 'LE', 'M3', 'TO', 'MON', 'JOB', 'LOT', '%',
-        ]));
+        ])).filter(Boolean);
 
 
         items.forEach((it, idx) => {
@@ -2540,21 +2546,22 @@ export default function PurchaseRequisitionForm({
             }
 
             // Description
-            if (!it.description || !it.description.trim()) {
+            if (!it.description || !String(it.description).trim()) {
                 errs[prefix + 'description'] = 'Item Description is mandatory.';
             }
 
             // Material Number
             if (it.item_type === 'material') {
-                if (!it.material_code || !it.material_code.trim()) {
+                const matCodeTrimmed = String(it.material_code || '').trim();
+                if (!matCodeTrimmed) {
                     errs[prefix + 'material_code'] = 'Material Number is mandatory for Material line items.';
-                } else if (it.material_code.trim().toUpperCase() === 'NUTS') {
+                } else if (matCodeTrimmed.toUpperCase() === 'NUTS') {
                     errs[prefix + 'material_code'] = "Material 'NUTS' is not maintained by Purchasing in Plant 1200 in SAP (ME/046). Please choose another material.";
                 }
             }
 
             // Plant
-            const plantUpper = (it.plant || '').trim().toUpperCase();
+            const plantUpper = String(it.plant || '').trim().toUpperCase();
             if (!plantUpper) {
                 errs[prefix + 'plant'] = 'Plant is mandatory. Please select a receiving plant.';
             } else if (validPlants.length > 0 && !validPlants.includes(plantUpper)) {
@@ -2562,7 +2569,7 @@ export default function PurchaseRequisitionForm({
             }
 
             // Purchasing Group
-            const pgUpper = (it.purchasing_group || '').trim().toUpperCase();
+            const pgUpper = String(it.purchasing_group || '').trim().toUpperCase();
             if (!pgUpper) {
                 errs[prefix + 'purchasing_group'] = 'Purchasing Group is mandatory.';
             } else if (validPurchasingGroups.length > 0 && !validPurchasingGroups.includes(pgUpper)) {
@@ -2570,7 +2577,7 @@ export default function PurchaseRequisitionForm({
             }
 
             // Purchasing Organization
-            const poUpper = (it.purchasing_organization || '').trim().toUpperCase();
+            const poUpper = String(it.purchasing_organization || '').trim().toUpperCase();
             if (!poUpper) {
                 errs[prefix + 'purchasing_organization'] = 'Purchasing Organization is mandatory.';
             } else if (validPurchasingOrgs.length > 0 && !validPurchasingOrgs.includes(poUpper)) {
@@ -2578,13 +2585,13 @@ export default function PurchaseRequisitionForm({
             }
 
             // Item Category
-            const icUpper = (it.item_category || '').trim().toUpperCase();
+            const icUpper = String(it.item_category || '').trim().toUpperCase();
             if (icUpper && !validItemCats.includes(icUpper)) {
                 errs[prefix + 'item_category'] = `Invalid Item Category '${it.item_category}'. Press F4 to select a valid category.`;
             }
 
             // Account Assignment Category (AAC)
-            const aacUpper = (it.account_assignment_category || '').trim().toUpperCase();
+            const aacUpper = String(it.account_assignment_category || '').trim().toUpperCase();
             if (aacUpper === 'N') {
                 errs[prefix + 'account_assignment_category'] = "Category 'N' (Network) is not supported in SAP S/4HANA Cloud (ME/066). Leave blank for Stock or select 'K' for Cost Center.";
             } else if (aacUpper && !validAacs.includes(aacUpper)) {
@@ -2593,10 +2600,10 @@ export default function PurchaseRequisitionForm({
 
             // Cost Center & G/L Account (Mandatory when AAC is K, especially on Sync)
             if (aacUpper === 'K' && !isDraft) {
-                if (!it.gl_account || !it.gl_account.trim()) {
+                if (!String(it.gl_account || '').trim()) {
                     errs[prefix + 'gl_account'] = "G/L Account is mandatory when Account Assignment is 'K'.";
                 }
-                if (!it.cost_center || !it.cost_center.trim()) {
+                if (!String(it.cost_center || '').trim()) {
                     errs[prefix + 'cost_center'] = "Cost Center is mandatory when Account Assignment is 'K'.";
                 }
             }
@@ -2608,7 +2615,7 @@ export default function PurchaseRequisitionForm({
             }
 
             // Unit of Measure
-            const uomUpper = (it.unit_of_measure || '').trim().toUpperCase();
+            const uomUpper = String(it.unit_of_measure || '').trim().toUpperCase();
             if (!uomUpper) {
                 errs[prefix + 'unit_of_measure'] = 'Unit of Measure is mandatory.';
             } else if (validUoms.length > 0 && !validUoms.includes(uomUpper)) {
@@ -2622,7 +2629,7 @@ export default function PurchaseRequisitionForm({
             }
 
             // Material Group
-            if (!it.material_group || !it.material_group.trim()) {
+            if (!String(it.material_group || '').trim()) {
                 errs[prefix + 'material_group'] = 'Material Group is mandatory.';
             }
         });

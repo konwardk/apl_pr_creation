@@ -168,7 +168,6 @@ class PurchaseRequisition extends Model
             '_PurchaseRequisitionItem' => $this->items->map(function ($item, $index) {
                 $itemNum = (string) (intval($item->item_number) ?: (($index + 1) * 10));
                 $baseUnit = $item->unit_of_measure ?: 'EA';
-                $isoCode = static::mapUnitOfMeasureToIso($baseUnit);
 
                 $itemPayload = [
                     'PurchaseRequisitionItem' => $itemNum,
@@ -177,7 +176,6 @@ class PurchaseRequisition extends Model
                     'MaterialGroup' => $item->material_group ?: 'YBPM01',
                     'RequestedQuantity' => (float) $item->quantity,
                     'BaseUnit' => $baseUnit,
-                    'BaseUnitISOCode' => $isoCode,
                     'PurchaseRequisitionPrice' => (float) $item->unit_price,
                     'PurReqnPriceQuantity' => (int) ($item->price_unit ?: 1),
                     'PurchasingOrganization' => $item->purchasing_organization ?: '1100',

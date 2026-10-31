@@ -178,14 +178,139 @@ class PurchaseRequisitionController extends Controller
      * Display the purchase requisition creation page.
      */
 
+    /**
+     * Safely generate the next unique PR number for the current year.
+     * Format: PR/userID/year/sequence (e.g. PR/1/2026/00001)
+     */
+    public function generateNextPrNumber(bool $lock = false, int|string|User|null $userId = null): string
+    {
+        if ($userId instanceof User) {
+            $userId = $userId->id;
+        }
+        $userId = !empty($userId) ? $userId : (auth()->id() ?? request()?->user()?->id ?? 1);
+
+        $year = date('Y');
+        $prefix = "PR/{$userId}/{$year}/";
+
+        $query = PurchaseRequisition::where('pr_number', 'like', "{$prefix}%")
+            ->orderBy('pr_number', 'desc');
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        $latest = $query->value('pr_number');
+
+        $seq = 1;
+        if ($latest && preg_match('#^' . preg_quote($prefix, '#') . '(\d+)$#', $latest, $m)) {
+            $seq = (int)$m[1] + 1;
+        }
+
+        $candidate = $prefix . str_pad((string)$seq, 5, '0', STR_PAD_LEFT);
+        while (PurchaseRequisition::where('pr_number', $candidate)->exists()) {
+            $seq++;
+            $candidate = $prefix . str_pad((string)$seq, 5, '0', STR_PAD_LEFT);
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * Safely generate the next unique CR number for the current year.
+     * Format: CR/userID/year/sequence (e.g. CR/1/2026/00001)
+     */
+    public function generateNextCrNumber(bool $lock = false, int|string|User|null $userId = null): string
+    {
+        if ($userId instanceof User) {
+            $userId = $userId->id;
+        }
+        $userId = !empty($userId) ? $userId : (auth()->id() ?? request()?->user()?->id ?? 1);
+
+        $year = date('Y');
+        $prefix = "CR/{$userId}/{$year}/";
+
+        $query = ContractRequisition::where('cr_no', 'like', "{$prefix}%")
+            ->orderBy('cr_no', 'desc');
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        $latest = $query->value('cr_no');
+
+        $seq = 1;
+        if ($latest && preg_match('#^' . preg_quote($prefix, '#') . '(\d+)$#', $latest, $m)) {
+            $seq = (int)$m[1] + 1;
+        }
+
+        $candidate = $prefix . str_pad((string)$seq, 5, '0', STR_PAD_LEFT);
+        while (ContractRequisition::where('cr_no', $candidate)->exists()) {
+            $seq++;
+            $candidate = $prefix . str_pad((string)$seq, 5, '0', STR_PAD_LEFT);
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * API endpoint to get the next available sequence numbers.
+     */
+    public function getNextSequence(Request $request): JsonResponse
+    {
+        $userId = $request->user()?->id;
+
+        return response()->json([
+            'success' => true,
+            'current_year' => (int) date('Y'),
+            'next_pr_number' => $this->generateNextPrNumber(false, $userId),
+            'next_cr_no' => $this->generateNextCrNumber(false, $userId),
+        ]);
+    }
+
+    /**
+     * API endpoint to check if a CR number is available or already in use.
+     */
+    public function checkCrNumber(Request $request): JsonResponse
+    {
+        $crNo = trim($request->query('cr_no', ''));
+        $ignoreId = $request->query('ignore_id');
+        $userId = $request->user()?->id;
+
+        if (empty($crNo)) {
+            return response()->json([
+                'cr_no' => '',
+                'is_available' => true,
+                'message' => 'CR number is empty.',
+                'suggested_cr_no' => $this->generateNextCrNumber(false, $userId),
+            ]);
+        }
+
+        $query = ContractRequisition::where('cr_no', $crNo);
+        if (!empty($ignoreId)) {
+            $query->where('id', '!=', $ignoreId);
+        }
+        $exists = $query->exists();
+
+        return response()->json([
+            'cr_no' => $crNo,
+            'is_available' => !$exists,
+            'message' => $exists
+                ? "Contract Requisition number '{$crNo}' already exists in the local database."
+                : "Contract Requisition number '{$crNo}' is available.",
+            'suggested_cr_no' => $exists ? $this->generateNextCrNumber(false, $userId) : $crNo,
+        ]);
+    }
+
     public function create(Request $request): Response
     {
         $config = $this->getMasterDataConfig($request);
-        $nextCrSeq = (ContractRequisition::max('id') ?? 0) + 1;
-        $defaultCrNo = 'CR-' . date('Y') . '-' . str_pad($nextCrSeq, 5, '0', STR_PAD_LEFT);
+        $userId = $request->user()?->id;
+        $defaultCrNo = $this->generateNextCrNumber(false, $userId);
+        $defaultPrNumber = $this->generateNextPrNumber(false, $userId);
 
         return Inertia::render('purchase-requisitions/create', array_merge($config, [
             'defaultCrNo' => $defaultCrNo,
+            'defaultPrNumber' => $defaultPrNumber,
         ]));
     }
 
@@ -255,7 +380,7 @@ class PurchaseRequisitionController extends Controller
         $purchaseRequisition->load(['items', 'headerOption', 'attachments', 'contractRequisition', 'contractRequisitionLocal']);
         $config = $this->getMasterDataConfig($request);
         $cr = $purchaseRequisition->contractRequisition ?? $purchaseRequisition->contractRequisitionLocal;
-        $defaultCrNo = $cr?->cr_no ?? ('CR-' . date('Y') . '-' . str_pad($purchaseRequisition->id, 5, '0', STR_PAD_LEFT));
+        $defaultCrNo = $cr?->cr_no ?? $this->generateNextCrNumber(false, $purchaseRequisition->user_id ?? $request->user()?->id);
 
         return Inertia::render('purchase-requisitions/edit', array_merge($config, [
             'purchaseRequisition' => $purchaseRequisition,
@@ -645,185 +770,235 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
+        // Validate Contract Requisition uniqueness if cr_no is provided
+        $crData = $request->input('contract_requisition');
+        if (!empty($crData) && !empty($crData['cr_no'])) {
+            $submittedCrNo = trim($crData['cr_no']);
+            if (ContractRequisition::where('cr_no', $submittedCrNo)->exists()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'contract_requisition.cr_no' => "Contract Requisition number '{$submittedCrNo}' already exists in the local database. Please provide a unique CR number or click Refresh to generate the next available number.",
+                ]);
+            }
+        }
+
+        $maxAttempts = 5;
+        $attempt = 0;
         $pr = null;
         $prNumber = null;
         $totalAmount = 0;
 
-        DB::transaction(function () use ($validated, $request, $isDraft, &$pr, &$prNumber, &$totalAmount) {
-            $nextSeq = (PurchaseRequisition::max('id') ?? 0) + 1;
-            $prNumber = 'PR-' . date('Y') . '-' . str_pad($nextSeq, 5, '0', STR_PAD_LEFT);
+        while ($attempt < $maxAttempts) {
+            $attempt++;
+            try {
+                DB::transaction(function () use ($validated, $request, $isDraft, &$pr, &$prNumber, &$totalAmount) {
+                    $userId = $request->user()?->id;
+                    $prNumber = $this->generateNextPrNumber(true, $userId);
 
-            $totalAmount = 0;
-            foreach ($validated['items'] as $item) {
-                $pu = !empty($item['price_unit']) && (float)$item['price_unit'] > 0 ? (float)$item['price_unit'] : 1;
-                $totalAmount += (((float)$item['quantity'] / $pu) * (float)$item['unit_price']);
-            }
+                    $totalAmount = 0;
+                    foreach ($validated['items'] as $item) {
+                        $pu = !empty($item['price_unit']) && (float)$item['price_unit'] > 0 ? (float)$item['price_unit'] : 1;
+                        $totalAmount += (((float)$item['quantity'] / $pu) * (float)$item['unit_price']);
+                    }
 
-            $primaryPlant = $validated['items'][0]['plant'] ?? ($validated['plant'] ?? '1200');
-            $primaryDesc = !empty($validated['description']) ? $validated['description'] : ($validated['items'][0]['description'] ?? 'Purchase Requisition');
+                    $primaryPlant = $validated['items'][0]['plant'] ?? ($validated['plant'] ?? '1200');
+                    $primaryDesc = !empty($validated['description']) ? $validated['description'] : ($validated['items'][0]['description'] ?? 'Purchase Requisition');
 
-            $pr = PurchaseRequisition::create([
-                'pr_number' => $prNumber,
-                'user_id' => $request->user()?->id,
-                'description' => $primaryDesc,
-                'header_note' => $validated['header_note'] ?? null,
-                'header_option_id' => $validated['header_option_id'] ?? null,
-                'pr_type' => $validated['pr_type'] ?? 'ZMAT',
-                'auto_source_determination' => !empty($validated['auto_source_determination']),
-                'company_code' => $validated['company_code'] ?? '1000',
-                'plant' => $primaryPlant,
-                'total_amount' => $totalAmount,
-                'currency' => $validated['currency'] ?? 'INR',
-                'requisitioner' => $validated['requisitioner'] ?? ($request->user()?->name ?? 'Requester'),
-                'approval_status' => $isDraft ? 'draft' : 'approved',
-                'is_draft' => $isDraft ? 1 : 0,
-                'sap_sync_status' => 'pending',
-                'sap_sync_message' => $isDraft
-                    ? 'Saved as Draft in local MySQL database (is_draft = 1). Not synced to SAP server.'
-                    : 'Created in local database. Ready for SAP S/4HANA OData V4 POST.',
-            ]);
-
-            foreach ($validated['items'] as $index => $itemData) {
-                $pu = !empty($itemData['price_unit']) && (float)$itemData['price_unit'] > 0 ? (float)$itemData['price_unit'] : 1;
-                $itemTotal = (((float)$itemData['quantity'] / $pu) * (float)$itemData['unit_price']);
-                $itemNum = !empty($itemData['item_number']) ? $itemData['item_number'] : str_pad(($index + 1) * 10, 5, '0', STR_PAD_LEFT);
-
-                // Detect uploaded attachment file for this item line
-                $uploadedFile = $request->file("items.{$index}.attachment_file")
-                    ?? ($request->file('items')[$index]['attachment_file'] ?? null);
-
-                $attName = $itemData['attachment_name'] ?? null;
-                if ($uploadedFile && $uploadedFile->isValid()) {
-                    $attName = $uploadedFile->getClientOriginalName();
-                }
-
-                $prItem = PurchaseRequisitionItem::create([
-                    'purchase_requisition_id' => $pr->id,
-                    'item_number' => $itemNum,
-                    'item_type' => $itemData['item_type'] ?? 'material',
-                    'item_category' => $itemData['item_category'] ?? null,
-                    'material_code' => $itemData['material_code'] ?? null,
-                    'supplier_material_number' => $itemData['supplier_material_number'] ?? null,
-                    'manufacturer_part_number' => $itemData['manufacturer_part_number'] ?? ($itemData['supplier_material_number'] ?? null),
-                    'batch' => $itemData['batch'] ?? null,
-                    'revision_level' => $itemData['revision_level'] ?? null,
-                    'description' => $itemData['description'],
-                    'material_group' => $itemData['material_group'] ?? 'YBPM01',
-                    'desired_supplier' => $itemData['desired_supplier'] ?? null,
-                    'fixed_vendor' => $itemData['fixed_vendor'] ?? null,
-                    'supplying_plant' => $itemData['supplying_plant'] ?? null,
-                    'agreement_number' => $itemData['agreement_number'] ?? null,
-                    'agreement_item' => $itemData['agreement_item'] ?? null,
-                    'info_record' => $itemData['info_record'] ?? null,
-                    'quantity' => $itemData['quantity'],
-                    'unit_of_measure' => $itemData['unit_of_measure'] ?? 'EA',
-                    'unit_price' => $itemData['unit_price'],
-                    'price_unit' => $pu,
-                    'total_price' => $itemTotal,
-                    'currency' => $itemData['currency'] ?? $pr->currency,
-                    'tax_code' => $itemData['tax_code'] ?? null,
-                    'po_price_type' => $itemData['po_price_type'] ?? 'Do not adopt',
-                    'plant' => $itemData['plant'] ?? $pr->plant,
-                    'storage_location' => $itemData['storage_location'] ?? null,
-                    'account_assignment_category' => $itemData['account_assignment_category'] ?? '',
-                    'requirement_tracking_number' => $itemData['requirement_tracking_number'] ?? null,
-                    'cost_center' => !empty($itemData['account_assignment_category']) ? ($itemData['cost_center'] ?? '10101PCC01') : null,
-                    'gl_account' => !empty($itemData['account_assignment_category']) ? ($itemData['gl_account'] ?? '65301000') : null,
-                    'purchasing_organization' => $itemData['purchasing_organization'] ?? '1100',
-                    'purchasing_group' => !empty($itemData['purchasing_group']) ? $itemData['purchasing_group'] : ($request->user()?->purchasing_group ?: '103'),
-                    'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
-                    'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
-                    'release_date' => $itemData['release_date'] ?? now()->format('Y-m-d'),
-                    'planned_delivery_time' => $itemData['planned_delivery_time'] ?? 0,
-                    'gr_processing_time' => $itemData['gr_processing_time'] ?? 0,
-                    'item_text' => $itemData['item_text'] ?? null,
-                    'item_note' => $itemData['item_note'] ?? null,
-                    'delivery_text' => $itemData['delivery_text'] ?? null,
-                    'material_po_text' => $itemData['material_po_text'] ?? null,
-                    'closure_comment' => $itemData['closure_comment'] ?? null,
-                    'attachment_doc_type' => $itemData['attachment_doc_type'] ?? 'SL1',
-                    'attachment_name' => $attName,
-                ]);
-
-                // Store uploaded attachment file in database and local public storage disk
-                if ($uploadedFile && $uploadedFile->isValid()) {
-                    $storedPath = $uploadedFile->store("attachments/{$prNumber}", 'public');
-                    Attachment::create([
-                        'purchase_requisition_id' => $pr->id,
-                        'purchase_requisition_item_id' => $prItem->id,
-                        'item_number' => $itemNum,
-                        'file_name' => $uploadedFile->getClientOriginalName(),
-                        'file_path' => $storedPath,
-                        'file_size' => $uploadedFile->getSize(),
-                        'mime_type' => $uploadedFile->getClientMimeType() ?: $uploadedFile->getMimeType(),
-                        'attachment_doc_type' => $itemData['attachment_doc_type'] ?? 'SL1',
-                        'sap_sync_status' => 'pending',
+                    $pr = PurchaseRequisition::create([
+                        'pr_number' => $prNumber,
                         'user_id' => $request->user()?->id,
+                        'description' => $primaryDesc,
+                        'header_note' => $validated['header_note'] ?? null,
+                        'header_option_id' => $validated['header_option_id'] ?? null,
+                        'pr_type' => $validated['pr_type'] ?? 'ZMAT',
+                        'auto_source_determination' => !empty($validated['auto_source_determination']),
+                        'company_code' => $validated['company_code'] ?? '1000',
+                        'plant' => $primaryPlant,
+                        'total_amount' => $totalAmount,
+                        'currency' => $validated['currency'] ?? 'INR',
+                        'requisitioner' => $validated['requisitioner'] ?? ($request->user()?->name ?? 'Requester'),
+                        'approval_status' => $isDraft ? 'draft' : 'approved',
+                        'is_draft' => $isDraft ? 1 : 0,
+                        'sap_sync_status' => 'pending',
+                        'sap_sync_message' => $isDraft
+                            ? 'Saved as Draft in local MySQL database (is_draft = 1). Not synced to SAP server.'
+                            : 'Created in local database. Ready for SAP S/4HANA OData V4 POST.',
                     ]);
-                }
-            }
 
-            // Store any general PR-level attachments
-            if ($request->hasFile('attachments')) {
-                foreach ($request->file('attachments') as $generalFile) {
-                    if ($generalFile && $generalFile->isValid()) {
-                        $storedPath = $generalFile->store("attachments/{$prNumber}", 'public');
-                        Attachment::create([
+                    foreach ($validated['items'] as $index => $itemData) {
+                        $pu = !empty($itemData['price_unit']) && (float)$itemData['price_unit'] > 0 ? (float)$itemData['price_unit'] : 1;
+                        $itemTotal = (((float)$itemData['quantity'] / $pu) * (float)$itemData['unit_price']);
+                        $itemNum = !empty($itemData['item_number']) ? $itemData['item_number'] : str_pad(($index + 1) * 10, 5, '0', STR_PAD_LEFT);
+
+                        // Detect uploaded attachment file for this item line
+                        $uploadedFile = $request->file("items.{$index}.attachment_file")
+                            ?? ($request->file('items')[$index]['attachment_file'] ?? null);
+
+                        $attName = $itemData['attachment_name'] ?? null;
+                        if ($uploadedFile && $uploadedFile->isValid()) {
+                            $attName = $uploadedFile->getClientOriginalName();
+                        }
+
+                        $prItem = PurchaseRequisitionItem::create([
                             'purchase_requisition_id' => $pr->id,
-                            'purchase_requisition_item_id' => null,
-                            'item_number' => null,
-                            'file_name' => $generalFile->getClientOriginalName(),
-                            'file_path' => $storedPath,
-                            'file_size' => $generalFile->getSize(),
-                            'mime_type' => $generalFile->getClientMimeType() ?: $generalFile->getMimeType(),
-                            'attachment_doc_type' => 'SL1',
+                            'item_number' => $itemNum,
+                            'item_type' => $itemData['item_type'] ?? 'material',
+                            'item_category' => $itemData['item_category'] ?? null,
+                            'material_code' => $itemData['material_code'] ?? null,
+                            'supplier_material_number' => $itemData['supplier_material_number'] ?? null,
+                            'manufacturer_part_number' => $itemData['manufacturer_part_number'] ?? ($itemData['supplier_material_number'] ?? null),
+                            'batch' => $itemData['batch'] ?? null,
+                            'revision_level' => $itemData['revision_level'] ?? null,
+                            'description' => $itemData['description'],
+                            'material_group' => $itemData['material_group'] ?? 'YBPM01',
+                            'desired_supplier' => $itemData['desired_supplier'] ?? null,
+                            'fixed_vendor' => $itemData['fixed_vendor'] ?? null,
+                            'supplying_plant' => $itemData['supplying_plant'] ?? null,
+                            'agreement_number' => $itemData['agreement_number'] ?? null,
+                            'agreement_item' => $itemData['agreement_item'] ?? null,
+                            'info_record' => $itemData['info_record'] ?? null,
+                            'quantity' => $itemData['quantity'],
+                            'unit_of_measure' => $itemData['unit_of_measure'] ?? 'EA',
+                            'unit_price' => $itemData['unit_price'],
+                            'price_unit' => $pu,
+                            'total_price' => $itemTotal,
+                            'currency' => $itemData['currency'] ?? $pr->currency,
+                            'tax_code' => $itemData['tax_code'] ?? null,
+                            'po_price_type' => $itemData['po_price_type'] ?? 'Do not adopt',
+                            'plant' => $itemData['plant'] ?? $pr->plant,
+                            'storage_location' => $itemData['storage_location'] ?? null,
+                            'account_assignment_category' => $itemData['account_assignment_category'] ?? '',
+                            'requirement_tracking_number' => $itemData['requirement_tracking_number'] ?? null,
+                            'cost_center' => !empty($itemData['account_assignment_category']) ? ($itemData['cost_center'] ?? '10101PCC01') : null,
+                            'gl_account' => !empty($itemData['account_assignment_category']) ? ($itemData['gl_account'] ?? '65301000') : null,
+                            'purchasing_organization' => $itemData['purchasing_organization'] ?? '1100',
+                            'purchasing_group' => !empty($itemData['purchasing_group']) ? $itemData['purchasing_group'] : ($request->user()?->purchasing_group ?: '103'),
+                            'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
+                            'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
+                            'release_date' => $itemData['release_date'] ?? now()->format('Y-m-d'),
+                            'planned_delivery_time' => $itemData['planned_delivery_time'] ?? 0,
+                            'gr_processing_time' => $itemData['gr_processing_time'] ?? 0,
+                            'item_text' => $itemData['item_text'] ?? null,
+                            'item_note' => $itemData['item_note'] ?? null,
+                            'delivery_text' => $itemData['delivery_text'] ?? null,
+                            'material_po_text' => $itemData['material_po_text'] ?? null,
+                            'closure_comment' => $itemData['closure_comment'] ?? null,
+                            'attachment_doc_type' => $itemData['attachment_doc_type'] ?? 'SL1',
+                            'attachment_name' => $attName,
+                        ]);
+
+                        // Store uploaded attachment file in database and local public storage disk
+                        if ($uploadedFile && $uploadedFile->isValid()) {
+                            $storedPath = $uploadedFile->store("attachments/{$prNumber}", 'public');
+                            Attachment::create([
+                                'purchase_requisition_id' => $pr->id,
+                                'purchase_requisition_item_id' => $prItem->id,
+                                'item_number' => $itemNum,
+                                'file_name' => $uploadedFile->getClientOriginalName(),
+                                'file_path' => $storedPath,
+                                'file_size' => $uploadedFile->getSize(),
+                                'mime_type' => $uploadedFile->getClientMimeType() ?: $uploadedFile->getMimeType(),
+                                'attachment_doc_type' => $itemData['attachment_doc_type'] ?? 'SL1',
+                                'sap_sync_status' => 'pending',
+                                'user_id' => $request->user()?->id,
+                            ]);
+                        }
+                    }
+
+                    // Store any general PR-level attachments
+                    if ($request->hasFile('attachments')) {
+                        foreach ($request->file('attachments') as $generalFile) {
+                            if ($generalFile && $generalFile->isValid()) {
+                                $storedPath = $generalFile->store("attachments/{$prNumber}", 'public');
+                                Attachment::create([
+                                    'purchase_requisition_id' => $pr->id,
+                                    'purchase_requisition_item_id' => null,
+                                    'item_number' => null,
+                                    'file_name' => $generalFile->getClientOriginalName(),
+                                    'file_path' => $storedPath,
+                                    'file_size' => $generalFile->getSize(),
+                                    'mime_type' => $generalFile->getClientMimeType() ?: $generalFile->getMimeType(),
+                                    'attachment_doc_type' => 'SL1',
+                                    'sap_sync_status' => 'pending',
+                                    'user_id' => $request->user()?->id,
+                                ]);
+                            }
+                        }
+                    }
+
+                    // Create Contract Requisition if submitted
+                    $crData = $request->input('contract_requisition');
+                    if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
+                        $crNo = !empty($crData['cr_no']) ? trim($crData['cr_no']) : $this->generateNextCrNumber(true, $request->user()?->id);
+                        ContractRequisition::create([
+                            'cr_no' => $crNo,
+                            'pr_number_sap' => $pr->sap_pr_number,
+                            'purchase_requisition_id' => $pr->id,
+                            'contract_title' => $crData['contract_title'] ?? null,
+                            'scope_of_work' => $crData['scope_of_work'] ?? null,
+                            'payment_terms' => $crData['payment_terms'] ?? null,
+                            'bidders_qualification_criteria' => $crData['bidders_qualification_criteria'] ?? null,
+                            'special_terms_condition' => $crData['special_terms_condition'] ?? null,
+                            'guarantee_warranty_period' => $crData['guarantee_warranty_period'] ?? null,
+                            'defect_liability_period' => $crData['defect_liability_period'] ?? null,
+                            'others' => $crData['others'] ?? null,
+                            'requisitioner_name' => !empty($crData['requisitioner_name']) ? $crData['requisitioner_name'] : ($pr->requisitioner ?: ($request->user()?->name ?? 'Requester')),
+                            'req_designation' => !empty($crData['req_designation']) ? $crData['req_designation'] : ($request->user()?->designation ?? null),
+                            'req_department' => !empty($crData['req_department']) ? $crData['req_department'] : ($request->user()?->department?->name ?? null),
+                            'tender_type' => $crData['tender_type'] ?? 'Single',
+                            'tender_estimate_value' => $crData['tender_estimate_value'] ?? 'Excluding GST',
+                            'total_pr_value' => !empty($crData['total_pr_value']) ? $crData['total_pr_value'] : $totalAmount,
+                            'total_pr_value_in_word' => $crData['total_pr_value_in_word'] ?? null,
+                            'custom_field_1' => $crData['custom_field_1'] ?? null,
+                            'custom_field_2' => $crData['custom_field_2'] ?? null,
+                            'custom_field_3' => $crData['custom_field_3'] ?? null,
+                            'custom_field_4' => $crData['custom_field_4'] ?? null,
+                            'custom_field_5' => $crData['custom_field_5'] ?? null,
+                            'custom_field_6' => $crData['custom_field_6'] ?? null,
+                            'custom_field_7' => $crData['custom_field_7'] ?? null,
+                            'custom_field_8' => $crData['custom_field_8'] ?? null,
                             'sap_sync_status' => 'pending',
-                            'user_id' => $request->user()?->id,
                         ]);
                     }
+
+                    $pr->load(['items', 'attachments']);
+                    $pr->update([
+                        'sap_payload' => $pr->toSapODataV4Payload(),
+                    ]);
+                });
+
+                break; // Succeeded!
+            } catch (\Illuminate\Database\QueryException $e) {
+                $isDuplicate = $e->getCode() === '23000' || 
+                               ($e->errorInfo[1] ?? 0) === 1062 || 
+                               ($e->errorInfo[1] ?? 0) === 19 || 
+                               str_contains($e->getMessage(), 'Duplicate entry') ||
+                               str_contains($e->getMessage(), 'UNIQUE constraint failed');
+
+                if ($isDuplicate && $attempt < $maxAttempts) {
+                    usleep(random_int(30000, 100000));
+                    continue;
                 }
-            }
 
-            // Create Contract Requisition if submitted
-            $crData = $request->input('contract_requisition');
-            if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
-                $crNo = !empty($crData['cr_no']) ? $crData['cr_no'] : ('CR-' . date('Y') . '-' . str_pad($nextSeq, 5, '0', STR_PAD_LEFT));
-                ContractRequisition::create([
-                    'cr_no' => $crNo,
-                    'pr_number_sap' => $pr->sap_pr_number,
-                    'purchase_requisition_id' => $pr->id,
-                    'contract_title' => $crData['contract_title'] ?? null,
-                    'scope_of_work' => $crData['scope_of_work'] ?? null,
-                    'payment_terms' => $crData['payment_terms'] ?? null,
-                    'bidders_qualification_criteria' => $crData['bidders_qualification_criteria'] ?? null,
-                    'special_terms_condition' => $crData['special_terms_condition'] ?? null,
-                    'guarantee_warranty_period' => $crData['guarantee_warranty_period'] ?? null,
-                    'defect_liability_period' => $crData['defect_liability_period'] ?? null,
-                    'others' => $crData['others'] ?? null,
-                    'requisitioner_name' => !empty($crData['requisitioner_name']) ? $crData['requisitioner_name'] : ($pr->requisitioner ?: ($request->user()?->name ?? 'Requester')),
-                    'req_designation' => !empty($crData['req_designation']) ? $crData['req_designation'] : ($request->user()?->designation ?? null),
-                    'req_department' => !empty($crData['req_department']) ? $crData['req_department'] : ($request->user()?->department?->name ?? null),
-                    'tender_type' => $crData['tender_type'] ?? 'Single',
-                    'tender_estimate_value' => $crData['tender_estimate_value'] ?? 'Excluding GST',
-                    'total_pr_value' => !empty($crData['total_pr_value']) ? $crData['total_pr_value'] : $totalAmount,
-                    'total_pr_value_in_word' => $crData['total_pr_value_in_word'] ?? null,
-                    'custom_field_1' => $crData['custom_field_1'] ?? null,
-                    'custom_field_2' => $crData['custom_field_2'] ?? null,
-                    'custom_field_3' => $crData['custom_field_3'] ?? null,
-                    'custom_field_4' => $crData['custom_field_4'] ?? null,
-                    'custom_field_5' => $crData['custom_field_5'] ?? null,
-                    'custom_field_6' => $crData['custom_field_6'] ?? null,
-                    'custom_field_7' => $crData['custom_field_7'] ?? null,
-                    'custom_field_8' => $crData['custom_field_8'] ?? null,
-                    'sap_sync_status' => 'pending',
-                ]);
-            }
+                if ($isDuplicate) {
+                    $msg = $e->getMessage();
+                    if (str_contains($msg, 'contract_requisitions') || str_contains($msg, 'cr_no')) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'contract_requisition.cr_no' => "Contract Requisition number already exists in the local database. Please provide a unique CR number or click Refresh to generate the next available number.",
+                        ]);
+                    }
+                    if (str_contains($msg, 'purchase_requisitions') || str_contains($msg, 'pr_number')) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            'pr_number' => "Purchase Requisition number sequence conflict. Please resubmit to allocate a new sequence.",
+                        ]);
+                    }
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'duplicate' => "A duplicate record was detected in the local database. Please refresh and try again.",
+                    ]);
+                }
 
-            $pr->load(['items', 'attachments']);
-            $pr->update([
-                'sap_payload' => $pr->toSapODataV4Payload(),
-            ]);
-        });
+                throw $e;
+            }
+        }
 
         // If saved as Draft (is_draft = 1), keep in local database only and do NOT sync to SAP server
         if ($pr->is_draft) {
@@ -1164,9 +1339,25 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
+        // Validate Contract Requisition uniqueness if cr_no is provided
+        $crData = $request->input('contract_requisition');
+        if (!empty($crData) && !empty($crData['cr_no'])) {
+            $submittedCrNo = trim($crData['cr_no']);
+            $currentCr = $purchaseRequisition->contractRequisition ?? $purchaseRequisition->contractRequisitionLocal;
+            $alreadyExists = ContractRequisition::where('cr_no', $submittedCrNo)
+                ->when($currentCr, fn($q) => $q->where('id', '!=', $currentCr->id))
+                ->exists();
+            if ($alreadyExists) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'contract_requisition.cr_no' => "Contract Requisition number '{$submittedCrNo}' already exists in the local database for another requisition. Please provide a unique CR number or click Refresh to generate the next available number.",
+                ]);
+            }
+        }
+
         $totalAmount = 0;
 
-        DB::transaction(function () use ($validated, $request, $isDraft, $purchaseRequisition, $prNumber, &$totalAmount) {
+        try {
+            DB::transaction(function () use ($validated, $request, $isDraft, $purchaseRequisition, $prNumber, &$totalAmount) {
             $totalAmount = 0;
             foreach ($validated['items'] as $item) {
                 $pu = !empty($item['price_unit']) && (float)$item['price_unit'] > 0 ? (float)$item['price_unit'] : 1;
@@ -1324,7 +1515,7 @@ class PurchaseRequisitionController extends Controller
             if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
                 $cr = $purchaseRequisition->contractRequisition ?? $purchaseRequisition->contractRequisitionLocal;
                 $crFields = [
-                    'cr_no' => !empty($crData['cr_no']) ? $crData['cr_no'] : ($cr?->cr_no ?? ('CR-' . date('Y') . '-' . str_pad($purchaseRequisition->id, 5, '0', STR_PAD_LEFT))),
+                    'cr_no' => !empty($crData['cr_no']) ? trim($crData['cr_no']) : ($cr?->cr_no ?? $this->generateNextCrNumber(true, $purchaseRequisition->user_id ?? $request->user()?->id)),
                     'pr_number_sap' => $purchaseRequisition->sap_pr_number,
                     'purchase_requisition_id' => $purchaseRequisition->id,
                     'contract_title' => $crData['contract_title'] ?? null,
@@ -1364,6 +1555,24 @@ class PurchaseRequisitionController extends Controller
                 'sap_payload' => $purchaseRequisition->toSapODataV4Payload(),
             ]);
         });
+    } catch (\Illuminate\Database\QueryException $e) {
+        $isDuplicate = $e->getCode() === '23000' || 
+                       ($e->errorInfo[1] ?? 0) === 1062 || 
+                       ($e->errorInfo[1] ?? 0) === 19 || 
+                       str_contains($e->getMessage(), 'Duplicate entry') ||
+                       str_contains($e->getMessage(), 'UNIQUE constraint failed');
+        if ($isDuplicate) {
+            if (str_contains($e->getMessage(), 'contract_requisitions') || str_contains($e->getMessage(), 'cr_no')) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'contract_requisition.cr_no' => "Contract Requisition number already exists in the local database. Please use a unique CR number or click Refresh to generate the next available number.",
+                ]);
+            }
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'duplicate' => "A duplicate record was detected in the local database. Please check and try again.",
+            ]);
+        }
+        throw $e;
+    }
 
         if ($purchaseRequisition->is_draft) {
             if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {

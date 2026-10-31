@@ -124,6 +124,7 @@ interface PurchaseRequisitionFormProps {
     onCloseModal?: () => void;
     initialData?: any;
     defaultCrNo?: string;
+    defaultPrNumber?: string;
 }
 
 export default function PurchaseRequisitionForm({
@@ -135,6 +136,7 @@ export default function PurchaseRequisitionForm({
     onCloseModal,
     initialData,
     defaultCrNo,
+    defaultPrNumber,
 }: PurchaseRequisitionFormProps) {
     const { auth } = usePage<any>().props;
     const defaultRequisitioner = auth?.user?.name
@@ -324,6 +326,79 @@ export default function PurchaseRequisitionForm({
         }));
     };
 
+    const [currentPrNumber, setCurrentPrNumber] = useState<string>(
+        initialData?.pr_number || defaultPrNumber || ''
+    );
+    const [isCheckingCr, setIsCheckingCr] = useState<boolean>(false);
+    const [crCheckStatus, setCrCheckStatus] = useState<{ isAvailable?: boolean; message?: string } | null>(null);
+
+    const handleRefreshCrNumber = async () => {
+        try {
+            setIsCheckingCr(true);
+            const res = await fetch('/purchase-requisitions/next-sequence', {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data?.next_cr_no) {
+                updateContractRequisition({ cr_no: data.next_cr_no });
+                clearFieldError('contract_requisition_cr_no');
+                clearFieldError('contract_requisition.cr_no');
+                setCrCheckStatus({ isAvailable: true, message: `Allocated latest unique CR No: ${data.next_cr_no}` });
+            }
+            if (data?.next_pr_number && !isEdit) {
+                setCurrentPrNumber(data.next_pr_number);
+            }
+        } catch {
+            // ignore network error
+        } finally {
+            setIsCheckingCr(false);
+        }
+    };
+
+    const handleCheckCrNumber = async (crNoToTest?: string) => {
+        const crNo = (crNoToTest !== undefined ? crNoToTest : (contractRequisition.cr_no || '')).trim();
+        if (!crNo) {
+            clearFieldError('contract_requisition_cr_no');
+            clearFieldError('contract_requisition.cr_no');
+            setCrCheckStatus(null);
+            return;
+        }
+        try {
+            setIsCheckingCr(true);
+            const params = new URLSearchParams({ cr_no: crNo });
+            if (isEdit && (initialData?.contract_requisition?.id || initialData?.contractRequisition?.id)) {
+                params.append('ignore_id', String(initialData?.contract_requisition?.id || initialData?.contractRequisition?.id));
+            }
+            const res = await fetch(`/purchase-requisitions/check-cr-number?${params.toString()}`, {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            if (data && data.is_available === false) {
+                const msg = data.message || `Contract Requisition number '${crNo}' already exists in the local database.`;
+                setFieldErrors((prev) => ({
+                    ...prev,
+                    contract_requisition_cr_no: msg,
+                    'contract_requisition.cr_no': msg,
+                }));
+                setCrCheckStatus({ isAvailable: false, message: msg });
+            } else {
+                clearFieldError('contract_requisition_cr_no');
+                clearFieldError('contract_requisition.cr_no');
+                setCrCheckStatus({ isAvailable: true, message: `CR No '${crNo}' is available.` });
+            }
+        } catch {
+            // ignore network error
+        } finally {
+            setIsCheckingCr(false);
+        }
+    };
+
     // Combined header options from props or masterData
     const availableHeaderOptions = (
         headerOptions && headerOptions.length > 0
@@ -502,6 +577,9 @@ export default function PurchaseRequisitionForm({
             setCompanyCode(initialData.company_code || '1000');
             setCurrency(initialData.currency || 'INR');
             setRequisitioner(initialData.requisitioner || defaultRequisitioner);
+            if (initialData.pr_number) {
+                setCurrentPrNumber(initialData.pr_number);
+            }
             setItems(buildInitialItems(initialData));
 
             const icr =
@@ -565,6 +643,8 @@ export default function PurchaseRequisitionForm({
         prNumber: string;
         sapPrNumber?: string;
         isDraft: boolean;
+        sapSyncStatus?: 'synced' | 'failed' | 'pending' | 'draft';
+        syncWarning?: string;
         message: string;
         prId: number | string;
         totalAmount: number;
@@ -2634,6 +2714,20 @@ export default function PurchaseRequisitionForm({
             }
         });
 
+        // Contract Requisition validation
+        if (contractRequisition.cr_no) {
+            const trimmedCr = contractRequisition.cr_no.trim();
+            if (trimmedCr.length > 20) {
+                errs['contract_requisition_cr_no'] = 'Contract Requisition number must not exceed 20 characters.';
+                errs['contract_requisition.cr_no'] = 'Contract Requisition number must not exceed 20 characters.';
+            }
+        }
+        if (crCheckStatus?.isAvailable === false) {
+            const err = crCheckStatus.message || 'Contract Requisition number already exists in the database.';
+            errs['contract_requisition_cr_no'] = err;
+            errs['contract_requisition.cr_no'] = err;
+        }
+
         return errs;
     };
 
@@ -2676,7 +2770,15 @@ export default function PurchaseRequisitionForm({
 
     // Actual submission to backend via AJAX (called when confirmed in popup)
     const submitForm = async (isDraft: boolean) => {
+        // Prevent concurrent multiple submission from double clicks
+        if (submitting || isDrafting) {
+            return;
+        }
+
         setErrorMessage(null);
+        clearFieldError('contract_requisition_cr_no');
+        clearFieldError('contract_requisition.cr_no');
+        clearFieldError('pr_number');
 
         if (isDraft) {
             setIsDrafting(true);
@@ -2791,13 +2893,23 @@ export default function PurchaseRequisitionForm({
             setSubmitting(false);
             setIsDrafting(false);
 
+            if (res.status === 419) {
+                setConfirmModal(null);
+                setErrorMessage('Your session has timed out. Please refresh the page to obtain a fresh security token and submit again.');
+                return;
+            }
+
             if (res.status === 422 && data?.errors) {
                 const newFieldErrors: Record<string, string> = {};
                 Object.keys(data.errors).forEach((errKey) => {
-                    const normalized = errKey.replace(/^items\.(\d+)\./, 'item_$1_');
-                    newFieldErrors[normalized] = Array.isArray(data.errors[errKey])
+                    const normalized = errKey
+                        .replace(/^items\.(\d+)\./, 'item_$1_')
+                        .replace(/\./g, '_');
+                    const msg = Array.isArray(data.errors[errKey])
                         ? data.errors[errKey][0]
                         : data.errors[errKey];
+                    newFieldErrors[normalized] = msg;
+                    newFieldErrors[errKey] = msg;
                 });
                 setFieldErrors(newFieldErrors);
                 const firstMsg = Object.values(newFieldErrors)[0];
@@ -2807,19 +2919,45 @@ export default function PurchaseRequisitionForm({
             }
 
             if (!res.ok || (data && data.success === false)) {
-                setErrorMessage(data?.message || 'Failed to save Purchase Requisition.');
+                let msg = data?.message || 'Failed to save Purchase Requisition.';
+                // Catch any raw SQL duplicate constraint errors if they somehow reach here and convert to human friendly message
+                if (
+                    msg.includes('1062 Duplicate entry') ||
+                    msg.includes('Integrity constraint violation') ||
+                    msg.includes('UNIQUE constraint failed') ||
+                    msg.toLowerCase().includes('duplicate')
+                ) {
+                    if (msg.includes('contract_requisitions') || msg.includes('cr_no')) {
+                        msg = `Contract Requisition (CR) number conflict: CR number '${contractRequisition.cr_no}' already exists in the local database. Please click "Refresh CR No" to generate the next available number.`;
+                        setFieldErrors((prev) => ({
+                            ...prev,
+                            contract_requisition_cr_no: msg,
+                            'contract_requisition.cr_no': msg,
+                        }));
+                    } else if (msg.includes('purchase_requisitions') || msg.includes('pr_number')) {
+                        msg = 'Purchase Requisition (PR) sequence conflict detected. A fresh PR number has been assigned; please try again.';
+                    } else {
+                        msg = 'A duplicate sequence number was detected in the local database. Please click Refresh to get the latest sequence numbers and try again.';
+                    }
+                }
+                setErrorMessage(msg);
                 setConfirmModal(null);
                 return;
             }
 
             // Success! Open Success Modal
+            const isSyncFailed = data?.sap_sync_status === 'failed';
             setConfirmModal(null);
             setSuccessModal({
                 isOpen: true,
                 prNumber: data?.pr_number || (initialData?.pr_number ?? 'PR-SUCCESS'),
                 sapPrNumber: data?.sap_pr_number || undefined,
                 isDraft: Boolean(data?.is_draft),
-                message: data?.message || (isDraft ? 'Purchase Requisition saved as Draft in local database.' : 'Purchase Requisition created and synced with SAP S/4HANA Cloud!'),
+                sapSyncStatus: data?.sap_sync_status || (data?.sap_pr_number ? 'synced' : (isDraft ? 'draft' : 'pending')),
+                syncWarning: isSyncFailed ? (data?.warning || data?.message) : undefined,
+                message: isSyncFailed
+                    ? `Purchase Requisition ${data?.pr_number} was successfully saved in your local database. However, SAP S/4HANA Cloud synchronization could not be completed.`
+                    : (data?.message || (isDraft ? 'Purchase Requisition saved as Draft in local database.' : 'Purchase Requisition created and synced with SAP S/4HANA Cloud!')),
                 prId: data?.pr_id || (initialData?.id ?? ''),
                 totalAmount: data?.total_amount || calculateTotal(),
                 currency: data?.currency || currency,
@@ -2844,6 +2982,7 @@ export default function PurchaseRequisitionForm({
         setFieldErrors({});
         setErrorMessage(null);
         setSuccessModal(null);
+        handleRefreshCrNumber();
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -2991,17 +3130,43 @@ export default function PurchaseRequisitionForm({
 
             {/* SECTION: PR HEADER - General Information */}
             <div className="rounded-xl border border-[#d9e2ec] bg-white shadow-xs overflow-hidden">
-                <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-6 py-3.5 flex items-center justify-between">
+                <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-6 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div className="flex items-center gap-2">
                         <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
                             <FileText className="h-3.5 w-3.5" />
                         </div>
                         <h2 className="text-sm font-bold text-[#1c2d42]">Header: General Information</h2>
                     </div>
-                    <span className="text-[11px] text-[#556b82]">PR Header Level Properties</span>
+                    <div className="flex items-center gap-2.5">
+                        {currentPrNumber && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                {isEdit ? `PR: ${currentPrNumber}` : `Auto PR Seq: ${currentPrNumber}`}
+                            </span>
+                        )}
+                        <span className="text-[11px] text-[#556b82] hidden sm:inline">PR Header Level Properties</span>
+                    </div>
                 </div>
 
                 <div className="p-6 space-y-5">
+                    {/* PR Number Collision Alert */}
+                    {fieldErrors['pr_number'] && (
+                        <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800 animate-in fade-in">
+                            <div className="flex items-center gap-2">
+                                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                                <span className="font-semibold">{fieldErrors['pr_number']}</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleRefreshCrNumber}
+                                disabled={isCheckingCr}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded border border-rose-300 transition-colors shrink-0"
+                            >
+                                <RotateCcw className="h-3 w-3" />
+                                Refresh Number
+                            </button>
+                        </div>
+                    )}
                     {/* Top Row: Description & Document Type */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         {/* Purchase Requisition Description */}
@@ -3336,6 +3501,105 @@ export default function PurchaseRequisitionForm({
                             <span className="text-[11px] text-[#556b82]">
                                 Select a tab to view and edit detailed contract notes and terms
                             </span>
+                        </div>
+
+                        {/* CR Number & Concurrency Toolbar */}
+                        <div className="border-b border-[#d9e2ec] bg-slate-50/50 p-4 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs font-semibold text-[#1c2d42]">
+                                            Contract Requisition Number (CR No)
+                                        </label>
+                                        <span className="rounded bg-slate-200/80 px-1.5 py-0.2 text-[10px] font-mono text-slate-700">
+                                            Unique Sequence
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-[#556b82]">
+                                        Automatically generated. Validated against the database to prevent duplicate numbers during concurrent creation.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleRefreshCrNumber}
+                                    disabled={isCheckingCr}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#0070f2] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors disabled:opacity-50 self-start sm:self-auto shrink-0 shadow-2xs"
+                                    title="Fetch the next available unique CR number from the database"
+                                >
+                                    <RotateCcw className={`h-3.5 w-3.5 ${isCheckingCr ? 'animate-spin' : ''}`} />
+                                    <span>{isCheckingCr ? 'Checking...' : 'Refresh Sequence'}</span>
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={contractRequisition.cr_no || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value.toUpperCase();
+                                            updateContractRequisition({ cr_no: val });
+                                            clearFieldError('contract_requisition_cr_no');
+                                            clearFieldError('contract_requisition.cr_no');
+                                            setCrCheckStatus(null);
+                                        }}
+                                        onBlur={() => handleCheckCrNumber(contractRequisition.cr_no)}
+                                        placeholder="e.g. CR/1/2026/00001"
+                                        className={`h-9 w-full rounded-md border px-3 text-xs font-mono font-semibold transition-colors focus:outline-none ${
+                                            fieldErrors['contract_requisition_cr_no'] || fieldErrors['contract_requisition.cr_no']
+                                                ? 'border-rose-500 bg-rose-50/30 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                        }`}
+                                    />
+                                    {isCheckingCr && (
+                                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center text-blue-600">
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="text-xs">
+                                    {isCheckingCr ? (
+                                        <span className="text-slate-500 flex items-center gap-1.5">
+                                            <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                                            Verifying uniqueness against local database...
+                                        </span>
+                                    ) : (fieldErrors['contract_requisition_cr_no'] || fieldErrors['contract_requisition.cr_no']) ? (
+                                        <span className="text-rose-600 font-medium flex items-center gap-1.5">
+                                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                            <span>{fieldErrors['contract_requisition_cr_no'] || fieldErrors['contract_requisition.cr_no']}</span>
+                                        </span>
+                                    ) : crCheckStatus?.isAvailable ? (
+                                        <span className="text-emerald-700 font-medium flex items-center gap-1.5">
+                                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                            <span>{crCheckStatus.message || `CR No '${contractRequisition.cr_no}' is available.`}</span>
+                                        </span>
+                                    ) : (
+                                        <span className="text-[#556b82]">
+                                            Click Refresh if another user may have created a CR concurrently.
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Collision Alert Banner with Quick Action */}
+                            {(fieldErrors['contract_requisition_cr_no'] || fieldErrors['contract_requisition.cr_no']) && (
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800 animate-in fade-in">
+                                    <div className="flex items-center gap-2">
+                                        <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                                        <span>Duplicate detected in local database: <strong>{contractRequisition.cr_no}</strong> is already taken.</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleRefreshCrNumber}
+                                        disabled={isCheckingCr}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-rose-700 bg-rose-100 hover:bg-rose-200 rounded border border-rose-300 transition-colors shrink-0 self-start sm:self-auto"
+                                    >
+                                        <RotateCcw className="h-3 w-3" />
+                                        Allocate Next Unique CR No
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Tabs Navigation */}
@@ -6958,25 +7222,55 @@ export default function PurchaseRequisitionForm({
             {successModal?.isOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
-                        {/* Green Top Highlight Bar */}
-                        <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-blue-500" />
+                        {/* Highlight Bar */}
+                        <div className={`h-2 ${
+                            successModal.sapSyncStatus === 'failed'
+                                ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-amber-600'
+                                : 'bg-gradient-to-r from-emerald-500 via-teal-500 to-blue-500'
+                        }`} />
 
                         <div className="p-6 text-center space-y-5">
-                            {/* Success Icon */}
-                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50 shadow-inner">
-                                <Check className="h-7 w-7 stroke-[2.5]" />
+                            {/* Icon */}
+                            <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full shadow-inner ${
+                                successModal.sapSyncStatus === 'failed'
+                                    ? 'bg-amber-100 text-amber-600 ring-8 ring-amber-50'
+                                    : 'bg-emerald-100 text-emerald-600 ring-8 ring-emerald-50'
+                            }`}>
+                                {successModal.sapSyncStatus === 'failed' ? (
+                                    <AlertTriangle className="h-7 w-7 stroke-[2.5]" />
+                                ) : (
+                                    <Check className="h-7 w-7 stroke-[2.5]" />
+                                )}
                             </div>
 
                             <div>
                                 <h3 className="text-lg font-bold text-[#1c2d42]">
                                     {successModal.isDraft
                                         ? 'Purchase Requisition Saved as Draft!'
+                                        : successModal.sapSyncStatus === 'failed'
+                                        ? 'PR Saved in Database (SAP Sync Pending)'
                                         : 'Purchase Requisition Created Successfully!'}
                                 </h3>
                                 <p className="text-xs text-[#556b82] mt-1 max-w-sm mx-auto">
                                     {successModal.message}
                                 </p>
                             </div>
+
+                            {/* Warning Box if SAP Sync Failed */}
+                            {successModal.sapSyncStatus === 'failed' && (
+                                <div className="text-left rounded-lg border border-amber-200 bg-amber-50/80 p-3.5 text-xs text-amber-900 space-y-1.5 animate-in fade-in">
+                                    <div className="flex items-center gap-1.5 font-semibold text-amber-900">
+                                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                                        <span>SAP S/4HANA Cloud Handshake Notice</span>
+                                    </div>
+                                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                                        {successModal.syncWarning || 'Could not authenticate or connect with SAP S/4HANA Cloud at this time.'}
+                                    </p>
+                                    <p className="text-[10px] text-amber-700 font-medium">
+                                        Your requisition is safely stored locally under <strong>{successModal.prNumber}</strong>. You can open it anytime to retry syncing to SAP Cloud.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Reference Numbers Card */}
                             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-left space-y-3">
@@ -7060,15 +7354,21 @@ export default function PurchaseRequisitionForm({
                                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
                                             successModal.isDraft
                                                 ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                                : successModal.sapSyncStatus === 'failed'
+                                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
                                                 : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                         }`}>
-                                            {successModal.isDraft ? 'Draft' : 'Synced with SAP'}
+                                            {successModal.isDraft
+                                                ? 'Draft'
+                                                : successModal.sapSyncStatus === 'failed'
+                                                ? 'Saved Locally (SAP Sync Pending)'
+                                                : 'Synced with SAP'}
                                         </span>
                                     </div>
                                     <div>
                                         <span className="text-[#556b82] mr-1">Total:</span>
                                         <strong className="text-[#1c2d42]">
-                                            {Number(successModal.totalAmount).toLocaleString(undefined, {
+                                             {Number(successModal.totalAmount).toLocaleString(undefined, {
                                                 minimumFractionDigits: 2,
                                                 maximumFractionDigits: 2,
                                             })}{' '}
@@ -7100,7 +7400,7 @@ export default function PurchaseRequisitionForm({
                                         onClick={() => router.visit(`/purchase-requisitions/${successModal.prId}`)}
                                         className="w-full sm:flex-1 rounded-lg bg-[#0070f2] py-2.5 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] transition-colors"
                                     >
-                                        View PR Details
+                                        {successModal.sapSyncStatus === 'failed' ? 'View PR & Retry Sync' : 'View PR Details'}
                                     </button>
                                 )}
                             </div>

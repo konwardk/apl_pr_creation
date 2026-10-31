@@ -149,7 +149,7 @@ export default function PurchaseRequisitionPrintModal({
     const mainHead =
         items.find((i) => i.gl_account)?.gl_account ||
         items.find((i) => i.cost_center)?.cost_center ||
-        'Operational Budget (General)';
+        ''; // Operational Budget (General)
 
     // Delivery dates
     const deliveryDates = items
@@ -525,13 +525,13 @@ export default function PurchaseRequisitionPrintModal({
                                             <div style={{ paddingLeft: '14px', marginTop: '2px' }}>
                                                 <div>a) Main Head : <span style={{ fontWeight: 500 }}>{mainHead}</span></div>
                                                 <div>b) Sub Head : <span style={{ fontWeight: 500 }}>{pr.plant ? `Plant ${pr.plant}` : '................................'}</span></div>
-                                                <div>c) Cost Head : <span style={{ fontWeight: 500 }}>Revenue</span></div>
+                                                <div>c) Cost Head : <span style={{ fontWeight: 500 }}></span></div>
                                             </div>
                                         </div>
 
-                                        <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '10px', marginTop: '14px', color: '#333333' }}>
+                                        {/* <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '10px', marginTop: '14px', color: '#333333' }}>
                                             ( To be filled by the Indentor )
-                                        </div>
+                                        </div> */}
                                     </td>
 
                                     {/* Right Column: Inventory Control Section */}
@@ -555,9 +555,9 @@ export default function PurchaseRequisitionPrintModal({
 
                                         <div style={{ height: '52px' }}></div>
 
-                                        <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '10px', marginTop: '8px', color: '#333333' }}>
+                                        {/* <div style={{ textAlign: 'center', fontStyle: 'italic', fontSize: '10px', marginTop: '8px', color: '#333333' }}>
                                             ( To be filled by inventory control )
-                                        </div>
+                                        </div> */}
                                     </td>
                                 </tr>
                             </tbody>

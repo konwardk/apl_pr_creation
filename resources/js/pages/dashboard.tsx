@@ -727,15 +727,17 @@ export default function Dashboard({
                                                             <span>Print</span>
                                                         </button>
 
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSelectedPrForPayload(pr)}
-                                                            className="flex items-center gap-1 rounded border border-[#d9e2ec] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c2d42] hover:bg-slate-50 transition-colors"
-                                                            title="Inspect SAP OData V4 Payload & Items"
-                                                        >
-                                                            <FileCode className="h-3 w-3 text-[#0070f2]" />
-                                                            <span>Payload</span>
-                                                        </button>
+                                                        {isSuperAdmin && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedPrForPayload(pr)}
+                                                                className="flex items-center gap-1 rounded border border-[#d9e2ec] bg-white px-2 py-1 text-[11px] font-semibold text-[#1c2d42] hover:bg-slate-50 transition-colors"
+                                                                title="Inspect SAP OData V4 Payload & Items"
+                                                            >
+                                                                <FileCode className="h-3 w-3 text-[#0070f2]" />
+                                                                <span>Payload</span>
+                                                            </button>
+                                                        )}
 
                                                         {Boolean(pr.is_draft) || pr.sap_sync_status === 'failed' ? (
                                                             <>
@@ -987,11 +989,13 @@ export default function Dashboard({
 
 
             {/* Modal: Inspect SAP OData V4 Payload */}
-            <SapPayloadModal
-                pr={selectedPrForPayload}
-                isOpen={selectedPrForPayload !== null}
-                onClose={() => setSelectedPrForPayload(null)}
-            />
+            {isSuperAdmin && (
+                <SapPayloadModal
+                    pr={selectedPrForPayload}
+                    isOpen={selectedPrForPayload !== null}
+                    onClose={() => setSelectedPrForPayload(null)}
+                />
+            )}
 
             {/* Modal: APL Materials Indent Form (F-2) Printout */}
             <PurchaseRequisitionPrintModal

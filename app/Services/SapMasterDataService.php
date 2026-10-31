@@ -1468,6 +1468,22 @@ class SapMasterDataService
     }
 
     /**
+     * Format a descriptive, user-friendly error message when SAP CSRF token handshake fails.
+     */
+    protected function formatSapTokenErrorMessage(int $statusCode, string $serviceName = 'SAP S/4HANA Cloud'): string
+    {
+        return match ($statusCode) {
+            401 => "SAP S/4HANA Cloud Authentication Failed (HTTP 401): Communication User credentials rejected or expired. Please verify SAP_ODATA_USER and SAP_ODATA_PASSWORD credentials.",
+            403 => "SAP S/4HANA Cloud Access Forbidden (HTTP 403): Communication User lacks authorization to access {$serviceName}.",
+            404 => "SAP S/4HANA Cloud Service Not Found (HTTP 404): The {$serviceName} endpoint was not reachable at the configured URL.",
+            408, 504 => "SAP S/4HANA Cloud Gateway Timeout (HTTP {$statusCode}): Connection to {$serviceName} timed out.",
+            500, 502, 503 => "SAP S/4HANA Cloud Server Error (HTTP {$statusCode}): The remote SAP server is temporarily unavailable.",
+            200, 204 => "SAP S/4HANA Cloud security handshake incomplete: The server responded with HTTP {$statusCode} but did not return an x-csrf-token header.",
+            default => "SAP S/4HANA Cloud handshake failed with HTTP {$statusCode} while obtaining security token.",
+        };
+    }
+
+    /**
      * Post/Sync Purchase Requisition to SAP S/4HANA Public Cloud via OData V4 API.
      *
      * @param PurchaseRequisition $purchaseRequisition
@@ -1520,12 +1536,13 @@ class SapMasterDataService
 
             $csrfToken = $tokenRes->getHeaderLine('x-csrf-token');
             if (empty($csrfToken)) {
-                Log::error('SAP CSRF Token fetch failed: HTTP ' . $tokenRes->getStatusCode());
+                $statusCode = $tokenRes->getStatusCode();
+                Log::error('SAP CSRF Token fetch failed: HTTP ' . $statusCode);
                 return [
                     'success' => false,
                     'sap_pr_number' => null,
-                    'status' => $tokenRes->getStatusCode(),
-                    'message' => 'Failed to obtain CSRF token from SAP S/4HANA Cloud (HTTP ' . $tokenRes->getStatusCode() . ')',
+                    'status' => $statusCode,
+                    'message' => $this->formatSapTokenErrorMessage($statusCode, 'Purchase Requisition API'),
                     'response' => [],
                     'payload' => $payload,
                 ];
@@ -1673,7 +1690,8 @@ class SapMasterDataService
 
             $csrfToken = $tokenRes->getHeaderLine('x-csrf-token');
             if (empty($csrfToken)) {
-                $msg = 'Failed to obtain CSRF token from SAP Attachment Service (HTTP ' . $tokenRes->getStatusCode() . ')';
+                $statusCode = $tokenRes->getStatusCode();
+                $msg = $this->formatSapTokenErrorMessage($statusCode, 'SAP Attachment Service');
                 $attachment->update([
                     'sap_sync_status' => 'failed',
                     'sap_sync_message' => $msg,
@@ -1681,7 +1699,7 @@ class SapMasterDataService
 
                 return [
                     'success' => false,
-                    'status' => $tokenRes->getStatusCode(),
+                    'status' => $statusCode,
                     'message' => $msg,
                 ];
             }
@@ -1808,11 +1826,12 @@ class SapMasterDataService
 
             $csrfToken = $tokenRes->getHeaderLine('x-csrf-token');
             if (empty($csrfToken)) {
-                Log::error('SAP Contract Requisition CSRF Token fetch failed: HTTP ' . $tokenRes->getStatusCode());
+                $statusCode = $tokenRes->getStatusCode();
+                Log::error('SAP Contract Requisition CSRF Token fetch failed: HTTP ' . $statusCode);
                 return [
                     'success' => false,
-                    'status' => $tokenRes->getStatusCode(),
-                    'message' => 'Failed to obtain CSRF token for Contract Requisition from SAP S/4HANA Cloud (HTTP ' . $tokenRes->getStatusCode() . ')',
+                    'status' => $statusCode,
+                    'message' => $this->formatSapTokenErrorMessage($statusCode, 'Contract Requisition Service'),
                     'response' => [],
                     'payload' => $payload,
                 ];

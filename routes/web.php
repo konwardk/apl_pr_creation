@@ -19,6 +19,8 @@ Route::get('/', function () {
 Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('purchase-requisitions/create', [PurchaseRequisitionController::class, 'create'])->name('purchase-requisitions.create');
+    Route::get('purchase-requisitions/next-sequence', [PurchaseRequisitionController::class, 'getNextSequence'])->name('purchase-requisitions.next-sequence');
+    Route::get('purchase-requisitions/check-cr-number', [PurchaseRequisitionController::class, 'checkCrNumber'])->name('purchase-requisitions.check-cr');
     Route::post('purchase-requisitions', [PurchaseRequisitionController::class, 'store'])->name('purchase-requisitions.store');
     Route::get('purchase-requisitions/{purchaseRequisition}', [PurchaseRequisitionController::class, 'show'])->name('purchase-requisitions.show');
     Route::get('purchase-requisitions/{purchaseRequisition}/edit', [PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');

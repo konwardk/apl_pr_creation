@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Attachment;
 use App\Models\Attachement;
+use App\Models\ContractRequisition;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\Role;
@@ -677,6 +678,184 @@ class PurchaseRequisitionTest extends TestCase
 
         $response->assertRedirect(route('dashboard'));
         $response->assertSessionHas('error');
+    }
+
+    public function test_next_sequence_endpoint_returns_json_sequence(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get(route('purchase-requisitions.next-sequence'));
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'success',
+                'current_year',
+                'next_pr_number',
+                'next_cr_no',
+            ]);
+
+        $year = date('Y');
+        $this->assertStringStartsWith("PR/{$user->id}/{$year}/", $response->json('next_pr_number'));
+        $this->assertStringStartsWith("CR/{$user->id}/{$year}/", $response->json('next_cr_no'));
+    }
+
+    public function test_generate_next_pr_and_cr_number_format_includes_user_id_and_slashes(): void
+    {
+        $user1 = User::factory()->create();
+        $user2 = User::factory()->create();
+        $year = date('Y');
+
+        $controller = app(\App\Http\Controllers\PurchaseRequisitionController::class);
+
+        // Check format for user 1
+        $pr1 = $controller->generateNextPrNumber(false, $user1->id);
+        $cr1 = $controller->generateNextCrNumber(false, $user1->id);
+        $this->assertEquals("PR/{$user1->id}/{$year}/00001", $pr1);
+        $this->assertEquals("CR/{$user1->id}/{$year}/00001", $cr1);
+
+        // Save PR and CR with these numbers
+        $req1 = PurchaseRequisition::create([
+            'pr_number' => $pr1,
+            'user_id' => $user1->id,
+            'description' => 'User 1 PR',
+            'pr_type' => 'ZMAT',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'total_amount' => 100.00,
+            'currency' => 'INR',
+        ]);
+        ContractRequisition::create([
+            'purchase_requisition_id' => $req1->id,
+            'cr_no' => $cr1,
+            'contract_title' => 'User 1 CR',
+        ]);
+
+        // Next number for user 1 should increment sequence
+        $pr1Next = $controller->generateNextPrNumber(false, $user1->id);
+        $cr1Next = $controller->generateNextCrNumber(false, $user1->id);
+        $this->assertEquals("PR/{$user1->id}/{$year}/00002", $pr1Next);
+        $this->assertEquals("CR/{$user1->id}/{$year}/00002", $cr1Next);
+
+        // User 2 should have independent sequence starting at 00001
+        $pr2 = $controller->generateNextPrNumber(false, $user2->id);
+        $cr2 = $controller->generateNextCrNumber(false, $user2->id);
+        $this->assertEquals("PR/{$user2->id}/{$year}/00001", $pr2);
+        $this->assertEquals("CR/{$user2->id}/{$year}/00001", $cr2);
+    }
+
+    public function test_check_cr_number_endpoint_validates_uniqueness(): void
+    {
+        $user = User::factory()->create();
+        $year = date('Y');
+        $testCrNo = "CR-{$year}-99991";
+
+        // Check availability when it doesn't exist
+        $response = $this->actingAs($user)->get("/purchase-requisitions/check-cr-number?cr_no={$testCrNo}");
+        $response->assertOk()
+            ->assertJson([
+                'is_available' => true,
+                'cr_no' => $testCrNo,
+            ]);
+
+        // Create a ContractRequisition with this number
+        $pr = PurchaseRequisition::create([
+            'pr_number' => "PR-{$year}-99991",
+            'user_id' => $user->id,
+            'description' => 'Test PR for CR validation',
+            'pr_type' => 'ZMAT',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'total_amount' => 100.00,
+            'currency' => 'INR',
+            'is_draft' => 1,
+        ]);
+
+        $cr = ContractRequisition::create([
+            'purchase_requisition_id' => $pr->id,
+            'cr_no' => $testCrNo,
+            'contract_title' => 'Test Title',
+        ]);
+
+        // Now check should report unavailable
+        $response = $this->actingAs($user)->get("/purchase-requisitions/check-cr-number?cr_no={$testCrNo}");
+        $response->assertOk()
+            ->assertJson([
+                'is_available' => false,
+                'cr_no' => $testCrNo,
+            ]);
+        $this->assertStringContainsString('already exists', $response->json('message'));
+
+        // If ignoring current CR ID, it should be available
+        $response = $this->actingAs($user)->get("/purchase-requisitions/check-cr-number?cr_no={$testCrNo}&ignore_id={$cr->id}");
+        $response->assertOk()
+            ->assertJson([
+                'is_available' => true,
+                'cr_no' => $testCrNo,
+            ]);
+    }
+
+    public function test_duplicate_cr_number_returns_validation_error_instead_of_sql_crash(): void
+    {
+        $user = User::factory()->create();
+        $year = date('Y');
+        $existingCrNo = "CR-{$year}-00088";
+
+        // Pre-create existing PR and CR
+        $pr = PurchaseRequisition::create([
+            'pr_number' => "PR-{$year}-00088",
+            'user_id' => $user->id,
+            'description' => 'Initial PR',
+            'pr_type' => 'ZMAT',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'total_amount' => 100.00,
+            'currency' => 'INR',
+            'is_draft' => 1,
+        ]);
+
+        ContractRequisition::create([
+            'purchase_requisition_id' => $pr->id,
+            'cr_no' => $existingCrNo,
+            'contract_title' => 'Existing Title',
+        ]);
+
+        // Submitting another PR with the identical cr_no should return HTTP 422 with a clear error message
+        $payload = [
+            'description' => 'Duplicate CR Requisition Attempt',
+            'pr_type' => 'ZMAT',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'currency' => 'INR',
+            'is_draft' => true,
+            'contract_requisition' => [
+                'cr_no' => $existingCrNo,
+                'contract_title' => 'Duplicate Requisition Title',
+            ],
+            'items' => [
+                [
+                    'material_code' => '1300000001',
+                    'description' => 'Test Item',
+                    'material_group' => 'YBPM01',
+                    'quantity' => 1,
+                    'unit_of_measure' => 'EA',
+                    'unit_price' => 100.00,
+                    'plant' => '1200',
+                    'purchasing_organization' => '1100',
+                    'purchasing_group' => '103',
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)
+            ->withHeaders(['Accept' => 'application/json'])
+            ->postJson(route('purchase-requisitions.store'), $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['contract_requisition.cr_no']);
+
+        $errors = $response->json('errors');
+        $errorMsg = $errors['contract_requisition.cr_no'][0] ?? '';
+        $this->assertStringContainsString("Contract Requisition number '{$existingCrNo}' already exists in the local database", $errorMsg);
     }
 }
 

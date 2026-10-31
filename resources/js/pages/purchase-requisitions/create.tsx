@@ -11,6 +11,7 @@ interface CreatePrPageProps {
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
     defaultCrNo?: string;
+    defaultPrNumber?: string;
 }
 
 export default function CreatePurchaseRequisitionPage({
@@ -19,6 +20,7 @@ export default function CreatePurchaseRequisitionPage({
     prDocumentTypes = [],
     itemCategories = [],
     defaultCrNo,
+    defaultPrNumber,
 }: CreatePrPageProps) {
     return (
         <SapAppLayout
@@ -40,6 +42,7 @@ export default function CreatePurchaseRequisitionPage({
                     prDocumentTypes={prDocumentTypes}
                     itemCategories={itemCategories}
                     defaultCrNo={defaultCrNo}
+                    defaultPrNumber={defaultPrNumber}
                 />
             </div>
         </SapAppLayout>

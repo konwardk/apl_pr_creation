@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
+import { User } from '@/types';
 import SapAppLayout from '@/layouts/sap-app-layout';
 import SapPayloadModal from '@/components/sap/SapPayloadModal';
 import PurchaseRequisitionPrintModal from '@/components/sap/PurchaseRequisitionPrintModal';
@@ -168,6 +169,10 @@ export default function ShowPurchaseRequisitionPage({
         pr.contract_requisition_local ||
         pr.resolved_contract_requisition;
 
+    const { auth } = usePage().props as { auth?: { user?: User } };
+    const user = auth?.user;
+    const isSuperAdmin = Boolean(user?.is_superadmin || user?.role?.name?.toLowerCase() === 'superadmin');
+
     const [activeCrTab, setActiveCrTab] = useState<string>('contract_title');
     const [selectedItemIndex, setSelectedItemIndex] = useState<number>(0);
     const [showPayloadModal, setShowPayloadModal] = useState<boolean>(false);
@@ -283,15 +288,17 @@ export default function ShowPurchaseRequisitionPage({
                             </button>
 
                             {/* Inspect Payload Button */}
-                            <button
-                                type="button"
-                                onClick={() => setShowPayloadModal(true)}
-                                className="flex items-center gap-1.5 rounded-md border border-[#d9e2ec] bg-white px-3 py-2 text-xs font-semibold text-[#1c2d42] shadow-2xs hover:bg-slate-50 transition-colors"
-                                title="Inspect SAP OData V4 Payload & Responses"
-                            >
-                                <FileCode className="h-4 w-4 text-[#0070f2]" />
-                                <span>SAP Payload</span>
-                            </button>
+                            {isSuperAdmin && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPayloadModal(true)}
+                                    className="flex items-center gap-1.5 rounded-md border border-[#d9e2ec] bg-white px-3 py-2 text-xs font-semibold text-[#1c2d42] shadow-2xs hover:bg-slate-50 transition-colors"
+                                    title="Inspect SAP OData V4 Payload & Responses"
+                                >
+                                    <FileCode className="h-4 w-4 text-[#0070f2]" />
+                                    <span>SAP Payload</span>
+                                </button>
+                            )}
 
                             {/* Conditional Actions: If in draft or sync failed, provide Edit and Sync with SAP */}
                             {(isDraft || pr.sap_sync_status === 'failed') && (
@@ -327,22 +334,45 @@ export default function ShowPurchaseRequisitionPage({
 
                     {/* Sync Message Alert if Failed */}
                     {pr.sap_sync_status === 'failed' && pr.sap_sync_message && (
-                        <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800">
-                            <div className="flex items-start gap-2.5">
+                        <div className="mt-4 flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 animate-in fade-in">
+                            <div className="flex items-start gap-3">
                                 <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
                                 <div>
-                                    <strong className="font-semibold text-rose-900">SAP S/4HANA Cloud Sync Notice:</strong>
-                                    <p className="mt-0.5 text-rose-800 leading-relaxed">{pr.sap_sync_message}</p>
+                                    <div className="flex items-center gap-2">
+                                        <strong className="font-semibold text-rose-900">SAP S/4HANA Cloud Sync Notice:</strong>
+                                        <span className="rounded bg-rose-200/70 px-1.5 py-0.2 text-[10px] font-semibold text-rose-800">
+                                            Handshake Failed
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-rose-800 leading-relaxed font-medium">
+                                        {pr.sap_sync_message.includes('CSRF token') && pr.sap_sync_message.includes('401')
+                                            ? 'SAP S/4HANA Cloud Authentication Failed (HTTP 401): Communication User credentials were not accepted by SAP S/4HANA Cloud. Please verify SAP_ODATA_USER and SAP_ODATA_PASSWORD in your environment configuration, then click Retry Sync.'
+                                            : pr.sap_sync_message}
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-rose-600">
+                                        This requisition is safely preserved in the local database. You can retry syncing whenever SAP connectivity is restored.
+                                    </p>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => router.visit(`/purchase-requisitions/${pr.id}/edit`)}
-                                className="inline-flex shrink-0 items-center gap-1.5 self-start sm:self-center rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 transition-colors"
-                            >
-                                <Edit3 className="h-3.5 w-3.5" />
-                                <span>Edit Requisition</span>
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
+                                <button
+                                    type="button"
+                                    onClick={handleSyncToSap}
+                                    disabled={isSyncing}
+                                    className="inline-flex items-center gap-1.5 rounded-md bg-[#0070f2] px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
+                                >
+                                    <Send className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    <span>{isSyncing ? 'Retrying...' : 'Retry Sync to SAP'}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => router.visit(`/purchase-requisitions/${pr.id}/edit`)}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-2xs hover:bg-rose-100 transition-colors"
+                                >
+                                    <Edit3 className="h-3.5 w-3.5" />
+                                    <span>Edit</span>
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -886,11 +916,13 @@ export default function ShowPurchaseRequisitionPage({
             </div>
 
             {/* SAP Payload / OData V4 Inspector Modal */}
-            <SapPayloadModal
-                pr={pr as any}
-                isOpen={showPayloadModal}
-                onClose={() => setShowPayloadModal(false)}
-            />
+            {isSuperAdmin && (
+                <SapPayloadModal
+                    pr={pr as any}
+                    isOpen={showPayloadModal}
+                    onClose={() => setShowPayloadModal(false)}
+                />
+            )}
 
             {/* APL Materials Indent Form (F-2) Print Modal */}
             <PurchaseRequisitionPrintModal

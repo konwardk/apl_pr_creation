@@ -397,8 +397,10 @@ export default function SapSearchHelpModal({
                                         </>
                                     ) : isUnitOfMeasureSearch ? (
                                         <>
-                                            <th className="py-2.5 px-4 w-36 font-mono">Unit of Measure (UnitOfMeasure)</th>
-                                            <th className="py-2.5 px-4 w-44 font-mono">Commercial Name (UnitOfMeasureCommercialName)</th>
+                                            <th className="py-2.5 px-4 w-32 font-mono">Unit (UnitOfMeasure)</th>
+                                            <th className="py-2.5 px-3 w-32 font-mono text-center">Commercial</th>
+                                            <th className="py-2.5 px-3 w-28 font-mono text-center">SAP Code</th>
+                                            <th className="py-2.5 px-3 w-28 font-mono text-center">ISO Code</th>
                                             <th className="py-2.5 px-4">Description (UnitOfMeasureLongName)</th>
                                         </>
                                     ) : isTaxCodeSearch ? (
@@ -697,9 +699,19 @@ export default function SapSearchHelpModal({
                                                             {opt.UnitOfMeasure || opt.code}
                                                         </span>
                                                     </td>
-                                                    <td className="py-2.5 px-4 font-mono text-xs font-semibold text-slate-700">
+                                                    <td className="py-2.5 px-3 text-center font-mono text-xs font-semibold text-slate-700">
                                                         <span className="rounded bg-blue-50 border border-blue-200 px-2 py-0.5 text-[11px] font-bold text-[#0070f2]">
-                                                            {opt.UnitOfMeasureCommercialName || opt.extra || opt.UnitOfMeasure || opt.code}
+                                                            {opt.UnitOfMeasureCommercialName || opt.UnitOfMeasure || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono text-xs font-semibold text-slate-700">
+                                                        <span className="rounded bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[11px] font-bold text-indigo-700">
+                                                            {opt.UnitOfMeasureSAPCode || opt.sapCode || opt.UnitOfMeasure || opt.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center font-mono text-xs font-semibold text-slate-700">
+                                                        <span className="rounded bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                                                            {opt.UnitOfMeasureISOCode || opt.isoCode || '-'}
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-4 text-xs font-medium text-[#1c2d42]">

@@ -17,10 +17,54 @@ use Illuminate\Support\Facades\Storage;
 class SapMasterDataService
 {
     /**
+     * Base URL for SAP S/4HANA Cloud instance
+     */
+    protected string $baseUrl;
+
+    /**
      * Default realistic fallback document types representing SAP S/4HANA Cloud
      * I_PurchaseRequisitionType CDS view release data for Assam Petro-Chemicals Ltd.
      */
     protected array $fallbackDocumentTypes = [];
+
+    public function __construct(?string $baseUrl = null)
+    {
+        $this->baseUrl = rtrim(
+            $baseUrl ?: config('sap.tenant_url', env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap')),
+            '/'
+        );
+    }
+
+    /**
+     * Get the configured SAP S/4HANA Cloud base URL.
+     */
+    public function getBaseUrl(): string
+    {
+        return $this->baseUrl;
+    }
+
+    /**
+     * Resolve endpoint URL using config key with fallback to base URL + relative path.
+     *
+     * @param string $configKey Key inside config('sap.endpoints.*')
+     * @param string $relativePath Default relative path (e.g. '/sap/opu/odata/sap/...')
+     * @return string
+     */
+    public function getEndpoint(string $configKey, string $relativePath): string
+    {
+        $configured = config("sap.endpoints.{$configKey}");
+        if (!empty($configured)) {
+            // Clean up any literal escaped dollar signs (e.g. \$format -> $format)
+            $configured = str_replace('\$', '$', $configured);
+
+            if (!str_starts_with($configured, 'http://') && !str_starts_with($configured, 'https://')) {
+                return $this->baseUrl . '/' . ltrim($configured, '/');
+            }
+            return $configured;
+        }
+
+        return $this->baseUrl . '/' . ltrim($relativePath, '/');
+    }
 
     /**
      * Fetch PR Document Types from the SAP S/4HANA Cloud CDS View endpoint:
@@ -36,9 +80,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.pr_document_types',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'pr_document_types',
+            '/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -304,9 +348,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.materials',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PRODUCTPLANTVALUATION_CDS/YY1_ProductPlantValuation?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'materials',
+            '/sap/opu/odata/sap/YY1_PRODUCTPLANTVALUATION_CDS/YY1_ProductPlantValuation?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -642,9 +686,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.account_assignment_categories',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_ACCOUNTASSIGNMENTCAT_CDS/YY1_AccountAssignmentCat?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'account_assignment_categories',
+            '/sap/opu/odata/sap/YY1_ACCOUNTASSIGNMENTCAT_CDS/YY1_AccountAssignmentCat?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -899,9 +943,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.plants',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'plants',
+            '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -1090,9 +1134,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.storage_locations',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'storage_locations',
+            '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -1305,9 +1349,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.material_groups',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_MATERIALGROUP_CDS/YY1_MATERIALGROUP?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'material_groups',
+            '/sap/opu/odata/sap/YY1_MATERIALGROUP_CDS/YY1_MATERIALGROUP?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -1494,13 +1538,13 @@ class SapMasterDataService
     {
         $username = config('sap.auth.username', env('SAP_ODATA_USER'));
         $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
-        $endpoint = config(
-            'sap.endpoints.purchase_requisition_process',
-            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/PurchaseReqn'
+        $endpoint = $this->getEndpoint(
+            'purchase_requisition_process',
+            '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/PurchaseReqn'
         );
-        $serviceRoot = config(
-            'sap.endpoints.service_root',
-            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/'
+        $serviceRoot = $this->getEndpoint(
+            'service_root',
+            '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/'
         );
 
         if (empty($username) || empty($password)) {
@@ -1514,7 +1558,10 @@ class SapMasterDataService
             ];
         }
 
-        $payload = $purchaseRequisition->toSapODataV4Payload($doOnlyValidation);
+        // Build SAP UoM → ISO code mapping from CDS View for accurate BaseUnitISOCode
+        $uomIsoMapping = $this->buildUomIsoMapping();
+
+        $payload = $purchaseRequisition->toSapODataV4Payload($doOnlyValidation, $uomIsoMapping);
 
         try {
             $client = new Client([
@@ -1635,13 +1682,13 @@ class SapMasterDataService
     {
         $username = config('sap.auth.username', env('SAP_ODATA_USER'));
         $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
-        $endpoint = config(
-            'sap.endpoints.attachment_content',
-            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/AttachmentContentSet'
+        $endpoint = $this->getEndpoint(
+            'attachment_content',
+            '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/AttachmentContentSet'
         );
-        $serviceRoot = config(
-            'sap.endpoints.attachment_service_root',
-            env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap') . '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/'
+        $serviceRoot = $this->getEndpoint(
+            'attachment_service_root',
+            '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/'
         );
 
         if (empty($username) || empty($password)) {
@@ -1785,13 +1832,13 @@ class SapMasterDataService
     {
         $username = config('sap.auth.username', env('SAP_ODATA_USER'));
         $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
-        $endpoint = config(
-            'sap.endpoints.contract_requisition',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/ContractRequisition'
+        $endpoint = $this->getEndpoint(
+            'contract_requisition',
+            '/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/ContractRequisition'
         );
-        $serviceRoot = config(
-            'sap.endpoints.contract_requisition_service_root',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/'
+        $serviceRoot = $this->getEndpoint(
+            'contract_requisition_service_root',
+            '/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/'
         );
 
         if (empty($username) || empty($password)) {
@@ -1912,9 +1959,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.gl_accounts',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_I_GLACCOUNTINCOMPANYCO_CDS/YY1_I_GLACCOUNTINCOMPANYCO?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'gl_accounts',
+            '/sap/opu/odata/sap/YY1_I_GLACCOUNTINCOMPANYCO_CDS/YY1_I_GLACCOUNTINCOMPANYCO?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -2151,9 +2198,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.cost_centers',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_COSTCENTER_CDS/YY1_COSTCENTER?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'cost_centers',
+            '/sap/opu/odata/sap/YY1_COSTCENTER_CDS/YY1_COSTCENTER?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -2436,9 +2483,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.suppliers',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_SUPPLIER_CDS/YY1_Supplier?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'suppliers',
+            '/sap/opu/odata/sap/YY1_SUPPLIER_CDS/YY1_Supplier?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -2710,9 +2757,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.purchasing_organizations',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'purchasing_organizations',
+            '/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -2981,9 +3028,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.purchasing_groups',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'purchasing_groups',
+            '/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -3211,23 +3258,24 @@ class SapMasterDataService
 
     /**
      * Default realistic fallback units of measure matching SAP YY1_UNITOFMEASUREMENT_CDS schema.
+     * Includes UnitOfMeasureISOCode for OData V4 API compatibility.
      */
     protected array $fallbackUnitsOfMeasure = [
-        ['code' => 'NO', 'UnitOfMeasure' => 'NO', 'UnitOfMeasureCommercialName' => 'NO', 'UnitOfMeasureLongName' => 'Number', 'name' => 'NO - Number', 'extra' => 'Number'],
-        ['code' => 'EA', 'UnitOfMeasure' => 'EA', 'UnitOfMeasureCommercialName' => 'EA', 'UnitOfMeasureLongName' => 'Each', 'name' => 'EA - Each', 'extra' => 'Each'],
-        ['code' => 'PC', 'UnitOfMeasure' => 'PC', 'UnitOfMeasureCommercialName' => 'PC', 'UnitOfMeasureLongName' => 'Piece', 'name' => 'PC - Piece', 'extra' => 'Piece'],
-        ['code' => 'KG', 'UnitOfMeasure' => 'KG', 'UnitOfMeasureCommercialName' => 'KG', 'UnitOfMeasureLongName' => 'Kilogram', 'name' => 'KG - Kilogram', 'extra' => 'Kilogram'],
-        ['code' => 'M', 'UnitOfMeasure' => 'M', 'UnitOfMeasureCommercialName' => 'M', 'UnitOfMeasureLongName' => 'Meter', 'name' => 'M - Meter', 'extra' => 'Meter'],
-        ['code' => 'M3', 'UnitOfMeasure' => 'M3', 'UnitOfMeasureCommercialName' => 'M3', 'UnitOfMeasureLongName' => 'Cubic Meter', 'name' => 'M3 - Cubic Meter', 'extra' => 'Cubic Meter'],
-        ['code' => 'L', 'UnitOfMeasure' => 'L', 'UnitOfMeasureCommercialName' => 'L', 'UnitOfMeasureLongName' => 'Liter', 'name' => 'L - Liter', 'extra' => 'Liter'],
-        ['code' => 'TO', 'UnitOfMeasure' => 'TO', 'UnitOfMeasureCommercialName' => 'TO', 'UnitOfMeasureLongName' => 'Metric Ton', 'name' => 'TO - Metric Ton', 'extra' => 'Metric Ton'],
-        ['code' => 'HR', 'UnitOfMeasure' => 'HR', 'UnitOfMeasureCommercialName' => 'HR', 'UnitOfMeasureLongName' => 'Hours', 'name' => 'HR - Hours', 'extra' => 'Hours'],
-        ['code' => 'DAY', 'UnitOfMeasure' => 'DAY', 'UnitOfMeasureCommercialName' => 'DAY', 'UnitOfMeasureLongName' => 'Days', 'name' => 'DAY - Days', 'extra' => 'Days'],
-        ['code' => 'MON', 'UnitOfMeasure' => 'MON', 'UnitOfMeasureCommercialName' => 'MON', 'UnitOfMeasureLongName' => 'Months', 'name' => 'MON - Months', 'extra' => 'Months'],
-        ['code' => 'AU', 'UnitOfMeasure' => 'AU', 'UnitOfMeasureCommercialName' => 'AU', 'UnitOfMeasureLongName' => 'Activity unit', 'name' => 'AU - Activity unit', 'extra' => 'Activity unit'],
-        ['code' => 'SET', 'UnitOfMeasure' => 'SET', 'UnitOfMeasureCommercialName' => 'SET', 'UnitOfMeasureLongName' => 'Set', 'name' => 'SET - Set', 'extra' => 'Set'],
-        ['code' => 'JOB', 'UnitOfMeasure' => 'JOB', 'UnitOfMeasureCommercialName' => 'JOB', 'UnitOfMeasureLongName' => 'Job / Lumpsum', 'name' => 'JOB - Job / Lumpsum', 'extra' => 'Job / Lumpsum'],
-        ['code' => 'LOT', 'UnitOfMeasure' => 'LOT', 'UnitOfMeasureCommercialName' => 'LOT', 'UnitOfMeasureLongName' => 'Lot', 'name' => 'LOT - Lot', 'extra' => 'Lot'],
+        ['code' => 'NO', 'UnitOfMeasure' => 'NO', 'UnitOfMeasureCommercialName' => 'NO', 'UnitOfMeasureLongName' => 'Number', 'UnitOfMeasureISOCode' => 'C62', 'UnitOfMeasureSAPCode' => 'NO', 'isoCode' => 'C62', 'sapCode' => 'NO', 'name' => 'NO - Number', 'extra' => 'Number'],
+        ['code' => 'EA', 'UnitOfMeasure' => 'EA', 'UnitOfMeasureCommercialName' => 'EA', 'UnitOfMeasureLongName' => 'Each', 'UnitOfMeasureISOCode' => 'EA', 'UnitOfMeasureSAPCode' => 'EA', 'isoCode' => 'EA', 'sapCode' => 'EA', 'name' => 'EA - Each', 'extra' => 'Each'],
+        ['code' => 'PC', 'UnitOfMeasure' => 'PC', 'UnitOfMeasureCommercialName' => 'PC', 'UnitOfMeasureLongName' => 'Piece', 'UnitOfMeasureISOCode' => 'PCE', 'UnitOfMeasureSAPCode' => 'PC', 'isoCode' => 'PCE', 'sapCode' => 'PC', 'name' => 'PC - Piece', 'extra' => 'Piece'],
+        ['code' => 'KG', 'UnitOfMeasure' => 'KG', 'UnitOfMeasureCommercialName' => 'KG', 'UnitOfMeasureLongName' => 'Kilogram', 'UnitOfMeasureISOCode' => 'KGM', 'UnitOfMeasureSAPCode' => 'KG', 'isoCode' => 'KGM', 'sapCode' => 'KG', 'name' => 'KG - Kilogram', 'extra' => 'Kilogram'],
+        ['code' => 'M', 'UnitOfMeasure' => 'M', 'UnitOfMeasureCommercialName' => 'M', 'UnitOfMeasureLongName' => 'Meter', 'UnitOfMeasureISOCode' => 'MTR', 'UnitOfMeasureSAPCode' => 'M', 'isoCode' => 'MTR', 'sapCode' => 'M', 'name' => 'M - Meter', 'extra' => 'Meter'],
+        ['code' => 'M3', 'UnitOfMeasure' => 'M3', 'UnitOfMeasureCommercialName' => 'M3', 'UnitOfMeasureLongName' => 'Cubic Meter', 'UnitOfMeasureISOCode' => 'MTQ', 'UnitOfMeasureSAPCode' => 'M3', 'isoCode' => 'MTQ', 'sapCode' => 'M3', 'name' => 'M3 - Cubic Meter', 'extra' => 'Cubic Meter'],
+        ['code' => 'L', 'UnitOfMeasure' => 'L', 'UnitOfMeasureCommercialName' => 'L', 'UnitOfMeasureLongName' => 'Liter', 'UnitOfMeasureISOCode' => 'LTR', 'UnitOfMeasureSAPCode' => 'L', 'isoCode' => 'LTR', 'sapCode' => 'L', 'name' => 'L - Liter', 'extra' => 'Liter'],
+        ['code' => 'TO', 'UnitOfMeasure' => 'TO', 'UnitOfMeasureCommercialName' => 'TO', 'UnitOfMeasureLongName' => 'Metric Ton', 'UnitOfMeasureISOCode' => 'TNE', 'UnitOfMeasureSAPCode' => 'TO', 'isoCode' => 'TNE', 'sapCode' => 'TO', 'name' => 'TO - Metric Ton', 'extra' => 'Metric Ton'],
+        ['code' => 'HR', 'UnitOfMeasure' => 'HR', 'UnitOfMeasureCommercialName' => 'HR', 'UnitOfMeasureLongName' => 'Hours', 'UnitOfMeasureISOCode' => 'HUR', 'UnitOfMeasureSAPCode' => 'HR', 'isoCode' => 'HUR', 'sapCode' => 'HR', 'name' => 'HR - Hours', 'extra' => 'Hours'],
+        ['code' => 'DAY', 'UnitOfMeasure' => 'DAY', 'UnitOfMeasureCommercialName' => 'DAY', 'UnitOfMeasureLongName' => 'Days', 'UnitOfMeasureISOCode' => 'DAY', 'UnitOfMeasureSAPCode' => 'DAY', 'isoCode' => 'DAY', 'sapCode' => 'DAY', 'name' => 'DAY - Days', 'extra' => 'Days'],
+        ['code' => 'MON', 'UnitOfMeasure' => 'MON', 'UnitOfMeasureCommercialName' => 'MON', 'UnitOfMeasureLongName' => 'Months', 'UnitOfMeasureISOCode' => 'MON', 'UnitOfMeasureSAPCode' => 'MON', 'isoCode' => 'MON', 'sapCode' => 'MON', 'name' => 'MON - Months', 'extra' => 'Months'],
+        ['code' => 'AU', 'UnitOfMeasure' => 'AU', 'UnitOfMeasureCommercialName' => 'AU', 'UnitOfMeasureLongName' => 'Activity unit', 'UnitOfMeasureISOCode' => '', 'UnitOfMeasureSAPCode' => 'AU', 'isoCode' => '', 'sapCode' => 'AU', 'name' => 'AU - Activity unit', 'extra' => 'Activity unit'],
+        ['code' => 'SET', 'UnitOfMeasure' => 'SET', 'UnitOfMeasureCommercialName' => 'SET', 'UnitOfMeasureLongName' => 'Set', 'UnitOfMeasureISOCode' => 'SET', 'UnitOfMeasureSAPCode' => 'SET', 'isoCode' => 'SET', 'sapCode' => 'SET', 'name' => 'SET - Set', 'extra' => 'Set'],
+        ['code' => 'JOB', 'UnitOfMeasure' => 'JOB', 'UnitOfMeasureCommercialName' => 'JOB', 'UnitOfMeasureLongName' => 'Job / Lumpsum', 'UnitOfMeasureISOCode' => 'JOB', 'UnitOfMeasureSAPCode' => 'JOB', 'isoCode' => 'JOB', 'sapCode' => 'JOB', 'name' => 'JOB - Job / Lumpsum', 'extra' => 'Job / Lumpsum'],
+        ['code' => 'LOT', 'UnitOfMeasure' => 'LOT', 'UnitOfMeasureCommercialName' => 'LOT', 'UnitOfMeasureLongName' => 'Lot', 'UnitOfMeasureISOCode' => 'LOT', 'UnitOfMeasureSAPCode' => 'LOT', 'isoCode' => 'LOT', 'sapCode' => 'LOT', 'name' => 'LOT - Lot', 'extra' => 'Lot'],
     ];
 
     /**
@@ -3236,6 +3284,82 @@ class SapMasterDataService
     public function getFormattedFallbackUnitsOfMeasure(): array
     {
         return $this->fallbackUnitsOfMeasure;
+    }
+
+    /**
+     * Build a mapping of SAP UoM codes to their internal SAP unit codes and ISO codes.
+     * Fetches from SAP CDS View (YY1_UNITOFMEASUREMENT_CDS) which provides:
+     * - UnitOfMeasure (e.g. "AU")
+     * - UnitOfMeasureCommercialName (e.g. "AU")
+     * - UnitOfMeasureSAPCode (internal SAP unit, e.g. "LE")
+     * - UnitOfMeasureISOCode (ISO unit, e.g. "C62")
+     *
+     * @return array<string, array{sapCode: string, isoCode: string}>
+     */
+    public function buildUomIsoMapping(): array
+    {
+        $mapping = [];
+
+        // 1. Fetch all UoMs from SAP CDS View (uses Laravel cache internally)
+        $uomResult = $this->fetchUnitsOfMeasureFromCdsView();
+
+        $items = !empty($uomResult['items']) ? $uomResult['items'] : $this->fallbackUnitsOfMeasure;
+
+        foreach ($items as $item) {
+            $uomCode = trim((string)($item['UnitOfMeasure'] ?? $item['code'] ?? ''));
+            $commercial = trim((string)($item['UnitOfMeasureCommercialName'] ?? ''));
+            $sapInternal = trim((string)($item['UnitOfMeasureSAPCode'] ?? $item['sapCode'] ?? $uomCode));
+            $iso = trim((string)($item['UnitOfMeasureISOCode'] ?? $item['isoCode'] ?? ''));
+
+            if ($sapInternal === '') {
+                $sapInternal = $uomCode;
+            }
+
+            if ($iso === '') {
+                $iso = PurchaseRequisition::mapUnitOfMeasureToIso($sapInternal ?: $uomCode);
+            }
+
+            $entry = [
+                'sapCode' => $sapInternal,
+                'isoCode' => $iso,
+            ];
+
+            if ($uomCode !== '') {
+                $mapping[strtoupper($uomCode)] = $entry;
+            }
+            if ($commercial !== '') {
+                $mapping[strtoupper($commercial)] = $entry;
+            }
+            if ($sapInternal !== '') {
+                $mapping[strtoupper($sapInternal)] = $entry;
+            }
+        }
+
+        return $mapping;
+    }
+
+    /**
+     * Resolve the ISO code for a given SAP internal UoM code.
+     * Queries the UoM CDS view (cached) and falls back to hardcoded mapping.
+     *
+     * @param string $sapUnit SAP internal unit code (e.g. "AU", "PC", "KG")
+     * @return string ISO code (e.g. "C62", "PCE", "KGM")
+     */
+    public function resolveUomIsoCode(string $sapUnit): string
+    {
+        $upper = strtoupper(trim($sapUnit));
+        if (empty($upper)) {
+            return 'EA';
+        }
+
+        $mapping = $this->buildUomIsoMapping();
+
+        if (isset($mapping[$upper]) && $mapping[$upper] !== '') {
+            return $mapping[$upper];
+        }
+
+        // Final fallback: hardcoded mapping from PurchaseRequisition model
+        return PurchaseRequisition::mapUnitOfMeasureToIso($sapUnit);
     }
 
     /**
@@ -3248,9 +3372,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.units_of_measure',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_UNITOFMEASUREMENT_CDS/YY1_UnitOfMeasurement?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'units_of_measure',
+            '/sap/opu/odata/sap/YY1_UNITOFMEASUREMENT_CDS/YY1_UnitOfMeasurement?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -3261,7 +3385,7 @@ class SapMasterDataService
                 $startTime = microtime(true);
                 $verifySsl = config('sap.verify_ssl', false);
 
-                $cacheKey = 'sap_uom_items_all_v2';
+                $cacheKey = 'sap_uom_items_all_v3';
                 $cachedItems = \Illuminate\Support\Facades\Cache::get($cacheKey);
 
                 if (is_array($cachedItems) && !empty($cachedItems)) {
@@ -3361,10 +3485,12 @@ class SapMasterDataService
 
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized Unit of Measure items.
-     * Response fields supported:
-     * - UnitOfMeasure (code, e.g. "NO")
-     * - UnitOfMeasureCommercialName (commercial name, e.g. "NO")
-     * - UnitOfMeasureLongName (long description, e.g. "Number")
+     * Response fields supported (from YY1_UNITOFMEASUREMENT_CDS / I_UnitOfMeasure):
+     * - UnitOfMeasure (SAP internal code, e.g. "AU")
+     * - UnitOfMeasureCommercialName (commercial name, e.g. "AU")
+     * - UnitOfMeasureLongName (long description, e.g. "Activity unit")
+     * - UnitOfMeasureISOCode (ISO code required by OData V4, e.g. "ACT")
+     * - UnitOfMeasureSAPCode (SAP internal code, e.g. "AU")
      */
     protected function parseUnitOfMeasureODataItems(array $json): array
     {
@@ -3388,6 +3514,8 @@ class SapMasterDataService
 
             $commercialName = trim((string)($rec['UnitOfMeasureCommercialName'] ?? $uom));
             $longName = trim((string)($rec['UnitOfMeasureLongName'] ?? $rec['name'] ?? $commercialName));
+            $isoCode = trim((string)($rec['UnitOfMeasureISOCode'] ?? ''));
+            $sapCode = trim((string)($rec['UnitOfMeasureSAPCode'] ?? $uom));
 
             $code = $uom;
             $name = $commercialName !== '' ? "{$commercialName} - {$longName}" : "{$code} - {$longName}";
@@ -3400,6 +3528,10 @@ class SapMasterDataService
                 'UnitOfMeasure' => $uom,
                 'UnitOfMeasureCommercialName' => $commercialName,
                 'UnitOfMeasureLongName' => $longName,
+                'UnitOfMeasureISOCode' => $isoCode,
+                'UnitOfMeasureSAPCode' => $sapCode,
+                'isoCode' => $isoCode,
+                'sapCode' => $sapCode,
                 'Language' => $rec['Language'] ?? 'EN',
                 'raw_data' => $rec,
             ];
@@ -3428,9 +3560,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.info_records',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_INFORECORD_CDS/YY1_INFORECORD?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'info_records',
+            '/sap/opu/odata/sap/YY1_INFORECORD_CDS/YY1_INFORECORD?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -3688,9 +3820,9 @@ class SapMasterDataService
         ?string $password = null,
         ?string $endpointUrl = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.tax_codes',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_TAXCODE_CDS/YY1_TAXCODE?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'tax_codes',
+            '/sap/opu/odata/sap/YY1_TAXCODE_CDS/YY1_TAXCODE?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
@@ -4055,9 +4187,9 @@ class SapMasterDataService
         ?string $endpointUrl = null,
         ?string $search = null
     ): array {
-        $endpoint = $endpointUrl ?: config(
-            'sap.endpoints.outline_contracts',
-            'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_OUTLINECONTRACT_CDS/YY1_OUTLINECONTRACT?$format=json'
+        $endpoint = $endpointUrl ?: $this->getEndpoint(
+            'outline_contracts',
+            '/sap/opu/odata/sap/YY1_OUTLINECONTRACT_CDS/YY1_OUTLINECONTRACT?$format=json'
         );
 
         $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));

@@ -112,6 +112,22 @@ class PurchaseRequisition extends Model
     }
 
     /**
+     * Map common commercial unit codes to SAP internal unit codes (MSEHI).
+     */
+    public static function mapUnitOfMeasureToSapInternal(string $uom): string
+    {
+        $map = [
+            'AU' => 'LE',
+            'PC' => 'ST',
+            'HR' => 'STD',
+            'DAY' => 'TAG',
+        ];
+
+        $upper = strtoupper(trim($uom));
+        return $map[$upper] ?? $upper;
+    }
+
+    /**
      * Map common SAP BaseUnit codes to their corresponding ISO codes required by OData V4.
      */
     public static function mapUnitOfMeasureToIso(string $uom): string
@@ -119,12 +135,14 @@ class PurchaseRequisition extends Model
         $map = [
             'EA' => 'EA',
             'PC' => 'PCE',
+            'ST' => 'PCE',
             'PCE' => 'PCE',
             'KG' => 'KGM',
             'KGM' => 'KGM',
             'L' => 'LTR',
             'LTR' => 'LTR',
             'LE' => 'C62',
+            'AU' => 'C62',
             'C62' => 'C62',
             'PAA' => 'PR',
             'PR' => 'PR',
@@ -136,15 +154,17 @@ class PurchaseRequisition extends Model
             'MTQ' => 'MTQ',
             'H' => 'HUR',
             'HR' => 'HUR',
+            'STD' => 'HUR',
             'HUR' => 'HUR',
             'DAY' => 'DAY',
+            'TAG' => 'DAY',
             'MON' => 'MON',
             'SET' => 'SET',
             'BOX' => 'BX',
             'BX' => 'BX',
             'ROL' => 'RO',
-            'AU' => 'ACT',
-            'ACT' => 'ACT',
+            '%' => 'P1',
+            'P1' => 'P1',
             'NO' => 'C62',
             'JOB' => 'JOB',
             'LOT' => 'LOT',
@@ -156,18 +176,39 @@ class PurchaseRequisition extends Model
 
     /**
      * Build SAP S/4HANA Cloud OData V4 POST Payload matching api_purchaserequisition_2 / PurchaseReqn
+     *
+     * @param bool $doOnlyValidation Whether to only validate without creating
+     * @param array<string, array{sapCode: string, isoCode: string}|string> $uomIsoMapping Optional SAP UoM mapping
      */
-    public function toSapODataV4Payload(bool $doOnlyValidation = false): array
+    public function toSapODataV4Payload(bool $doOnlyValidation = false, array $uomIsoMapping = []): array
     {
+        if (empty($uomIsoMapping)) {
+            try {
+                $uomIsoMapping = app(\App\Services\SapMasterDataService::class)->buildUomIsoMapping();
+            } catch (\Throwable $e) {
+                $uomIsoMapping = [];
+            }
+        }
+
         $payload = [
             'PurchaseRequisitionType' => $this->pr_type ?: 'ZMAT',
             'PurReqnDescription' => mb_substr($this->description ?: 'Purchase Requisition', 0, 40),
             'PurReqnHeaderNote' => (string) ($this->header_note ?? ''),
             'SourceDetermination' => (bool) $this->auto_source_determination,
             'PurReqnDoOnlyValidation' => $doOnlyValidation,
-            '_PurchaseRequisitionItem' => $this->items->map(function ($item, $index) {
+            '_PurchaseRequisitionItem' => $this->items->map(function ($item, $index) use ($uomIsoMapping) {
                 $itemNum = (string) (intval($item->item_number) ?: (($index + 1) * 10));
                 $baseUnit = $item->unit_of_measure ?: 'EA';
+
+                // Resolve SAP internal unit & ISO code from CDS View mapping or fallback
+                $upperUnit = strtoupper(trim($baseUnit));
+                $uomInfo = $uomIsoMapping[$upperUnit] ?? null;
+                $sapUnit = is_array($uomInfo)
+                    ? ($uomInfo['sapCode'] ?: static::mapUnitOfMeasureToSapInternal($baseUnit))
+                    : static::mapUnitOfMeasureToSapInternal($baseUnit);
+                $isoCode = is_array($uomInfo)
+                    ? ($uomInfo['isoCode'] ?: static::mapUnitOfMeasureToIso($sapUnit ?: $baseUnit))
+                    : (is_string($uomInfo) && $uomInfo !== '' ? $uomInfo : static::mapUnitOfMeasureToIso($sapUnit ?: $baseUnit));
 
                 $itemPayload = [
                     'PurchaseRequisitionItem' => $itemNum,
@@ -175,7 +216,8 @@ class PurchaseRequisition extends Model
                     'Material' => $item->material_code ?: '',
                     'MaterialGroup' => $item->material_group ?: 'YBPM01',
                     'RequestedQuantity' => (float) $item->quantity,
-                    'BaseUnit' => $baseUnit,
+                    'BaseUnit' => $sapUnit,
+                    'BaseUnitISOCode' => $isoCode,
                     'PurchaseRequisitionPrice' => (float) $item->unit_price,
                     'PurReqnPriceQuantity' => (int) ($item->price_unit ?: 1),
                     'PurchasingOrganization' => $item->purchasing_organization ?: '1100',

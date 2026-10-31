@@ -2611,8 +2611,18 @@ export default function PurchaseRequisitionForm({
         ]));
 
         const validUoms = Array.from(new Set([
-            ...(dataCatalog.unitsOfMeasure || []).map((u) => String(u?.code || u?.UnitOfMeasure || '').trim().toUpperCase()),
-            ...sapUnitsOfMeasureCache.map((u) => String(u?.UnitOfMeasure || u?.UnitOfMeasureCommercialName || u?.code || '').trim().toUpperCase()),
+            ...(dataCatalog.unitsOfMeasure || []).flatMap((u: any) => [
+                String(u?.code || '').trim().toUpperCase(),
+                String(u?.UnitOfMeasure || '').trim().toUpperCase(),
+                String(u?.UnitOfMeasureCommercialName || '').trim().toUpperCase(),
+                String(u?.UnitOfMeasureSAPCode || '').trim().toUpperCase(),
+            ]),
+            ...sapUnitsOfMeasureCache.flatMap((u: any) => [
+                String(u?.code || '').trim().toUpperCase(),
+                String(u?.UnitOfMeasure || '').trim().toUpperCase(),
+                String(u?.UnitOfMeasureCommercialName || '').trim().toUpperCase(),
+                String(u?.UnitOfMeasureSAPCode || '').trim().toUpperCase(),
+            ]),
             'NO', 'EA', 'PC', 'KG', 'M', 'L', 'HR', 'DAY', 'SET', 'AU', 'LE', 'M3', 'TO', 'MON', 'JOB', 'LOT', '%',
         ])).filter(Boolean);
 

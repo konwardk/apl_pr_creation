@@ -65,7 +65,7 @@ class PrDocumentTypeTest extends TestCase
         $superadmin = User::where('email', 'superadmin@example.com')->first();
 
         $response = $this->actingAs($superadmin)->post(route('pr-document-types.fetch-sap'), [
-            'endpoint' => 'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json',
+            'endpoint' => config('sap.endpoints.pr_document_types'),
         ]);
 
         $response->assertOk();

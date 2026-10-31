@@ -739,9 +739,9 @@ export default function PurchaseRequisitionPrintModal({
                                 <tr style={{ height: '140px', verticalAlign: 'top' }}>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
-                                    <td style={{ borderRight: '1px solid #000000', padding: '24px 8px', textAlign: 'center', verticalAlign: 'middle', fontStyle: 'italic', fontWeight: 500, fontSize: '11.5px' }}>
+                                    {/* <td style={{ borderRight: '1px solid #000000', padding: '24px 8px', textAlign: 'center', verticalAlign: 'middle', fontStyle: 'italic', fontWeight: 500, fontSize: '11.5px' }}>
                                         ({numberToWordCount(items.length || 1)})
-                                    </td>
+                                    </td> */}
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>

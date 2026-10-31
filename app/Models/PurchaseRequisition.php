@@ -143,7 +143,11 @@ class PurchaseRequisition extends Model
             'BOX' => 'BX',
             'BX' => 'BX',
             'ROL' => 'RO',
-            'AU' => 'C62',
+            'AU' => 'ACT',
+            'ACT' => 'ACT',
+            'NO' => 'C62',
+            'JOB' => 'JOB',
+            'LOT' => 'LOT',
         ];
 
         $upper = strtoupper(trim($uom));

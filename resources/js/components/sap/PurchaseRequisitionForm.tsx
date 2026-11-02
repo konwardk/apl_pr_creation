@@ -3151,7 +3151,7 @@ export default function PurchaseRequisitionForm({
                                 )
                             ) : (
                                 <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-[#0070f2]">
-                                    SAP S/4HANA Cloud (Public Edition)
+                                    SAP S/4HANA Cloud
                                 </span>
                             )}
                         </div>
@@ -3297,7 +3297,7 @@ export default function PurchaseRequisitionForm({
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
-                                    Purchase Requisition Description <span className="text-slate-400 font-normal">(Header)</span>
+                                    Purchase Requisition Description <span className="text-slate-400 font-normal"></span>
                                 </label>
                             </div>
                             <input

@@ -410,7 +410,10 @@ class SapMasterDataService
                     $targetUrl = $baseUri . "?\$filter=" . urlencode($filterQuery) . "&\$format=json";
                     $resp = (clone $request)->get($targetUrl);
                     if ($resp->successful()) {
-                        $response = $resp;
+                        $parsedItems = $this->parseMaterialODataItems($resp->json());
+                        if (!empty($parsedItems)) {
+                            $response = $resp;
+                        }
                     }
                 }
 
@@ -442,13 +445,36 @@ class SapMasterDataService
                     }
 
                     if (!empty($search)) {
-                        $term = strtolower(trim($search));
-                        $items = array_values(array_filter($items, function ($it) use ($term) {
-                            return str_contains(strtolower($it['Product']), $term)
-                                || str_contains(strtolower($it['ProductName']), $term)
-                                || str_contains(strtolower($it['code']), $term)
-                                || str_contains(strtolower($it['name']), $term)
-                                || str_contains(strtolower($it['Plant']), $term);
+                        $term  = strtolower(trim($search));
+                        $words = array_filter(explode(' ', $term));
+
+                        $items = array_values(array_filter($items, function ($it) use ($term, $words) {
+                            $haystack = strtolower(implode(' ', array_filter([
+                                $it['Product']              ?? '',
+                                $it['ProductExternalID']    ?? '',
+                                $it['code']                 ?? '',
+                                $it['ProductName']          ?? '',
+                                $it['name']                 ?? '',
+                                $it['ProductDescription']   ?? '',
+                                $it['ProductDescription_1'] ?? '',
+                                $it['ProductDescription_2'] ?? '',
+                                $it['ProductDescription_3'] ?? '',
+                                $it['description']          ?? '',
+                                $it['poText']               ?? '',
+                            ])));
+
+                            // Multi-word: every word must appear in haystack
+                            if (count($words) > 1) {
+                                foreach ($words as $w) {
+                                    if (!str_contains($haystack, $w)) {
+                                        return false;
+                                    }
+                                }
+                                return true;
+                            }
+
+                            // Single term: substring match
+                            return str_contains($haystack, $term);
                         }));
                     }
 
@@ -537,15 +563,23 @@ class SapMasterDataService
                 continue;
             }
 
+            $productDesc = trim((string)($rec['ProductDescription'] ?? $rec['ProductDescription_1'] ?? $rec['MaterialDescription'] ?? $rec['Description'] ?? ''));
+            $productDesc1 = trim((string)($rec['ProductDescription_1'] ?? ''));
+            $productDesc2 = trim((string)($rec['ProductDescription_2'] ?? ''));
+            $productDesc3 = trim((string)($rec['ProductDescription_3'] ?? ''));
+
             $productName = '';
-            foreach (['ProductName', 'ProductDescription', 'Description', 'name'] as $nameKey) {
+            foreach (['ProductName', 'ProductDescription', 'ProductDescription_1', 'MaterialDescription', 'Description', 'name'] as $nameKey) {
                 if (!empty($rec[$nameKey]) && trim((string)$rec[$nameKey]) !== '') {
                     $productName = trim((string)$rec[$nameKey]);
                     break;
                 }
             }
-            if ($productName === '') {
-                $productName = (string)$product;
+            if ($productName === '' || strtolower($productName) === strtolower((string)$product)) {
+                $productName = !empty($productDesc) ? $productDesc : (string)$product;
+            }
+            if ($productDesc === '') {
+                $productDesc = $productName;
             }
 
             $baseUnit = '';
@@ -596,10 +630,18 @@ class SapMasterDataService
             $division = trim((string)($rec['Division'] ?? ''));
             $weightUnit = trim((string)($rec['WeightUnit'] ?? ''));
             $uom = trim((string)($rec['UnitOfMeasure'] ?? $baseUnit));
-            $productDesc = trim((string)($rec['ProductDescription'] ?? ''));
-            $productDesc1 = trim((string)($rec['ProductDescription_1'] ?? ''));
-            $productDesc2 = trim((string)($rec['ProductDescription_2'] ?? ''));
-            $productDesc3 = trim((string)($rec['ProductDescription_3'] ?? ''));
+            if (empty($productDesc)) {
+                $productDesc = trim((string)($rec['ProductDescription'] ?? ''));
+            }
+            if (empty($productDesc1)) {
+                $productDesc1 = trim((string)($rec['ProductDescription_1'] ?? ''));
+            }
+            if (empty($productDesc2)) {
+                $productDesc2 = trim((string)($rec['ProductDescription_2'] ?? ''));
+            }
+            if (empty($productDesc3)) {
+                $productDesc3 = trim((string)($rec['ProductDescription_3'] ?? ''));
+            }
             $movingAveragePrice = (string)($rec['MovingAveragePrice'] ?? '0.00');
             $standardPrice = (string)($rec['StandardPrice'] ?? '0.00');
             $invValProcedure = trim((string)($rec['InventoryValuationProcedure'] ?? ''));
@@ -654,6 +696,7 @@ class SapMasterDataService
                 'UnitPrice' => $effectiveUnitPrice,
                 'code' => trim((string)$product),
                 'name' => trim((string)$productName),
+                'description' => trim((string)($productDesc ?: $productName)),
                 'uom' => $baseUnit,
                 'materialGroup' => trim((string)$productGroup),
                 'materialType' => trim((string)$productType),

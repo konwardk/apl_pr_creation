@@ -890,7 +890,7 @@ export default function PurchaseRequisitionForm({
 
         const valCalc = calculateValuationPriceFromItem(matData);
         const productCode = matData.Product || matData.ProductExternalID || matData.code || '';
-        const productName = matData.ProductName || matData.name || matData.ProductDescription || matData.Product || '';
+        const productName = matData.ProductDescription || matData.description || (matData.ProductName && matData.ProductName !== productCode ? matData.ProductName : '') || (matData.name && matData.name !== productCode ? matData.name : '') || matData.ProductName || matData.name || matData.Product || '';
         const plantFromApi = matData.Plant || matData.plant || matData.ValuationArea || targetPlant || '';
         const uom = matData.BaseUnit || matData.UnitOfMeasure || matData.uom || 'EA';
         
@@ -1001,7 +1001,8 @@ export default function PurchaseRequisitionForm({
         const localMatch = (sapMaterialsCache.length > 0 ? sapMaterialsCache : (dataCatalog.materials || [])).find(
             (m: any) =>
                 ((m.Product && String(m.Product).trim().toLowerCase() === trimmedMat.toLowerCase()) ||
-                (m.code && String(m.code).trim().toLowerCase() === trimmedMat.toLowerCase())) &&
+                (m.code && String(m.code).trim().toLowerCase() === trimmedMat.toLowerCase()) ||
+                (m.ProductExternalID && String(m.ProductExternalID).trim().toLowerCase() === trimmedMat.toLowerCase())) &&
                 (!targetPlant || !m.Plant || String(m.Plant).trim() === targetPlant)
         );
         if (localMatch) {
@@ -1080,6 +1081,7 @@ export default function PurchaseRequisitionForm({
                 selectedCode: currentCode || '',
                 field: 'material_code',
                 targetIndex,
+                targetPlant,
                 isLoading: false,
             });
             return;
@@ -1094,6 +1096,7 @@ export default function PurchaseRequisitionForm({
             selectedCode: currentCode || '',
             field: 'material_code',
             targetIndex,
+            targetPlant,
             isLoading: true,
         });
 
@@ -1128,6 +1131,142 @@ export default function PurchaseRequisitionForm({
                 options: [],
                 subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
+            }));
+        }
+    };
+
+    /**
+     * Hit SAP CDS View API (/sap-materials) when user submits search query in F4 Search Help
+     */
+    const handleMaterialSearchQuery = async (query: string) => {
+        const targetPlant = (searchHelpState.targetPlant || currentItem?.plant || defaultPlant).trim();
+        const trimmedQuery = query.trim();
+
+        // 1. If query is empty — restore full cached list immediately
+        if (!trimmedQuery) {
+            if (sapMaterialsCache.length > 0) {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: sapMaterialsCache,
+                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${sapMaterialsCache.length} items)`,
+                    isLoading: false,
+                }));
+            }
+            return;
+        }
+
+        // 2. Client-side filter against full cache — covers Material No + all description variants
+        const term = trimmedQuery.toLowerCase();
+        const searchWords = term.split(/\s+/).filter(Boolean);
+
+        const matchItem = (it: any): boolean => {
+            const raw = it.raw_data || {};
+
+            // Material Number fields
+            const code     = String(it.Product            || it.code               || it.ProductExternalID || '').toLowerCase();
+            const extId    = String(it.ProductExternalID  || raw.ProductExternalID  || '').toLowerCase();
+
+            // Description / Name fields — cover every variant the PHP parser emits
+            const prodName = String(it.ProductName          || raw.ProductName          || '').toLowerCase();
+            const prodDesc = String(it.ProductDescription   || raw.ProductDescription   || '').toLowerCase();
+            const desc1    = String(it.ProductDescription_1 || raw.ProductDescription_1 || '').toLowerCase();
+            const desc2    = String(it.ProductDescription_2 || raw.ProductDescription_2 || '').toLowerCase();
+            const desc3    = String(it.ProductDescription_3 || raw.ProductDescription_3 || '').toLowerCase();
+            const descGen  = String(it.description          || raw.description          || '').toLowerCase();
+            const nameGen  = String(it.name                 || raw.name                || '').toLowerCase();
+            const poText   = String(it.poText               || raw.poText              || '').toLowerCase();
+
+            // Combined searchable text — all fields joined
+            const combined = `${code} ${extId} ${prodName} ${prodDesc} ${desc1} ${desc2} ${desc3} ${descGen} ${nameGen} ${poText}`;
+
+            // Multi-word: every word must appear somewhere in the combined text
+            if (searchWords.length > 1) {
+                return searchWords.every((w) => combined.includes(w));
+            }
+
+            // Single term: fast substring check across individual fields
+            return (
+                code.includes(term)     ||
+                extId.includes(term)    ||
+                prodName.includes(term) ||
+                prodDesc.includes(term) ||
+                desc1.includes(term)    ||
+                desc2.includes(term)    ||
+                desc3.includes(term)    ||
+                descGen.includes(term)  ||
+                nameGen.includes(term)  ||
+                poText.includes(term)
+            );
+        };
+
+        const cachedMatches = sapMaterialsCache.filter(matchItem);
+
+        if (cachedMatches.length > 0) {
+            setSearchHelpState((prev) => ({
+                ...prev,
+                options: cachedMatches,
+                isLoading: false,
+                subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${cachedMatches.length} item${cachedMatches.length !== 1 ? 's' : ''} matching "${trimmedQuery}")`,
+            }));
+            return;
+        }
+
+        // 3. Cache miss — query SAP Cloud live
+        setSearchHelpState((prev) => ({
+            ...prev,
+            isLoading: true,
+            subtitle: `Searching SAP Cloud for "${trimmedQuery}"...`,
+        }));
+
+        try {
+            const queryParams = new URLSearchParams();
+            queryParams.set('search', trimmedQuery);
+            if (targetPlant) {
+                queryParams.set('plant', targetPlant);
+                queryParams.set('valuationArea', targetPlant);
+            }
+
+            const res = await fetch(`/sap-materials?${queryParams.toString()}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const data = await res.json();
+            const liveItems: any[] = data.items || [];
+
+            // Merge new live results into cache so subsequent searches benefit
+            if (liveItems.length > 0) {
+                setSapMaterialsCache((prev) => {
+                    const existingCodes = new Set(prev.map((m: any) => String(m.Product || m.code)));
+                    const newItems = liveItems.filter((li: any) => !existingCodes.has(String(li.Product || li.code)));
+                    return newItems.length > 0 ? [...prev, ...newItems] : prev;
+                });
+            }
+
+            setSearchHelpState((prev) => ({
+                ...prev,
+                options: liveItems,
+                isLoading: false,
+                subtitle: liveItems.length > 0
+                    ? `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${liveItems.length} item${liveItems.length !== 1 ? 's' : ''} matching "${trimmedQuery}")`
+                    : `No materials found matching "${trimmedQuery}"`,
+            }));
+        } catch (err) {
+            console.error('Failed to search materials from SAP CDS view:', err);
+            // On failure, attempt a local re-filter with less strict matching (startsWith)
+            const fallbackMatches = sapMaterialsCache.filter((it: any) => {
+                const code = String(it.Product || it.code || '').toLowerCase();
+                const name = String(it.ProductName || it.ProductDescription || it.description || it.name || '').toLowerCase();
+                return code.startsWith(term) || name.startsWith(term);
+            });
+            setSearchHelpState((prev) => ({
+                ...prev,
+                options: fallbackMatches.length > 0 ? fallbackMatches : sapMaterialsCache,
+                isLoading: false,
+                subtitle: fallbackMatches.length > 0
+                    ? `${fallbackMatches.length} local result${fallbackMatches.length !== 1 ? 's' : ''} for "${trimmedQuery}" (SAP Cloud unavailable)`
+                    : 'SAP Cloud unavailable — showing full cached list',
             }));
         }
     };
@@ -3120,7 +3259,8 @@ export default function PurchaseRequisitionForm({
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <>
+            <form onSubmit={handleSubmit} className="space-y-6">
             {/* Top Toolbar / Application Header */}
             <div className="rounded-xl border border-[#d9e2ec] bg-white p-5 shadow-xs">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -7326,6 +7466,7 @@ export default function PurchaseRequisitionForm({
                     </button>
                 </div>
             </div>
+        </form>
 
             {/* SAP Value Help / Search Help Modal */}
             <SapSearchHelpModal
@@ -7338,6 +7479,7 @@ export default function PurchaseRequisitionForm({
                 onClose={() => setSearchHelpState((prev) => ({ ...prev, isOpen: false }))}
                 onSelect={handleSelectSearchHelp}
                 initialPlant={searchHelpState.targetPlant || currentItem?.plant}
+                onSearch={searchHelpState.field === 'material_code' ? handleMaterialSearchQuery : undefined}
             />
 
             {/* Confirmation Modal before Creation / Sync */}
@@ -7654,6 +7796,6 @@ export default function PurchaseRequisitionForm({
                     </div>
                 </div>
             )}
-        </form>
+        </>
     );
 }

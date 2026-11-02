@@ -748,6 +748,42 @@ class PurchaseRequisitionController extends Controller
 
         // Validate against unsupported SAP Account Assignment Categories and unmaintained materials
         if (!$isDraft) {
+            $prTypeCode = strtoupper(trim($validated['pr_type'] ?? ''));
+            $isServiceDocType = in_array($prTypeCode, ['ZISR', 'ZSER']) || 
+                PrDocumentType::where('code', $prTypeCode)
+                    ->where(function($q) {
+                        $q->where('name', 'like', '%Import Service%')
+                          ->orWhere('name', 'like', '%Domestic Service%')
+                          ->orWhere('category', 'like', '%Service%');
+                    })->exists();
+
+            if ($isServiceDocType) {
+                $crInput = $validated['contract_requisition'] ?? [];
+                $specFields = [
+                    'contract_title' => 'Contract Title',
+                    'scope_of_work' => 'Scope of Work',
+                    'payment_terms' => 'Payment Terms',
+                    'bidders_qualification_criteria' => "Bidder's Qualification Criteria",
+                    'special_terms_condition' => 'Special Terms & Conditions',
+                    'guarantee_warranty_period' => 'Guarantee / Warranty Period',
+                    'defect_liability_period' => 'Defect Liability Period',
+                    'others' => 'Other Terms & Specifications',
+                ];
+
+                $specErrors = [];
+                if (empty(trim($crInput['cr_no'] ?? ''))) {
+                    $specErrors['contract_requisition.cr_no'] = "Contract Requisition Number (CR No) is mandatory for {$prTypeCode} (Service PR).";
+                }
+                foreach ($specFields as $field => $label) {
+                    if (empty(trim($crInput[$field] ?? ''))) {
+                        $specErrors["contract_requisition.{$field}"] = "{$label} is mandatory for {$prTypeCode} (Service PR).";
+                    }
+                }
+                if (!empty($specErrors)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages($specErrors);
+                }
+            }
+
             foreach ($validated['items'] as $index => $item) {
                 $aac = strtoupper(trim($item['account_assignment_category'] ?? ''));
                 if ($aac === 'N') {
@@ -928,6 +964,9 @@ class PurchaseRequisitionController extends Controller
                     // Create Contract Requisition if submitted
                     $crData = $request->input('contract_requisition');
                     if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
+                        $hasTaxCode = collect($validated['items'] ?? [])->contains(function ($item) {
+                            return !empty(trim($item['tax_code'] ?? ''));
+                        });
                         $crNo = !empty($crData['cr_no']) ? trim($crData['cr_no']) : $this->generateNextCrNumber(true, $request->user()?->id);
                         ContractRequisition::create([
                             'cr_no' => $crNo,
@@ -945,7 +984,7 @@ class PurchaseRequisitionController extends Controller
                             'req_designation' => !empty($crData['req_designation']) ? $crData['req_designation'] : ($request->user()?->designation ?? null),
                             'req_department' => !empty($crData['req_department']) ? $crData['req_department'] : ($request->user()?->department?->name ?? null),
                             'tender_type' => $crData['tender_type'] ?? 'Single',
-                            'tender_estimate_value' => $crData['tender_estimate_value'] ?? 'Excluding GST',
+                            'tender_estimate_value' => $hasTaxCode ? 'Including GST' : 'Excluding GST',
                             'total_pr_value' => !empty($crData['total_pr_value']) ? $crData['total_pr_value'] : $totalAmount,
                             'total_pr_value_in_word' => $crData['total_pr_value_in_word'] ?? null,
                             'custom_field_1' => $crData['custom_field_1'] ?? null,
@@ -1317,6 +1356,42 @@ class PurchaseRequisitionController extends Controller
         $prNumber = $purchaseRequisition->pr_number;
 
         if (!$isDraft) {
+            $prTypeCode = strtoupper(trim($validated['pr_type'] ?? ''));
+            $isServiceDocType = in_array($prTypeCode, ['ZISR', 'ZSER']) || 
+                PrDocumentType::where('code', $prTypeCode)
+                    ->where(function($q) {
+                        $q->where('name', 'like', '%Import Service%')
+                          ->orWhere('name', 'like', '%Domestic Service%')
+                          ->orWhere('category', 'like', '%Service%');
+                    })->exists();
+
+            if ($isServiceDocType) {
+                $crInput = $validated['contract_requisition'] ?? [];
+                $specFields = [
+                    'contract_title' => 'Contract Title',
+                    'scope_of_work' => 'Scope of Work',
+                    'payment_terms' => 'Payment Terms',
+                    'bidders_qualification_criteria' => "Bidder's Qualification Criteria",
+                    'special_terms_condition' => 'Special Terms & Conditions',
+                    'guarantee_warranty_period' => 'Guarantee / Warranty Period',
+                    'defect_liability_period' => 'Defect Liability Period',
+                    'others' => 'Other Terms & Specifications',
+                ];
+
+                $specErrors = [];
+                if (empty(trim($crInput['cr_no'] ?? ''))) {
+                    $specErrors['contract_requisition.cr_no'] = "Contract Requisition Number (CR No) is mandatory for {$prTypeCode} (Service PR).";
+                }
+                foreach ($specFields as $field => $label) {
+                    if (empty(trim($crInput[$field] ?? ''))) {
+                        $specErrors["contract_requisition.{$field}"] = "{$label} is mandatory for {$prTypeCode} (Service PR).";
+                    }
+                }
+                if (!empty($specErrors)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages($specErrors);
+                }
+            }
+
             foreach ($validated['items'] as $index => $item) {
                 $aac = strtoupper(trim($item['account_assignment_category'] ?? ''));
                 if ($aac === 'N') {
@@ -1513,6 +1588,9 @@ class PurchaseRequisitionController extends Controller
             // Update or create Contract Requisition
             $crData = $request->input('contract_requisition');
             if (!empty($crData) && (!empty($crData['cr_no']) || !empty($crData['contract_title']) || !empty($crData['scope_of_work']))) {
+                $hasTaxCode = collect($validated['items'] ?? [])->contains(function ($item) {
+                    return !empty(trim($item['tax_code'] ?? ''));
+                });
                 $cr = $purchaseRequisition->contractRequisition ?? $purchaseRequisition->contractRequisitionLocal;
                 $crFields = [
                     'cr_no' => !empty($crData['cr_no']) ? trim($crData['cr_no']) : ($cr?->cr_no ?? $this->generateNextCrNumber(true, $purchaseRequisition->user_id ?? $request->user()?->id)),
@@ -1530,7 +1608,7 @@ class PurchaseRequisitionController extends Controller
                     'req_designation' => !empty($crData['req_designation']) ? $crData['req_designation'] : ($request->user()?->designation ?? null),
                     'req_department' => !empty($crData['req_department']) ? $crData['req_department'] : ($request->user()?->department?->name ?? null),
                     'tender_type' => $crData['tender_type'] ?? 'Single',
-                    'tender_estimate_value' => $crData['tender_estimate_value'] ?? 'Excluding GST',
+                    'tender_estimate_value' => $hasTaxCode ? 'Including GST' : 'Excluding GST',
                     'total_pr_value' => !empty($crData['total_pr_value']) ? $crData['total_pr_value'] : $totalAmount,
                     'total_pr_value_in_word' => $crData['total_pr_value_in_word'] ?? null,
                     'custom_field_1' => $crData['custom_field_1'] ?? null,

@@ -30,6 +30,7 @@ import {
     Wrench,
     Check,
     Eye,
+    Lock,
 } from 'lucide-react';
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
@@ -317,6 +318,24 @@ export default function PurchaseRequisitionForm({
         },
     ] as const;
 
+    // Check if a Document Type is Import Service PR or Domestic Service PR
+    const isServicePrDocumentType = (typeCode: string) => {
+        const code = String(typeCode || '').trim().toUpperCase();
+        if (code === 'ZISR' || code === 'ZSER') return true;
+        const dt = dataCatalog.documentTypes?.find(
+            (d) => String(d.code).trim().toUpperCase() === code
+        );
+        if (dt) {
+            const nameUpper = String(dt.name || '').toUpperCase();
+            if (nameUpper.includes('IMPORT SERVICE') || nameUpper.includes('DOMESTIC SERVICE')) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const isServicePrDocType = isServicePrDocumentType(prType);
+
     const [activeCrNoteTab, setActiveCrNoteTab] = useState<string>('contract_title');
 
     const updateContractRequisition = (updates: Partial<ContractRequisitionData>) => {
@@ -565,6 +584,30 @@ export default function PurchaseRequisitionForm({
 
     // Items List - Initialized with line items from initialData or empty item
     const [items, setItems] = useState<PrItemData[]>(() => buildInitialItems(initialData));
+
+    // Whether any PR line item has a Tax Code specified
+    const hasTaxCode = items.some((it) => Boolean(it.tax_code && String(it.tax_code).trim() !== ''));
+
+    // Automatically manage "Including GST" / "Excluding GST" based on whether Tax Code is specified:
+    // If tax code is given -> automatically set to "Including GST" and lock.
+    // If no tax code is selected -> automatically set to "Excluding GST".
+    React.useEffect(() => {
+        if (hasTaxCode) {
+            if (contractRequisition.tender_estimate_value !== 'Including GST') {
+                setContractRequisition((prev) => ({
+                    ...prev,
+                    tender_estimate_value: 'Including GST',
+                }));
+            }
+        } else {
+            if (contractRequisition.tender_estimate_value !== 'Excluding GST') {
+                setContractRequisition((prev) => ({
+                    ...prev,
+                    tender_estimate_value: 'Excluding GST',
+                }));
+            }
+        }
+    }, [hasTaxCode, contractRequisition.tender_estimate_value]);
 
     // Synchronize initialData when it changes
     React.useEffect(() => {
@@ -1042,12 +1085,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Material & Plant Valuation - SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS)',
             subtitle: `Connecting to SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS)...`,
-            options: dataCatalog.materials || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'material_code',
             targetIndex,
@@ -1073,7 +1116,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No materials returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1081,7 +1125,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch materials from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1108,12 +1153,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Account Assignment Category - SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_AccountAssignmentCat)...',
-            options: dataCatalog.accountAssignmentCategories || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'account_assignment_category',
             targetIndex,
@@ -1139,7 +1184,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No categories returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1147,7 +1193,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch account assignment categories from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1174,12 +1221,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Plant - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH)...',
-            options: dataCatalog.plants || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'plant',
             targetIndex,
@@ -1205,7 +1252,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No plants returned from SAP PlantVH',
+                    options: [],
+                    subtitle: 'No Value Found from SAP PlantVH',
                     isLoading: false,
                 }));
             }
@@ -1213,7 +1261,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch plants from SAP PlantVH service:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud PlantVH Service',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1249,16 +1298,14 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
             subtitle: targetPlant
                 ? `Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH for Plant ${targetPlant})...`
                 : 'Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)...',
-            options: (dataCatalog.storageLocations && dataCatalog.storageLocations.length > 0)
-                ? dataCatalog.storageLocations
-                : [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'storage_location',
             targetIndex,
@@ -1288,7 +1335,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No storage locations returned from SAP StorageLocationVH',
+                    options: [],
+                    subtitle: 'No Value Found from SAP StorageLocationVH',
                     isLoading: false,
                 }));
             }
@@ -1296,7 +1344,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch storage locations from SAP StorageLocationVH service:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud StorageLocationVH Service',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1324,12 +1373,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and initial catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Material Group - SAP S/4HANA Cloud (CDS: YY1_MATERIALGROUP_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_MATERIALGROUP_CDS)...',
-            options: (dataCatalog.materialGroups && dataCatalog.materialGroups.length > 0) ? dataCatalog.materialGroups : [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'material_group',
             targetIndex,
@@ -1355,7 +1404,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No material groups returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1363,7 +1413,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch material groups from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud Material Group CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1391,12 +1442,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select G/L Account - SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_I_GLACCOUNTINCOMPANYCO_CDS)...',
-            options: dataCatalog.glAccounts || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'gl_account',
             targetIndex,
@@ -1422,7 +1473,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No G/L accounts returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1430,7 +1482,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch G/L accounts from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud G/L Account CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1458,12 +1511,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback options)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Cost Center - SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_COSTCENTER_CDS)...',
-            options: dataCatalog.costCenters || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'cost_center',
             targetIndex,
@@ -1489,7 +1542,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No cost centers returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1497,7 +1551,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch cost centers from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud Cost Center CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1530,12 +1585,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: `Select ${fieldLabel} - SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS)`,
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_SUPPLIER_CDS)...',
-            options: dataCatalog.desiredSuppliers || [],
+            options: [],
             selectedCode: currentCode || '',
             field,
             targetIndex,
@@ -1561,7 +1616,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No suppliers returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1569,7 +1625,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch suppliers from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud Supplier CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1596,12 +1653,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback from dataCatalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Purchase Organisation - SAP S/4HANA Cloud (CDS: YY1_PURCHASEORGANIZATION_CDS)',
             subtitle: 'Loading Purchasing Organizations from Database / SAP Cloud...',
-            options: dataCatalog.purchasingOrganizations || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'purchasing_organization',
             targetIndex,
@@ -1628,8 +1685,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    options: dataCatalog.purchasingOrganizations || [],
-                    subtitle: 'Loaded Purchasing Organizations',
+                    options: [],
+                    subtitle: 'No Value Found for Purchasing Organizations',
                     isLoading: false,
                 }));
             }
@@ -1637,8 +1694,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch purchasing organizations:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                options: dataCatalog.purchasingOrganizations || [],
-                subtitle: 'Loaded Cached Purchasing Organizations',
+                options: [],
+                subtitle: 'No Value Found (Failed to load Purchasing Organizations)',
                 isLoading: false,
             }));
         }
@@ -1673,14 +1730,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        const fallback = dataCatalog.purchasingGroups || [];
-
-        // Open modal immediately with loading state and fallback from dataCatalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Purchasing Group - SAP S/4HANA (EKGRP)',
             subtitle: 'Loading Purchasing Groups from Database...',
-            options: fallback,
+            options: [],
             selectedCode: currentCode || '',
             field: 'purchasing_group',
             targetIndex,
@@ -1719,8 +1774,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    options: fallback,
-                    subtitle: 'Loaded Purchasing Groups',
+                    options: [],
+                    subtitle: 'No Value Found for Purchasing Groups',
                     isLoading: false,
                 }));
             }
@@ -1728,8 +1783,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch purchasing groups:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                options: fallback,
-                subtitle: 'Loaded Cached Purchasing Groups',
+                options: [],
+                subtitle: 'No Value Found (Failed to load Purchasing Groups)',
                 isLoading: false,
             }));
         }
@@ -1764,12 +1819,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Unit of Measure - SAP S/4HANA Cloud (CDS: YY1_UNITOFMEASUREMENT_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_UNITOFMEASUREMENT_CDS)...',
-            options: dataCatalog.unitsOfMeasure || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'unit_of_measure',
             targetIndex,
@@ -1795,7 +1850,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No units returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1803,7 +1859,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch units of measure from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1830,12 +1887,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Purchasing Info Record - SAP S/4HANA Cloud (CDS: YY1_INFORECORD_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_INFORECORD_CDS)...',
-            options: (dataCatalog as any).infoRecords || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'info_record',
             targetIndex,
@@ -1861,7 +1918,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No purchasing info records returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1869,7 +1927,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch purchasing info records from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1896,12 +1955,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Tax Code - SAP S/4HANA Cloud (CDS: YY1_TAXCODE_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_TAXCODE_CDS)...',
-            options: (dataCatalog.taxCodes && dataCatalog.taxCodes.length > 0) ? dataCatalog.taxCodes : [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'tax_code',
             targetIndex,
@@ -1927,7 +1986,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No tax codes returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -1935,7 +1995,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch tax codes from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud Tax Code CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -1962,12 +2023,12 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Open modal immediately with loading state and fallback catalog
+        // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
             title: 'Select Agreement Item / Contract Type - SAP S/4HANA Cloud (CDS: YY1_OUTLINECONTRACT_CDS)',
             subtitle: 'Connecting to SAP S/4HANA Cloud (CDS: YY1_OUTLINECONTRACT_CDS)...',
-            options: (dataCatalog as any).agreementItems || [],
+            options: [],
             selectedCode: currentCode || '',
             field: 'agreement_item',
             targetIndex,
@@ -1993,7 +2054,8 @@ export default function PurchaseRequisitionForm({
             } else {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    subtitle: 'No contracts returned from SAP CDS View',
+                    options: [],
+                    subtitle: 'No Value Found from SAP CDS View',
                     isLoading: false,
                 }));
             }
@@ -2001,7 +2063,8 @@ export default function PurchaseRequisitionForm({
             console.error('Failed to fetch outline contracts from SAP CDS view:', err);
             setSearchHelpState((prev) => ({
                 ...prev,
-                subtitle: 'Failed to connect to SAP Cloud Outline Contract CDS View',
+                options: [],
+                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
                 isLoading: false,
             }));
         }
@@ -2012,7 +2075,21 @@ export default function PurchaseRequisitionForm({
         const targetIdx = targetIndex !== undefined ? targetIndex : activeItemIndex;
 
         if (field === 'documentType') {
-            setPrType(opt.code);
+            const newDocType = opt.code;
+            setPrType(newDocType);
+            clearFieldError('header_pr_type');
+            if (!isServicePrDocumentType(newDocType)) {
+                setFieldErrors((prev) => {
+                    const next = { ...prev };
+                    delete next['contract_requisition_cr_no'];
+                    delete next['contract_requisition.cr_no'];
+                    CR_NOTE_TABS.forEach((t) => {
+                        delete next[`contract_requisition_${t.field}`];
+                        delete next[`contract_requisition.${t.field}`];
+                    });
+                    return next;
+                });
+            }
             return;
         }
 
@@ -2028,6 +2105,11 @@ export default function PurchaseRequisitionForm({
                     };
                 })
             );
+            if (taxCode && String(taxCode).trim() !== '') {
+                updateContractRequisition({ tender_estimate_value: 'Including GST' });
+            } else {
+                updateContractRequisition({ tender_estimate_value: 'Excluding GST' });
+            }
             if (targetIdx !== undefined && targetIdx >= 0) {
                 setFieldErrors((prev) => {
                     const key = `item_${targetIdx}_tax_code`;
@@ -2159,6 +2241,9 @@ export default function PurchaseRequisitionForm({
                     };
                 })
             );
+            if (targetIdx !== undefined && targetIdx >= 0) {
+                clearFieldError(`item_${targetIdx}_cost_center`);
+            }
             return;
         }
 
@@ -2738,6 +2823,23 @@ export default function PurchaseRequisitionForm({
             errs['contract_requisition.cr_no'] = err;
         }
 
+        // Service PR Document Type (Import Service PR & Domestic Service PR) Contract Requisition Specifications validation
+        if (isServicePrDocType && !isDraft) {
+            if (!String(contractRequisition.cr_no || '').trim()) {
+                errs['contract_requisition_cr_no'] = 'Contract Requisition Number (CR No) is mandatory for Service PR.';
+                errs['contract_requisition.cr_no'] = 'Contract Requisition Number (CR No) is mandatory for Service PR.';
+            }
+            CR_NOTE_TABS.forEach((tab) => {
+                const val = String(contractRequisition[tab.field as keyof ContractRequisitionData] || '').trim();
+                if (!val) {
+                    const docTypeName = dataCatalog.documentTypes?.find((d) => d.code === prType)?.name || prType;
+                    const msg = `${tab.label} is mandatory when Document Type is ${docTypeName}.`;
+                    errs[`contract_requisition_${tab.field}`] = msg;
+                    errs[`contract_requisition.${tab.field}`] = msg;
+                }
+            });
+        }
+
         return errs;
     };
 
@@ -2749,10 +2851,12 @@ export default function PurchaseRequisitionForm({
             setErrorMessage('Validation errors found: Please fix all highlighted fields with red borders below.');
 
             // Automatically navigate to the first invalid line item and tab
+            let foundItemErr = false;
             for (let i = 0; i < items.length; i++) {
                 const prefix = `item_${i}_`;
                 const itemErrKeys = Object.keys(errs).filter((k) => k.startsWith(prefix));
                 if (itemErrKeys.length > 0) {
+                    foundItemErr = true;
                     setActiveItemIndex(i);
                     const firstKey = itemErrKeys[0];
                     if (firstKey.includes('quantity')) {
@@ -2767,6 +2871,16 @@ export default function PurchaseRequisitionForm({
                         setActiveItemTab('general');
                     }
                     break;
+                }
+            }
+
+            // If no line item error, but there's a Contract Requisition tab error, switch to the first invalid tab
+            if (!foundItemErr) {
+                const firstCrErrTab = CR_NOTE_TABS.find(
+                    (tab) => errs[`contract_requisition_${tab.field}`] || errs[`contract_requisition.${tab.field}`]
+                );
+                if (firstCrErrTab) {
+                    setActiveCrNoteTab(firstCrErrTab.id);
                 }
             }
             return;
@@ -3218,8 +3332,21 @@ export default function PurchaseRequisitionForm({
                             <select
                                 value={prType}
                                 onChange={(e) => {
-                                    setPrType(e.target.value);
+                                    const newDocType = e.target.value;
+                                    setPrType(newDocType);
                                     clearFieldError('header_pr_type');
+                                    if (!isServicePrDocumentType(newDocType)) {
+                                        setFieldErrors((prev) => {
+                                            const next = { ...prev };
+                                            delete next['contract_requisition_cr_no'];
+                                            delete next['contract_requisition.cr_no'];
+                                            CR_NOTE_TABS.forEach((t) => {
+                                                delete next[`contract_requisition_${t.field}`];
+                                                delete next[`contract_requisition.${t.field}`];
+                                            });
+                                            return next;
+                                        });
+                                    }
                                 }}
                                 className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none bg-white transition-colors ${
                                     fieldErrors['header_pr_type']
@@ -3359,17 +3486,36 @@ export default function PurchaseRequisitionForm({
                                 <label className="block text-xs font-bold text-[#1c2d42]">
                                     Tender Estimated Value
                                 </label>
-                                <span className="text-[10px] font-semibold text-[#0070f2] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                                    Tax Basis
-                                </span>
+                                {hasTaxCode ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                        <Lock className="w-2.5 h-2.5" />
+                                        Locked (Tax Code Specified)
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        Auto (Excluding GST)
+                                    </span>
+                                )}
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {(['Excluding GST', 'Including GST'] as const).map((opt) => {
                                     const isSelected = (contractRequisition.tender_estimate_value || 'Excluding GST') === opt;
+                                    const isDisabled = hasTaxCode || (!hasTaxCode && opt === 'Including GST');
                                     return (
                                         <label
                                             key={opt}
-                                            className={`flex items-center gap-2 p-2 rounded-md border text-xs font-semibold cursor-pointer transition-all ${
+                                            title={
+                                                hasTaxCode
+                                                    ? 'Locked to Including GST because a Tax Code is specified in line items'
+                                                    : opt === 'Including GST'
+                                                    ? 'Select a Tax Code (F4) in line items to enable Including GST'
+                                                    : undefined
+                                            }
+                                            className={`flex items-center gap-2 p-2 rounded-md border text-xs font-semibold transition-all ${
+                                                isDisabled
+                                                    ? 'cursor-not-allowed opacity-85'
+                                                    : 'cursor-pointer'
+                                            } ${
                                                 isSelected
                                                     ? 'border-[#0070f2] bg-blue-50/90 text-[#0070f2] ring-1 ring-[#0070f2]'
                                                     : 'border-[#d9e2ec] bg-white text-[#1c2d42] hover:border-slate-300 hover:bg-slate-50'
@@ -3380,14 +3526,34 @@ export default function PurchaseRequisitionForm({
                                                 name="header_tender_estimate_value"
                                                 value={opt}
                                                 checked={isSelected}
-                                                onChange={() => updateContractRequisition({ tender_estimate_value: opt })}
-                                                className="h-3.5 w-3.5 text-[#0070f2] border-slate-300 focus:ring-[#0070f2]"
+                                                disabled={isDisabled}
+                                                onChange={() => {
+                                                    if (!isDisabled) {
+                                                        updateContractRequisition({ tender_estimate_value: opt });
+                                                    }
+                                                }}
+                                                className={`h-3.5 w-3.5 text-[#0070f2] border-slate-300 focus:ring-[#0070f2] ${
+                                                    isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
+                                                }`}
                                             />
                                             <span className="truncate">{opt}</span>
+                                            {hasTaxCode && isSelected && (
+                                                <Lock className="w-3 h-3 ml-auto text-amber-600" />
+                                            )}
                                         </label>
                                     );
                                 })}
                             </div>
+                            {hasTaxCode ? (
+                                <p className="mt-2 text-[11px] text-amber-700 font-medium flex items-center gap-1">
+                                    <Lock className="w-3 h-3 flex-shrink-0" />
+                                    Automatically set to "Including GST" and locked because a Tax Code is specified.
+                                </p>
+                            ) : (
+                                <p className="mt-2 text-[11px] text-[#556b82] font-medium">
+                                    Automatically set to "Excluding GST" because no Tax Code is selected.
+                                </p>
+                            )}
                         </div>
                     </div>
 
@@ -3500,16 +3666,24 @@ export default function PurchaseRequisitionForm({
                     <div className="rounded-lg border border-[#d9e2ec] bg-white shadow-2xs overflow-hidden">
                         {/* Subheader banner */}
                         <div className="border-b border-[#d9e2ec] bg-gradient-to-r from-[#f8fafc] via-blue-50/30 to-[#f8fafc] px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-bold text-[#1c2d42] uppercase tracking-wider">
                                     Contract Requisition Specifications
                                 </span>
                                 <span className="rounded-full bg-blue-100 text-[#0070f2] px-2 py-0.5 text-[10px] font-bold">
                                     SAP CBO
                                 </span>
+                                {isServicePrDocType && (
+                                    <span className="rounded-full bg-rose-100 text-rose-700 border border-rose-200 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                                        Mandatory for Service PR
+                                    </span>
+                                )}
                             </div>
                             <span className="text-[11px] text-[#556b82]">
-                                Select a tab to view and edit detailed contract notes and terms
+                                {isServicePrDocType
+                                    ? 'All specification tabs below are mandatory for Import/Domestic Service PR'
+                                    : 'Select a tab to view and edit detailed contract notes and terms'}
                             </span>
                         </div>
 
@@ -3619,21 +3793,34 @@ export default function PurchaseRequisitionForm({
                                     const isActive = activeCrNoteTab === tab.id;
                                     const val = String(contractRequisition[tab.field as keyof ContractRequisitionData] || '');
                                     const hasContent = val.trim().length > 0;
+                                    const hasTabError = Boolean(
+                                        fieldErrors[`contract_requisition_${tab.field}`] ||
+                                        fieldErrors[`contract_requisition.${tab.field}`]
+                                    );
                                     return (
                                         <button
                                             key={tab.id}
                                             type="button"
                                             onClick={() => setActiveCrNoteTab(tab.id)}
                                             className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-semibold whitespace-nowrap transition-all ${
-                                                isActive
+                                                hasTabError
+                                                    ? isActive
+                                                        ? 'border-rose-500 text-rose-600 bg-rose-50/50 shadow-2xs rounded-t-md'
+                                                        : 'border-rose-300 text-rose-600 hover:border-rose-400 bg-rose-50/30'
+                                                    : isActive
                                                     ? 'border-[#0070f2] text-[#0070f2] bg-white shadow-2xs rounded-t-md'
                                                     : 'border-transparent text-[#556b82] hover:border-slate-300 hover:text-[#1c2d42]'
                                             }`}
                                         >
                                             <span>{tab.label}</span>
-                                            {hasContent && (
-                                                <span className="h-1.5 w-1.5 rounded-full bg-[#0070f2]" title="Has content" />
+                                            {isServicePrDocType && (
+                                                <span className="text-rose-500 font-bold">*</span>
                                             )}
+                                            {hasTabError ? (
+                                                <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse shrink-0" title="Missing required content" />
+                                            ) : hasContent ? (
+                                                <span className="h-1.5 w-1.5 rounded-full bg-[#0070f2] shrink-0" title="Has content" />
+                                            ) : null}
                                         </button>
                                     );
                                 })}
@@ -3645,15 +3832,24 @@ export default function PurchaseRequisitionForm({
                             {(() => {
                                 const currentTab = CR_NOTE_TABS.find((t) => t.id === activeCrNoteTab) || CR_NOTE_TABS[0];
                                 const currentVal = String(contractRequisition[currentTab.field as keyof ContractRequisitionData] || '');
+                                const tabError = fieldErrors[`contract_requisition_${currentTab.field}`] || fieldErrors[`contract_requisition.${currentTab.field}`];
                                 return (
                                     <div className="space-y-2">
                                         <div className="flex items-center justify-between">
                                             <div>
                                                 <label className="block text-xs font-semibold text-[#1c2d42]">
                                                     {currentTab.title}
+                                                    {isServicePrDocType && (
+                                                        <span className="text-rose-500 font-bold ml-1">*</span>
+                                                    )}
                                                 </label>
                                                 <p className="text-[11px] text-[#556b82]">
                                                     {currentTab.helpText}
+                                                    {isServicePrDocType && (
+                                                        <span className="text-rose-600 font-semibold ml-1">
+                                                            (Mandatory for Service PR)
+                                                        </span>
+                                                    )}
                                                 </p>
                                             </div>
                                             <span className="text-[10px] text-[#556b82] font-mono">
@@ -3664,10 +3860,28 @@ export default function PurchaseRequisitionForm({
                                             rows={currentTab.rows}
                                             maxLength={currentTab.maxLength}
                                             value={currentVal}
-                                            onChange={(e) => updateContractRequisition({ [currentTab.field]: e.target.value })}
+                                            required={isServicePrDocType}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateContractRequisition({ [currentTab.field]: val });
+                                                if (val.trim()) {
+                                                    clearFieldError(`contract_requisition_${currentTab.field}`);
+                                                    clearFieldError(`contract_requisition.${currentTab.field}`);
+                                                }
+                                            }}
                                             placeholder={currentTab.placeholder}
-                                            className="w-full rounded-md border border-[#d9e2ec] p-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none bg-white transition-colors"
+                                            className={`w-full rounded-md border p-3 text-xs placeholder-[#8c9ba5] focus:outline-none bg-white transition-colors ${
+                                                tabError
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
                                         />
+                                        {tabError && (
+                                            <p className="text-xs text-rose-600 font-medium flex items-center gap-1.5 mt-1 animate-in fade-in">
+                                                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                                <span>{tabError}</span>
+                                            </p>
+                                        )}
                                     </div>
                                 );
                             })()}
@@ -5770,7 +5984,18 @@ export default function PurchaseRequisitionForm({
                                         <input
                                             type="text"
                                             value={currentItem?.tax_code || ''}
-                                            onChange={(e) => updateCurrentItem({ tax_code: e.target.value })}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateCurrentItem({ tax_code: val });
+                                                const hasAnyTaxCode = items.some((it, idx) =>
+                                                    idx === activeItemIndex
+                                                        ? Boolean(val && val.trim() !== '')
+                                                        : Boolean(it.tax_code && String(it.tax_code).trim() !== '')
+                                                );
+                                                updateContractRequisition({
+                                                    tender_estimate_value: hasAnyTaxCode ? 'Including GST' : 'Excluding GST',
+                                                });
+                                            }}
                                             onKeyDown={(e) => {
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
@@ -6038,21 +6263,32 @@ export default function PurchaseRequisitionForm({
                                             <span>{fieldErrors[`item_${activeItemIndex}_cost_center`]}</span>
                                         </p>
                                     )}
-                                    <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        {(() => {
-                                            const selectedCc = (sapCostCentersCache.length > 0 ? sapCostCentersCache : (dataCatalog.costCenters || [])).find(
-                                                (c: any) => (c.CostCenter || c.code) === currentItem?.cost_center
-                                            );
-                                            if (selectedCc) {
-                                                return (
-                                                    <span className="text-[#0070f2] font-medium">
+                                    {(() => {
+                                        const selectedCc = sapCostCentersCache.find(
+                                            (c: any) => (c.CostCenter || c.code) === currentItem?.cost_center
+                                        );
+                                        if (selectedCc) {
+                                            const ccName = selectedCc.CostCenterName || selectedCc.name;
+                                            const ccDesc = selectedCc.CostCenterDescription || selectedCc.description;
+                                            return (
+                                                <div className="mt-1 text-xs flex flex-col gap-0.5">
+                                                    {(ccName || ccDesc) && (
+                                                        <span className="font-semibold text-[#1c2d42] line-clamp-1">
+                                                            {ccName}{ccDesc && ccDesc !== ccName ? ` — ${ccDesc}` : ''}
+                                                        </span>
+                                                    )}
+                                                    <span className="text-[10px] text-[#0070f2] font-medium">
                                                         ✓ CoCode: {selectedCc.CompanyCode || '1000'} • Area: {selectedCc.ControllingArea || 'A000'} {selectedCc.ProfitCenter ? `• PC: ${selectedCc.ProfitCenter}` : ''}
                                                     </span>
-                                                );
-                                            }
-                                            // return 'Controlling area cost center for cost allocation (YY1_COSTCENTER_CDS)';
-                                        })()}
-                                    </span>
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <span className="mt-1 block text-[10px] text-[#556b82]">
+                                                Controlling area cost center for cost allocation (YY1_COSTCENTER_CDS)
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>

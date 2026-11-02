@@ -899,38 +899,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackAccountAssignmentCategories(): array
     {
-        return [
-            [
-                'code' => '',
-                'name' => 'Blank - Standard Stock / Inventory',
-                'extra' => 'Inventory / Stock Procurement (Standard - No controlling account assignment required)',
-            ],
-            [
-                'code' => 'K',
-                'name' => 'Cost Center',
-                'extra' => 'Posting to Cost Center (Standard Operating Expense)',
-            ],
-            [
-                'code' => 'P',
-                'name' => 'Project',
-                'extra' => 'Work Breakdown Structure (WBS Project Element)',
-            ],
-            [
-                'code' => 'A',
-                'name' => 'Asset',
-                'extra' => 'Capitalized Fixed Asset',
-            ],
-            [
-                'code' => 'F',
-                'name' => 'Order',
-                'extra' => 'Internal / Production Order',
-            ],
-            [
-                'code' => 'U',
-                'name' => 'Unknown',
-                'extra' => 'Unassigned Account Assignment',
-            ],
-        ];
+        return [];
     }
 
     /**
@@ -1079,7 +1048,7 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackPlants();
+        return $parsed;
     }
 
     /**
@@ -1087,40 +1056,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackPlants(): array
     {
-        return [
-            [
-                'code' => '1100',
-                'name' => '1100 - Corporate Office',
-                'plantName' => 'Corporate Office',
-                'extra' => 'Plant 1100 • Corporate Office',
-                'Plant' => '1100',
-                'PlantName' => 'Corporate Office',
-            ],
-            [
-                'code' => '1200',
-                'name' => '1200 - Namrup',
-                'plantName' => 'Namrup',
-                'extra' => 'Plant 1200 • Namrup',
-                'Plant' => '1200',
-                'PlantName' => 'Namrup',
-            ],
-            [
-                'code' => '1300',
-                'name' => '1300 - Boitamari',
-                'plantName' => 'Boitamari',
-                'extra' => 'Plant 1300 • Boitamari',
-                'Plant' => '1300',
-                'PlantName' => 'Boitamari',
-            ],
-            [
-                'code' => '1400',
-                'name' => '1400 - Rani Nagar',
-                'plantName' => 'Rani Nagar',
-                'extra' => 'Plant 1400 • Rani Nagar',
-                'Plant' => '1400',
-                'PlantName' => 'Rani Nagar',
-            ],
-        ];
+        return [];
     }
 
     /**
@@ -1281,7 +1217,7 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackStorageLocations();
+        return $parsed;
     }
 
     /**
@@ -1289,54 +1225,21 @@ class SapMasterDataService
      */
     public function getFormattedFallbackStorageLocations(?string $plant = null): array
     {
-        $all = [
-            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1100', 'extra' => 'Plant 1100 • Store'],
-            ['code' => 'F125', 'name' => 'F125 - 125 TPD Formalin', 'StorageLocation' => 'F125', 'StorageLocationName' => '125 TPD Formalin', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Formalin'],
-            ['code' => 'M100', 'name' => 'M100 - 100 TPD Methanol', 'StorageLocation' => 'M100', 'StorageLocationName' => '100 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Methanol'],
-            ['code' => 'M500', 'name' => 'M500 - 500 TPD Methanol', 'StorageLocation' => 'M500', 'StorageLocationName' => '500 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Methanol'],
-            ['code' => 'ISST', 'name' => 'ISST - ISGEC Store', 'StorageLocation' => 'ISST', 'StorageLocationName' => 'ISGEC Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • ISGEC Store'],
-            ['code' => 'SLCH', 'name' => 'SLCH - Chemical', 'StorageLocation' => 'SLCH', 'StorageLocationName' => 'Chemical', 'Plant' => '1200', 'extra' => 'Plant 1200 • Chemical'],
-            ['code' => 'SSM2', 'name' => 'SSM2 - Mech Sub-Stre M2', 'StorageLocation' => 'SSM2', 'StorageLocationName' => 'Mech Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M2'],
-            ['code' => 'SSM3', 'name' => 'SSM3 - Mech Sub-Stre M3', 'StorageLocation' => 'SSM3', 'StorageLocationName' => 'Mech Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M3'],
-            ['code' => 'F200', 'name' => 'F200 - 200 TPD Formalin', 'StorageLocation' => 'F200', 'StorageLocationName' => '200 TPD Formalin', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Formalin'],
-            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1300', 'extra' => 'Plant 1300 • Store'],
-            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1400', 'extra' => 'Plant 1400 • Store'],
-        ];
-
-        if (!empty($plant)) {
-            $filtered = array_values(array_filter($all, fn($it) => $it['Plant'] === $plant));
-            return !empty($filtered) ? $filtered : $all;
-        }
-
-        return $all;
+        return [];
     }
 
     /**
      * Default realistic fallback material groups representing SAP S/4HANA Cloud
      * YY1_MATERIALGROUP_CDS / YY1_MATERIALGROUP CDS view release data.
      */
-    protected array $fallbackMaterialGroups = [
-        ['code' => '100001', 'name' => 'Acids', 'extra' => 'SAP Material Group • Acids', 'MaterialGroup' => '100001', 'MaterialGroupName' => 'Acids', 'Language' => 'EN'],
-        ['code' => '100002', 'name' => 'Alkalis', 'extra' => 'SAP Material Group • Alkalis', 'MaterialGroup' => '100002', 'MaterialGroupName' => 'Alkalis', 'Language' => 'EN'],
-        ['code' => '100003', 'name' => 'Resin', 'extra' => 'SAP Material Group • Resin', 'MaterialGroup' => '100003', 'MaterialGroupName' => 'Resin', 'Language' => 'EN'],
-        ['code' => '100004', 'name' => 'Salt', 'extra' => 'SAP Material Group • Salt', 'MaterialGroup' => '100004', 'MaterialGroupName' => 'Salt', 'Language' => 'EN'],
-        ['code' => '100005', 'name' => 'Raw Materials', 'extra' => 'SAP Material Group • Raw Materials', 'MaterialGroup' => '100005', 'MaterialGroupName' => 'Raw Materials', 'Language' => 'EN'],
-        ['code' => '100006', 'name' => 'Fan', 'extra' => 'SAP Material Group • Fan', 'MaterialGroup' => '100006', 'MaterialGroupName' => 'Fan', 'Language' => 'EN'],
-        ['code' => '100007', 'name' => 'Centrifugal Blowers', 'extra' => 'SAP Material Group • Centrifugal Blowers', 'MaterialGroup' => '100007', 'MaterialGroupName' => 'Centrifugal Blowers', 'Language' => 'EN'],
-        ['code' => '100008', 'name' => 'Rotary Blower', 'extra' => 'SAP Material Group • Rotary Blower', 'MaterialGroup' => '100008', 'MaterialGroupName' => 'Rotary Blower', 'Language' => 'EN'],
-        ['code' => '110001', 'name' => 'Cs Pipes', 'extra' => 'SAP Material Group • Cs Pipes', 'MaterialGroup' => '110001', 'MaterialGroupName' => 'Cs Pipes', 'Language' => 'EN'],
-        ['code' => '110002', 'name' => 'Cs Erw Pipes', 'extra' => 'SAP Material Group • Cs Erw Pipes', 'MaterialGroup' => '110002', 'MaterialGroupName' => 'Cs Erw Pipes', 'Language' => 'EN'],
-        ['code' => 'L001', 'name' => 'Industrial Raw Chemicals', 'extra' => 'SAP Material Group • Chemicals', 'MaterialGroup' => 'L001', 'MaterialGroupName' => 'Industrial Raw Chemicals', 'Language' => 'EN'],
-        ['code' => 'L002', 'name' => 'Plant Spares & Mechanical', 'extra' => 'SAP Material Group • Spares', 'MaterialGroup' => 'L002', 'MaterialGroupName' => 'Plant Spares & Mechanical', 'Language' => 'EN'],
-        ['code' => 'SERV', 'name' => 'General Services & Overhaul', 'extra' => 'SAP Service Group • Services', 'MaterialGroup' => 'SERV', 'MaterialGroupName' => 'General Services & Overhaul', 'Language' => 'EN'],
-    ];
+    protected array $fallbackMaterialGroups = [];
 
     /**
      * Get fallback material groups matching live SAP YY1_MATERIALGROUP_CDS service data.
      */
     public function getFormattedFallbackMaterialGroups(): array
     {
-        return $this->fallbackMaterialGroups;
+        return [];
     }
 
     /**
@@ -1508,7 +1411,7 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackMaterialGroups();
+        return $parsed;
     }
 
     /**
@@ -2125,65 +2028,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackGlAccounts(?string $search = null, ?string $companyCode = null): array
     {
-        $fallbacks = [
-            [
-                'code' => '12545200',
-                'name' => 'Adj. Sold Recv. ARF',
-                'extra' => 'Company: 1000 • Adjustment of Sold Receivables (ARF Funder)',
-                'GLAccount' => '12545200',
-                'CompanyCode' => '1000',
-                'GLAccountName' => 'Adj. Sold Recv. ARF',
-                'GLAccountLongName' => 'Adjustment of Sold Receivables (ARF Funder)',
-                'Language' => 'EN',
-            ],
-            [
-                'code' => '65301000',
-                'name' => 'Consumed Materials',
-                'extra' => 'Company: 1000 • Consumed Materials & Components',
-                'GLAccount' => '65301000',
-                'CompanyCode' => '1000',
-                'GLAccountName' => 'Consumed Materials',
-                'GLAccountLongName' => 'Consumed Materials & Components',
-                'Language' => 'EN',
-            ],
-            [
-                'code' => '410100001',
-                'name' => 'Raw Material Consumption',
-                'extra' => 'Company: 1000 • Raw Material Consumption Expense',
-                'GLAccount' => '410100001',
-                'CompanyCode' => '1000',
-                'GLAccountName' => 'Raw Material Consumption',
-                'GLAccountLongName' => 'Raw Material Consumption Expense',
-                'Language' => 'EN',
-            ],
-            [
-                'code' => '410100006',
-                'name' => 'Operating Supplies Expense',
-                'extra' => 'Company: 1000 • Operating Supplies & Maintenance',
-                'GLAccount' => '410100006',
-                'CompanyCode' => '1000',
-                'GLAccountName' => 'Operating Supplies Expense',
-                'GLAccountLongName' => 'Operating Supplies & Maintenance',
-                'Language' => 'EN',
-            ],
-        ];
-
-        if (!empty($companyCode)) {
-            $comp = strtoupper(trim($companyCode));
-            $fallbacks = array_values(array_filter($fallbacks, fn($it) => strtoupper($it['CompanyCode']) === $comp));
-        }
-
-        if (!empty($search)) {
-            $term = strtolower(trim($search));
-            $fallbacks = array_values(array_filter($fallbacks, fn($it) =>
-                str_contains(strtolower($it['code']), $term) ||
-                str_contains(strtolower($it['name']), $term) ||
-                str_contains(strtolower($it['CompanyCode']), $term) ||
-                str_contains(strtolower($it['GLAccountLongName']), $term)
-            ));
-        }
-
-        return $fallbacks;
+        return [];
     }
 
     /**
@@ -2254,6 +2099,10 @@ class SapMasterDataService
                         $items = array_values(array_filter($items, function ($it) use ($term) {
                             return str_contains(strtolower($it['code']), $term)
                                 || str_contains(strtolower($it['CostCenter'] ?? ''), $term)
+                                || str_contains(strtolower($it['CostCenterName'] ?? ''), $term)
+                                || str_contains(strtolower($it['CostCenterDescription'] ?? ''), $term)
+                                || str_contains(strtolower($it['name'] ?? ''), $term)
+                                || str_contains(strtolower($it['description'] ?? ''), $term)
                                 || str_contains(strtolower($it['ProfitCenter'] ?? ''), $term)
                                 || str_contains(strtolower($it['CompanyCode'] ?? ''), $term)
                                 || str_contains(strtolower($it['ControllingArea'] ?? ''), $term)
@@ -2285,9 +2134,9 @@ class SapMasterDataService
                     'status' => $response->status(),
                     'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
                     'endpoint' => $endpoint,
-                    'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
+                    'message' => "No Value Found. SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
                         ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
-                    'items' => $this->getFormattedFallbackCostCenters($search, $companyCode),
+                    'items' => [],
                     'error_details' => substr($errorBody, 0, 300),
                 ];
             } catch (\Exception $e) {
@@ -2299,21 +2148,21 @@ class SapMasterDataService
                     'status' => 500,
                     'source' => 'SAP S/4HANA Cloud (Connection Error)',
                     'endpoint' => $endpoint,
-                    'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
-                    'items' => $this->getFormattedFallbackCostCenters($search, $companyCode),
+                    'message' => "No Value Found. Failed to connect to SAP Cloud endpoint: " . $e->getMessage(),
+                    'items' => [],
                 ];
             }
         }
 
         return [
-            'success' => true,
+            'success' => false,
             'is_live' => false,
             'status' => 200,
-            'source' => 'Local Fallback Master Data (Cost Centers)',
+            'source' => 'SAP S/4HANA Cloud (Credentials Missing)',
             'endpoint' => $endpoint,
-            'count' => count($this->getFormattedFallbackCostCenters($search, $companyCode)),
-            'items' => $this->getFormattedFallbackCostCenters($search, $companyCode),
-            'message' => 'SAP Communication User credentials not configured in .env. Returning fallback cost centers.',
+            'count' => 0,
+            'items' => [],
+            'message' => 'No Value Found. SAP Communication User credentials not configured.',
         ];
     }
 
@@ -2337,16 +2186,109 @@ class SapMasterDataService
         $parsed = [];
         $seen = [];
 
+        // Master cost center descriptions for Assam Petro-Chemicals Ltd.
+        // Resolves the Cartesian cross-join returned by SAP CDS View YY1_COSTCENTER_CDS.
+        $costCenterMasterCatalog = [
+            '10101PCC01' => [
+                'name' => 'NG & GTC CNS-100 MTH',
+                'description' => 'NG & GTC CONSUMPTION-100 TPD METH',
+            ],
+            '10102PCC02' => [
+                'name' => 'WATER CNSMN-100 METH',
+                'description' => 'WATER CONSUMPTION-100 TPD METH',
+            ],
+            '10102PCC03' => [
+                'name' => 'ENRGY CNSMN-100 METH',
+                'description' => 'ENERGY CONSUMPTION-100 TPD METH',
+            ],
+            '10103PCC04' => [
+                'name' => 'CHMCL CONSM-100 MTH',
+                'description' => 'CHEMICALS CONSUMPTION-100 TPD METH',
+            ],
+            '10104PCC05' => [
+                'name' => 'STORE CONSM-100 MTH',
+                'description' => 'STORE CONSUMPTION-100 TPD METH',
+            ],
+            '10105PCC06' => [
+                'name' => 'MNTNC COST-100 MTH',
+                'description' => 'MAINTENANCE COST-100 TPD METH',
+            ],
+            '10106PCC07' => [
+                'name' => 'DRT EMPL CST-100 MTH',
+                'description' => 'DIRECT EMP COST-100 TPD METH',
+            ],
+            '10107PCC08' => [
+                'name' => 'PRODN OVHD-100 METH',
+                'description' => 'PRODN OVERHEAD-100 TPD METH',
+            ],
+            '10108PCC09' => [
+                'name' => 'QC COST-100 TPD METH',
+                'description' => 'QC COST-100 TPD METH',
+            ],
+            '10109PCC10' => [
+                'name' => 'ADMN OVHD-100 METH',
+                'description' => 'ADMIN OVERHEAD-100 TPD METH',
+            ],
+            '10110PCC11' => [
+                'name' => 'S&D OVHD-100 METH',
+                'description' => 'S&D OVERHEAD-100 TPD METH',
+            ],
+            '10101PCC12' => [
+                'name' => 'PRDN ADMN OVH-NAMRUP',
+                'description' => 'PRODUCTION ADMIN OVERHEAD-NAMRUP',
+            ],
+            '10101PCC13' => [
+                'name' => 'MECH ADMN OVH-NAMRUP',
+                'description' => 'MECHANICAL ADMIN OVERHEAD-NAMRUP',
+            ],
+            '10108PCC14' => [
+                'name' => 'CIVL ADMN OVH-NAMRUP',
+                'description' => 'CIVIL ADMIN OVERHEAD-NAMRUP',
+            ],
+            '10201PCC01' => [
+                'name' => 'NG & GTC CONSUMPTION',
+                'description' => 'NG & GTC CONSUMPTION-500 TPD METH',
+            ],
+            '10702ACC02' => [
+                'name' => 'F&A ADMIN OVHD-NMRUP',
+                'description' => 'FINANCE & ACCOUNTS ADMIN OVERHEAD-NAMRUP',
+            ],
+            '10705ACC05' => [
+                'name' => 'C&P ADMN OVH-NAMRUP',
+                'description' => 'CONTRACT & PROCUREMENT ADMIN OVHD-NAMRUP',
+            ],
+            '10707ACC07' => [
+                'name' => 'P&A ADMN OVH-NAMRUP',
+                'description' => 'PERSONNEL & ADMIN OVERHEAD-NAMRUP',
+            ],
+            '10710ACC10' => [
+                'name' => 'SECURITY ADMN OVH-NR',
+                'description' => 'SECURITY ADMIN OVERHEAD-NAMRUP',
+            ],
+            '10712ACC15' => [
+                'name' => 'MEDICAL ADMN OVH-NR',
+                'description' => 'MEDICAL & HEALTH ADMIN OVERHEAD-NAMRUP',
+            ],
+        ];
+
         foreach ($rawRecords as $rec) {
             $costCenter = trim((string)($rec['CostCenter'] ?? $rec['cost_center'] ?? $rec['code'] ?? ''));
+            if (empty($costCenter)) {
+                continue;
+            }
+
+            if (isset($costCenterMasterCatalog[$costCenter])) {
+                $costCenterName = $costCenterMasterCatalog[$costCenter]['name'];
+                $costCenterDescription = $costCenterMasterCatalog[$costCenter]['description'];
+            } else {
+                $costCenterName = trim((string)($rec['CostCenterName'] ?? $rec['cost_center_name'] ?? $rec['CostCenterText'] ?? $rec['name'] ?? ''));
+                $costCenterDescription = trim((string)($rec['CostCenterDescription'] ?? $rec['cost_center_description'] ?? $rec['description'] ?? ''));
+            }
+
             $companyCode = trim((string)($rec['CompanyCode'] ?? $rec['company_code'] ?? ''));
             $controllingArea = trim((string)($rec['ControllingArea'] ?? $rec['controlling_area'] ?? ''));
             $profitCenter = trim((string)($rec['ProfitCenter'] ?? $rec['profit_center'] ?? ''));
             $plant = trim((string)($rec['Plant'] ?? $rec['plant'] ?? ''));
-
-            if (empty($costCenter)) {
-                continue;
-            }
 
             // Deduplicate by CostCenter + ControllingArea + CompanyCode
             $key = "{$controllingArea}-{$companyCode}-{$costCenter}";
@@ -2369,11 +2311,18 @@ class SapMasterDataService
                 $extraParts[] = "Plant: {$plant}";
             }
 
+            $displayName = $costCenterName ?: ($costCenterDescription ?: $costCenter);
+            $displayDesc = $costCenterDescription ?: ($costCenterName ?: '');
+            $extra = !empty($extraParts) ? implode(' • ', $extraParts) : '';
+
             $parsed[] = [
                 'code' => $costCenter,
-                'name' => $costCenter,
-                'extra' => implode(' • ', $extraParts),
+                'name' => $displayName,
+                'description' => $displayDesc,
+                'extra' => $extra,
                 'CostCenter' => $costCenter,
+                'CostCenterName' => $costCenterName,
+                'CostCenterDescription' => $costCenterDescription,
                 'ControllingArea' => $controllingArea,
                 'CompanyCode' => $companyCode,
                 'ProfitCenter' => $profitCenter,
@@ -2391,86 +2340,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackCostCenters(?string $search = null, ?string $companyCode = null): array
     {
-        $fallbacks = [
-            [
-                'code' => '10101PCC01',
-                'name' => '10101PCC01',
-                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010',
-                'CostCenter' => '10101PCC01',
-                'ControllingArea' => 'A000',
-                'CompanyCode' => '1000',
-                'ProfitCenter' => '1010PC0010',
-                'Plant' => '',
-            ],
-            [
-                'code' => '10102PCC02',
-                'name' => '10102PCC02',
-                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010',
-                'CostCenter' => '10102PCC02',
-                'ControllingArea' => 'A000',
-                'CompanyCode' => '1000',
-                'ProfitCenter' => '1010PC0010',
-                'Plant' => '',
-            ],
-            [
-                'code' => '10102PCC03',
-                'name' => '10102PCC03',
-                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1010PC0010',
-                'CostCenter' => '10102PCC03',
-                'ControllingArea' => 'A000',
-                'CompanyCode' => '1000',
-                'ProfitCenter' => '1010PC0010',
-                'Plant' => '',
-            ],
-            [
-                'code' => '10702ACC02',
-                'name' => '10702ACC02',
-                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1070PC0010',
-                'CostCenter' => '10702ACC02',
-                'ControllingArea' => 'A000',
-                'CompanyCode' => '1000',
-                'ProfitCenter' => '1070PC0010',
-                'Plant' => '',
-            ],
-            [
-                'code' => '10705ACC05',
-                'name' => '10705ACC05',
-                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1070PC0010',
-                'CostCenter' => '10705ACC05',
-                'ControllingArea' => 'A000',
-                'CompanyCode' => '1000',
-                'ProfitCenter' => '1070PC0010',
-                'Plant' => '',
-            ],
-            [
-                'code' => '12001101',
-                'name' => '12001101',
-                'extra' => 'Area: A000 • Company: 1000 • Profit Center: 1200PC0001',
-                'CostCenter' => '12001101',
-                'ControllingArea' => 'A000',
-                'CompanyCode' => '1000',
-                'ProfitCenter' => '1200PC0001',
-                'Plant' => '1200',
-            ],
-        ];
-
-        if (!empty($companyCode)) {
-            $comp = strtoupper(trim($companyCode));
-            $fallbacks = array_values(array_filter($fallbacks, fn($it) => strtoupper($it['CompanyCode']) === $comp));
-        }
-
-        if (!empty($search)) {
-            $term = strtolower(trim($search));
-            $fallbacks = array_values(array_filter($fallbacks, fn($it) =>
-                str_contains(strtolower($it['code']), $term) ||
-                str_contains(strtolower($it['CostCenter']), $term) ||
-                str_contains(strtolower($it['CompanyCode']), $term) ||
-                str_contains(strtolower($it['ControllingArea']), $term) ||
-                str_contains(strtolower($it['ProfitCenter']), $term)
-            ));
-        }
-
-        return $fallbacks;
+        return [];
     }
 
     /**
@@ -2641,111 +2511,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackSuppliers(?string $search = null): array
     {
-        $fallbacks = [
-            [
-                'code' => 'V-10029',
-                'name' => 'Tata Chemicals Ltd',
-                'extra' => 'Vendor 10029 • Industrial & Inorganic Chemicals • Active',
-                'Supplier' => 'V-10029',
-                'SupplierName' => 'Tata Chemicals Ltd',
-                'SupplierFullName' => 'Tata Chemicals Ltd - Industrial & Inorganic Chemicals',
-                'BPSupplierName' => 'Tata Chemicals Ltd',
-                'supplierName' => 'Tata Chemicals Ltd',
-            ],
-            [
-                'code' => 'V-10034',
-                'name' => 'Gujarat Fluorochemicals Ltd',
-                'extra' => 'Vendor 10034 • Specialty Fluoropolymers & Reagents • Active',
-                'Supplier' => 'V-10034',
-                'SupplierName' => 'Gujarat Fluorochemicals Ltd',
-                'SupplierFullName' => 'Gujarat Fluorochemicals Ltd - Specialty Fluoropolymers & Reagents',
-                'BPSupplierName' => 'Gujarat Fluorochemicals Ltd',
-                'supplierName' => 'Gujarat Fluorochemicals Ltd',
-            ],
-            [
-                'code' => 'V-10045',
-                'name' => 'Reliance Industries Ltd',
-                'extra' => 'Vendor 10045 • Petrochemicals & Polymers • Active',
-                'Supplier' => 'V-10045',
-                'SupplierName' => 'Reliance Industries Ltd',
-                'SupplierFullName' => 'Reliance Industries Ltd - Petrochemicals & Polymers',
-                'BPSupplierName' => 'Reliance Industries Ltd',
-                'supplierName' => 'Reliance Industries Ltd',
-            ],
-            [
-                'code' => 'V-10052',
-                'name' => 'BASF India Limited',
-                'extra' => 'Vendor 10052 • Catalysts, Dispersions & Resins • Active',
-                'Supplier' => 'V-10052',
-                'SupplierName' => 'BASF India Limited',
-                'SupplierFullName' => 'BASF India Limited - Catalysts, Dispersions & Resins',
-                'BPSupplierName' => 'BASF India Limited',
-                'supplierName' => 'BASF India Limited',
-            ],
-            [
-                'code' => 'V-10061',
-                'name' => 'Linde India Limited',
-                'extra' => 'Vendor 10061 • Cryogenic & Industrial Gases • Active',
-                'Supplier' => 'V-10061',
-                'SupplierName' => 'Linde India Limited',
-                'SupplierFullName' => 'Linde India Limited - Cryogenic & Industrial Gases',
-                'BPSupplierName' => 'Linde India Limited',
-                'supplierName' => 'Linde India Limited',
-            ],
-            [
-                'code' => 'V-10080',
-                'name' => 'Siemens Energy India Ltd',
-                'extra' => 'Vendor 10080 • Turbines, Drives & High-Voltage Spares • Active',
-                'Supplier' => 'V-10080',
-                'SupplierName' => 'Siemens Energy India Ltd',
-                'SupplierFullName' => 'Siemens Energy India Ltd - Turbines, Drives & High-Voltage Spares',
-                'BPSupplierName' => 'Siemens Energy India Ltd',
-                'supplierName' => 'Siemens Energy India Ltd',
-            ],
-            [
-                'code' => 'V-10095',
-                'name' => 'Thermax Limited',
-                'extra' => 'Vendor 10095 • Boilers, Heat Exchangers & Water Solutions • Active',
-                'Supplier' => 'V-10095',
-                'SupplierName' => 'Thermax Limited',
-                'SupplierFullName' => 'Thermax Limited - Boilers, Heat Exchangers & Water Solutions',
-                'BPSupplierName' => 'Thermax Limited',
-                'supplierName' => 'Thermax Limited',
-            ],
-            [
-                'code' => 'V-10110',
-                'name' => 'Bharat Heavy Electricals Ltd (BHEL)',
-                'extra' => 'Vendor 10110 • Heavy Engineering & Pressure Vessels • Active',
-                'Supplier' => 'V-10110',
-                'SupplierName' => 'Bharat Heavy Electricals Ltd (BHEL)',
-                'SupplierFullName' => 'Bharat Heavy Electricals Ltd (BHEL) - Heavy Engineering & Pressure Vessels',
-                'BPSupplierName' => 'Bharat Heavy Electricals Ltd (BHEL)',
-                'supplierName' => 'Bharat Heavy Electricals Ltd (BHEL)',
-            ],
-            [
-                'code' => 'V-10125',
-                'name' => 'Indian Oil Corporation Ltd (IOCL)',
-                'extra' => 'Vendor 10125 • Fuel & Specialty Base Oils • Active',
-                'Supplier' => 'V-10125',
-                'SupplierName' => 'Indian Oil Corporation Ltd (IOCL)',
-                'SupplierFullName' => 'Indian Oil Corporation Ltd (IOCL) - Fuel & Specialty Base Oils',
-                'BPSupplierName' => 'Indian Oil Corporation Ltd (IOCL)',
-                'supplierName' => 'Indian Oil Corporation Ltd (IOCL)',
-            ],
-        ];
-
-        if (!empty($search)) {
-            $term = strtolower(trim($search));
-            $fallbacks = array_values(array_filter($fallbacks, fn($it) =>
-                str_contains(strtolower($it['code']), $term) ||
-                str_contains(strtolower($it['name']), $term) ||
-                str_contains(strtolower($it['Supplier']), $term) ||
-                str_contains(strtolower($it['SupplierName']), $term) ||
-                str_contains(strtolower($it['extra']), $term)
-            ));
-        }
-
-        return $fallbacks;
+        return [];
     }
 
     /**
@@ -2979,44 +2745,7 @@ class SapMasterDataService
      */
     public function getFormattedFallbackPurchasingOrganizations(): array
     {
-        return [
-            [
-                'code' => '1100',
-                'name' => 'Central Purchase Org',
-                'PurchasingOrganization' => '1100',
-                'PurchasingOrganizationName' => 'Central Purchase Org',
-                'company_code' => '1000',
-                'plants' => ['1100', '1200', '1300', '1400'],
-                'extra' => 'Mapped Plants: 1100, 1200, 1300, 1400',
-                'description' => 'SAP S/4HANA Purchasing Organization 1100 (Central Purchase Org) for Plant(s) 1100, 1200, 1300, 1400',
-                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
-                'is_active' => true,
-            ],
-            [
-                'code' => '1200',
-                'name' => 'Local Purchase Org',
-                'PurchasingOrganization' => '1200',
-                'PurchasingOrganizationName' => 'Local Purchase Org',
-                'company_code' => '1000',
-                'plants' => ['1100', '1200', '1300', '1400'],
-                'extra' => 'Mapped Plants: 1100, 1200, 1300, 1400',
-                'description' => 'SAP S/4HANA Purchasing Organization 1200 (Local Purchase Org) for Plant(s) 1100, 1200, 1300, 1400',
-                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
-                'is_active' => true,
-            ],
-            [
-                'code' => '9000',
-                'name' => 'STO',
-                'PurchasingOrganization' => '9000',
-                'PurchasingOrganizationName' => 'STO',
-                'company_code' => '1000',
-                'plants' => ['1100', '1200', '1300', '1400'],
-                'extra' => 'Mapped Plants: 1100, 1200, 1300, 1400',
-                'description' => 'SAP S/4HANA Purchasing Organization 9000 (STO) for Plant(s) 1100, 1200, 1300, 1400',
-                'sap_source' => 'YY1_PURCHASEORGANIZATION_CDS / YY1_PURCHASEORGANIZATION',
-                'is_active' => true,
-            ],
-        ];
+        return [];
     }
 
     /**
@@ -3220,70 +2949,20 @@ class SapMasterDataService
      */
     public function getFormattedFallbackPurchasingGroups(): array
     {
-        return [
-            ['code' => '001', 'name' => 'Group 001', 'PurchasingGroup' => '001', 'PurchasingGroupName' => 'Group 001', 'description' => 'Group 001', 'extra' => 'Group 001', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '002', 'name' => 'Group 002', 'PurchasingGroup' => '002', 'PurchasingGroupName' => 'Group 002', 'description' => 'Group 002', 'extra' => 'Group 002', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '003', 'name' => 'Group 003', 'PurchasingGroup' => '003', 'PurchasingGroupName' => 'Group 003', 'description' => 'Group 003', 'extra' => 'Group 003', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '005', 'name' => 'Transportation Srv', 'PurchasingGroup' => '005', 'PurchasingGroupName' => 'Transportation Srv', 'description' => 'Transportation Srv', 'extra' => 'Transportation Srv', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '006', 'name' => 'TM – Ext. Planning', 'PurchasingGroup' => '006', 'PurchasingGroupName' => 'TM – Ext. Planning', 'description' => 'TM – Ext. Planning', 'extra' => 'TM – Ext. Planning', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '007', 'name' => 'TM – Int. Planning', 'PurchasingGroup' => '007', 'PurchasingGroupName' => 'TM – Int. Planning', 'description' => 'TM – Int. Planning', 'extra' => 'TM – Int. Planning', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '101', 'name' => 'Civil', 'PurchasingGroup' => '101', 'PurchasingGroupName' => 'Civil', 'description' => 'Civil', 'extra' => 'Civil', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '102', 'name' => 'Contracts', 'PurchasingGroup' => '102', 'PurchasingGroupName' => 'Contracts', 'description' => 'Contracts', 'extra' => 'Contracts', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '103', 'name' => 'Purchase', 'PurchasingGroup' => '103', 'PurchasingGroupName' => 'Purchase', 'description' => 'Purchase', 'extra' => 'Purchase', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '104', 'name' => 'Marketing', 'PurchasingGroup' => '104', 'PurchasingGroupName' => 'Marketing', 'description' => 'Marketing', 'extra' => 'Marketing', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '105', 'name' => 'Technical Service', 'PurchasingGroup' => '105', 'PurchasingGroupName' => 'Technical Service', 'description' => 'Technical Service', 'extra' => 'Technical Service', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '106', 'name' => 'EDP', 'PurchasingGroup' => '106', 'PurchasingGroupName' => 'EDP', 'description' => 'EDP', 'extra' => 'EDP', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '107', 'name' => 'Project', 'PurchasingGroup' => '107', 'PurchasingGroupName' => 'Project', 'description' => 'Project', 'extra' => 'Project', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '108', 'name' => 'Process', 'PurchasingGroup' => '108', 'PurchasingGroupName' => 'Process', 'description' => 'Process', 'extra' => 'Process', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '109', 'name' => 'Admin', 'PurchasingGroup' => '109', 'PurchasingGroupName' => 'Admin', 'description' => 'Admin', 'extra' => 'Admin', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '110', 'name' => 'Finance', 'PurchasingGroup' => '110', 'PurchasingGroupName' => 'Finance', 'description' => 'Finance', 'extra' => 'Finance', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '111', 'name' => 'Production', 'PurchasingGroup' => '111', 'PurchasingGroupName' => 'Production', 'description' => 'Production', 'extra' => 'Production', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '112', 'name' => 'Stores', 'PurchasingGroup' => '112', 'PurchasingGroupName' => 'Stores', 'description' => 'Stores', 'extra' => 'Stores', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '113', 'name' => 'Fire & Safety', 'PurchasingGroup' => '113', 'PurchasingGroupName' => 'Fire & Safety', 'description' => 'Fire & Safety', 'extra' => 'Fire & Safety', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '114', 'name' => 'Quality Control', 'PurchasingGroup' => '114', 'PurchasingGroupName' => 'Quality Control', 'description' => 'Quality Control', 'extra' => 'Quality Control', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '115', 'name' => 'Elect - 500 TPD', 'PurchasingGroup' => '115', 'PurchasingGroupName' => 'Elect - 500 TPD', 'description' => 'Elect - 500 TPD', 'extra' => 'Elect - 500 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '116', 'name' => 'Elect - 125 TPD', 'PurchasingGroup' => '116', 'PurchasingGroupName' => 'Elect - 125 TPD', 'description' => 'Elect - 125 TPD', 'extra' => 'Elect - 125 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '117', 'name' => 'Elect - 100 TPD', 'PurchasingGroup' => '117', 'PurchasingGroupName' => 'Elect - 100 TPD', 'description' => 'Elect - 100 TPD', 'extra' => 'Elect - 100 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '118', 'name' => 'Elect - 200 TPD', 'PurchasingGroup' => '118', 'PurchasingGroupName' => 'Elect - 200 TPD', 'description' => 'Elect - 200 TPD', 'extra' => 'Elect - 200 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '119', 'name' => 'Mech - 500 TPD', 'PurchasingGroup' => '119', 'PurchasingGroupName' => 'Mech - 500 TPD', 'description' => 'Mech - 500 TPD', 'extra' => 'Mech - 500 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '120', 'name' => 'Mech - 125 TPD', 'PurchasingGroup' => '120', 'PurchasingGroupName' => 'Mech - 125 TPD', 'description' => 'Mech - 125 TPD', 'extra' => 'Mech - 125 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '121', 'name' => 'Mech - 100 TPD', 'PurchasingGroup' => '121', 'PurchasingGroupName' => 'Mech - 100 TPD', 'description' => 'Mech - 100 TPD', 'extra' => 'Mech - 100 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '122', 'name' => 'Mech - 200 TPD', 'PurchasingGroup' => '122', 'PurchasingGroupName' => 'Mech - 200 TPD', 'description' => 'Mech - 200 TPD', 'extra' => 'Mech - 200 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '123', 'name' => 'Instr - 500 TPD', 'PurchasingGroup' => '123', 'PurchasingGroupName' => 'Instr - 500 TPD', 'description' => 'Instr - 500 TPD', 'extra' => 'Instr - 500 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '124', 'name' => 'Instr - 125 TPD', 'PurchasingGroup' => '124', 'PurchasingGroupName' => 'Instr - 125 TPD', 'description' => 'Instr - 125 TPD', 'extra' => 'Instr - 125 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '125', 'name' => 'Instr - 100 TPD', 'PurchasingGroup' => '125', 'PurchasingGroupName' => 'Instr - 100 TPD', 'description' => 'Instr - 100 TPD', 'extra' => 'Instr - 100 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-            ['code' => '126', 'name' => 'Instr - 200 TPD', 'PurchasingGroup' => '126', 'PurchasingGroupName' => 'Instr - 200 TPD', 'description' => 'Instr - 200 TPD', 'extra' => 'Instr - 200 TPD', 'is_active' => true, 'sap_source' => 'YY1_PURCHASINGGROUPAPI_CDS / YY1_PurchasingGroupAPI'],
-        ];
+        return [];
     }
 
     /**
-     * Default realistic fallback units of measure matching SAP YY1_UNITOFMEASUREMENT_CDS schema.
-     * Includes UnitOfMeasureISOCode for OData V4 API compatibility.
+     * Units of measure fallback list (empty - live SAP data only).
      */
-    protected array $fallbackUnitsOfMeasure = [
-        ['code' => 'NO', 'UnitOfMeasure' => 'NO', 'UnitOfMeasureCommercialName' => 'NO', 'UnitOfMeasureLongName' => 'Number', 'UnitOfMeasureISOCode' => 'C62', 'UnitOfMeasureSAPCode' => 'NO', 'isoCode' => 'C62', 'sapCode' => 'NO', 'name' => 'NO - Number', 'extra' => 'Number'],
-        ['code' => 'EA', 'UnitOfMeasure' => 'EA', 'UnitOfMeasureCommercialName' => 'EA', 'UnitOfMeasureLongName' => 'Each', 'UnitOfMeasureISOCode' => 'EA', 'UnitOfMeasureSAPCode' => 'EA', 'isoCode' => 'EA', 'sapCode' => 'EA', 'name' => 'EA - Each', 'extra' => 'Each'],
-        ['code' => 'PC', 'UnitOfMeasure' => 'PC', 'UnitOfMeasureCommercialName' => 'PC', 'UnitOfMeasureLongName' => 'Piece', 'UnitOfMeasureISOCode' => 'PCE', 'UnitOfMeasureSAPCode' => 'PC', 'isoCode' => 'PCE', 'sapCode' => 'PC', 'name' => 'PC - Piece', 'extra' => 'Piece'],
-        ['code' => 'KG', 'UnitOfMeasure' => 'KG', 'UnitOfMeasureCommercialName' => 'KG', 'UnitOfMeasureLongName' => 'Kilogram', 'UnitOfMeasureISOCode' => 'KGM', 'UnitOfMeasureSAPCode' => 'KG', 'isoCode' => 'KGM', 'sapCode' => 'KG', 'name' => 'KG - Kilogram', 'extra' => 'Kilogram'],
-        ['code' => 'M', 'UnitOfMeasure' => 'M', 'UnitOfMeasureCommercialName' => 'M', 'UnitOfMeasureLongName' => 'Meter', 'UnitOfMeasureISOCode' => 'MTR', 'UnitOfMeasureSAPCode' => 'M', 'isoCode' => 'MTR', 'sapCode' => 'M', 'name' => 'M - Meter', 'extra' => 'Meter'],
-        ['code' => 'M3', 'UnitOfMeasure' => 'M3', 'UnitOfMeasureCommercialName' => 'M3', 'UnitOfMeasureLongName' => 'Cubic Meter', 'UnitOfMeasureISOCode' => 'MTQ', 'UnitOfMeasureSAPCode' => 'M3', 'isoCode' => 'MTQ', 'sapCode' => 'M3', 'name' => 'M3 - Cubic Meter', 'extra' => 'Cubic Meter'],
-        ['code' => 'L', 'UnitOfMeasure' => 'L', 'UnitOfMeasureCommercialName' => 'L', 'UnitOfMeasureLongName' => 'Liter', 'UnitOfMeasureISOCode' => 'LTR', 'UnitOfMeasureSAPCode' => 'L', 'isoCode' => 'LTR', 'sapCode' => 'L', 'name' => 'L - Liter', 'extra' => 'Liter'],
-        ['code' => 'TO', 'UnitOfMeasure' => 'TO', 'UnitOfMeasureCommercialName' => 'TO', 'UnitOfMeasureLongName' => 'Metric Ton', 'UnitOfMeasureISOCode' => 'TNE', 'UnitOfMeasureSAPCode' => 'TO', 'isoCode' => 'TNE', 'sapCode' => 'TO', 'name' => 'TO - Metric Ton', 'extra' => 'Metric Ton'],
-        ['code' => 'HR', 'UnitOfMeasure' => 'HR', 'UnitOfMeasureCommercialName' => 'HR', 'UnitOfMeasureLongName' => 'Hours', 'UnitOfMeasureISOCode' => 'HUR', 'UnitOfMeasureSAPCode' => 'HR', 'isoCode' => 'HUR', 'sapCode' => 'HR', 'name' => 'HR - Hours', 'extra' => 'Hours'],
-        ['code' => 'DAY', 'UnitOfMeasure' => 'DAY', 'UnitOfMeasureCommercialName' => 'DAY', 'UnitOfMeasureLongName' => 'Days', 'UnitOfMeasureISOCode' => 'DAY', 'UnitOfMeasureSAPCode' => 'DAY', 'isoCode' => 'DAY', 'sapCode' => 'DAY', 'name' => 'DAY - Days', 'extra' => 'Days'],
-        ['code' => 'MON', 'UnitOfMeasure' => 'MON', 'UnitOfMeasureCommercialName' => 'MON', 'UnitOfMeasureLongName' => 'Months', 'UnitOfMeasureISOCode' => 'MON', 'UnitOfMeasureSAPCode' => 'MON', 'isoCode' => 'MON', 'sapCode' => 'MON', 'name' => 'MON - Months', 'extra' => 'Months'],
-        ['code' => 'AU', 'UnitOfMeasure' => 'AU', 'UnitOfMeasureCommercialName' => 'AU', 'UnitOfMeasureLongName' => 'Activity unit', 'UnitOfMeasureISOCode' => '', 'UnitOfMeasureSAPCode' => 'AU', 'isoCode' => '', 'sapCode' => 'AU', 'name' => 'AU - Activity unit', 'extra' => 'Activity unit'],
-        ['code' => 'SET', 'UnitOfMeasure' => 'SET', 'UnitOfMeasureCommercialName' => 'SET', 'UnitOfMeasureLongName' => 'Set', 'UnitOfMeasureISOCode' => 'SET', 'UnitOfMeasureSAPCode' => 'SET', 'isoCode' => 'SET', 'sapCode' => 'SET', 'name' => 'SET - Set', 'extra' => 'Set'],
-        ['code' => 'JOB', 'UnitOfMeasure' => 'JOB', 'UnitOfMeasureCommercialName' => 'JOB', 'UnitOfMeasureLongName' => 'Job / Lumpsum', 'UnitOfMeasureISOCode' => 'JOB', 'UnitOfMeasureSAPCode' => 'JOB', 'isoCode' => 'JOB', 'sapCode' => 'JOB', 'name' => 'JOB - Job / Lumpsum', 'extra' => 'Job / Lumpsum'],
-        ['code' => 'LOT', 'UnitOfMeasure' => 'LOT', 'UnitOfMeasureCommercialName' => 'LOT', 'UnitOfMeasureLongName' => 'Lot', 'UnitOfMeasureISOCode' => 'LOT', 'UnitOfMeasureSAPCode' => 'LOT', 'isoCode' => 'LOT', 'sapCode' => 'LOT', 'name' => 'LOT - Lot', 'extra' => 'Lot'],
-    ];
+    protected array $fallbackUnitsOfMeasure = [];
 
     /**
      * Get fallback units of measure matching SAP YY1_UNITOFMEASUREMENT_CDS schema.
      */
     public function getFormattedFallbackUnitsOfMeasure(): array
     {
-        return $this->fallbackUnitsOfMeasure;
+        return [];
     }
 
     /**
@@ -3303,7 +2982,7 @@ class SapMasterDataService
         // 1. Fetch all UoMs from SAP CDS View (uses Laravel cache internally)
         $uomResult = $this->fetchUnitsOfMeasureFromCdsView();
 
-        $items = !empty($uomResult['items']) ? $uomResult['items'] : $this->fallbackUnitsOfMeasure;
+        $items = !empty($uomResult['items']) ? $uomResult['items'] : [];
 
         foreach ($items as $item) {
             $uomCode = trim((string)($item['UnitOfMeasure'] ?? $item['code'] ?? ''));
@@ -3537,7 +3216,7 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackUnitsOfMeasure();
+        return $parsed;
     }
 
     /**
@@ -3745,64 +3424,15 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackInfoRecords();
+        return $parsed;
     }
 
     /**
-     * Fallback purchasing info records for offline development or testing.
+     * Fallback purchasing info records for offline development or testing (empty - live only).
      */
     public function getFormattedFallbackInfoRecords(): array
     {
-        return [
-            [
-                'code' => '5300000000',
-                'name' => 'Info Record 5300000000 • Vendor V1200 • Mat 1000000005',
-                'extra' => 'Supplier: V1200 • Material: 1000000005',
-                'PurchasingInfoRecord' => '5300000000',
-                'Supplier' => 'V1200',
-                'Material' => '1000000005',
-            ],
-            [
-                'code' => '5300000001',
-                'name' => 'Info Record 5300000001 • Vendor 2000001 • Mat 500000000',
-                'extra' => 'Supplier: 2000001 • Material: 500000000',
-                'PurchasingInfoRecord' => '5300000001',
-                'Supplier' => '2000001',
-                'Material' => '500000000',
-            ],
-            [
-                'code' => '5300000002',
-                'name' => 'Info Record 5300000002 • Vendor 2000001 • Mat 600000014',
-                'extra' => 'Supplier: 2000001 • Material: 600000014',
-                'PurchasingInfoRecord' => '5300000002',
-                'Supplier' => '2000001',
-                'Material' => '600000014',
-            ],
-            [
-                'code' => '5300000003',
-                'name' => 'Info Record 5300000003 • Vendor 1000012 • Mat 500000000',
-                'extra' => 'Supplier: 1000012 • Material: 500000000',
-                'PurchasingInfoRecord' => '5300000003',
-                'Supplier' => '1000012',
-                'Material' => '500000000',
-            ],
-            [
-                'code' => '5300000004',
-                'name' => 'Info Record 5300000004 • Vendor 1000012 • Mat 1000000005',
-                'extra' => 'Supplier: 1000012 • Material: 1000000005',
-                'PurchasingInfoRecord' => '5300000004',
-                'Supplier' => '1000012',
-                'Material' => '1000000005',
-            ],
-            [
-                'code' => '5300000005',
-                'name' => 'Info Record 5300000005 • Vendor 1000011 • Mat 1200000000',
-                'extra' => 'Supplier: 1000011 • Material: 1200000000',
-                'PurchasingInfoRecord' => '5300000005',
-                'Supplier' => '1000011',
-                'Material' => '1200000000',
-            ],
-        ];
+        return [];
     }
 
     /**
@@ -4009,7 +3639,7 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackTaxCodes();
+        return $parsed;
     }
 
     /**
@@ -4034,139 +3664,11 @@ class SapMasterDataService
     }
 
     /**
-     * Fallback realistic tax codes representing SAP S/4HANA Cloud India GST (0TXIN)
-     * YY1_TAXCODE_CDS view data for Assam Petro-Chemicals Ltd.
+     * Fallback tax codes (empty - live only).
      */
     public function getFormattedFallbackTaxCodes(?string $search = null): array
     {
-        $items = [
-            [
-                'code' => 'J2',
-                'name' => 'J2 - CGST 9% +SGST 9% - Domestic input GST-RCM',
-                'extra' => 'CGST 9% +SGST 9% - Domestic input GST-RCM • Cond: JICG • Rate: 9.000% • Country: IN',
-                'TaxCode' => 'J2',
-                'TaxCodeName' => 'CGST 9% +SGST 9% - Domestic input GST-RCM',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JICG',
-                'ConditionRateRatio' => '9.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'G3',
-                'name' => 'G3 - IGST 18% - Domestic input GST',
-                'extra' => 'IGST 18% - Domestic input GST • Cond: JIIG • Rate: 18.000% • Country: IN',
-                'TaxCode' => 'G3',
-                'TaxCodeName' => 'IGST 18% - Domestic input GST',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JIIG',
-                'ConditionRateRatio' => '18.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'G4',
-                'name' => 'G4 - CGST 9% +SGST 9% - Domestic input GST',
-                'extra' => 'CGST 9% +SGST 9% - Domestic input GST • Cond: JICG • Rate: 9.000% • Country: IN',
-                'TaxCode' => 'G4',
-                'TaxCodeName' => 'CGST 9% +SGST 9% - Domestic input GST',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JICG',
-                'ConditionRateRatio' => '9.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'V1',
-                'name' => 'V1 - 18% Input GST Standard',
-                'extra' => '18% Input GST Standard • Cond: JICG • Rate: 18.000% • Country: IN',
-                'TaxCode' => 'V1',
-                'TaxCodeName' => '18% Input GST Standard',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JICG',
-                'ConditionRateRatio' => '18.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'G0',
-                'name' => 'G0 - Exempted input IGST',
-                'extra' => 'Exempted input IGST • Cond: JIIG • Rate: 0.000% • Country: IN',
-                'TaxCode' => 'G0',
-                'TaxCodeName' => 'Exempted input IGST',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JIIG',
-                'ConditionRateRatio' => '0.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'G1',
-                'name' => 'G1 - Exempted input CGST + SGST',
-                'extra' => 'Exempted input CGST + SGST • Cond: JICG • Rate: 0.000% • Country: IN',
-                'TaxCode' => 'G1',
-                'TaxCodeName' => 'Exempted input CGST + SGST',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JICG',
-                'ConditionRateRatio' => '0.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'J1',
-                'name' => 'J1 - IGST 18% - Domestic input GST -RCM',
-                'extra' => 'IGST 18% - Domestic input GST -RCM • Cond: JIIG • Rate: 18.000% • Country: IN',
-                'TaxCode' => 'J1',
-                'TaxCodeName' => 'IGST 18% - Domestic input GST -RCM',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JIIG',
-                'ConditionRateRatio' => '18.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-            [
-                'code' => 'K1',
-                'name' => 'K1 - IGST 18% - Imports',
-                'extra' => 'IGST 18% - Imports • Cond: JIMN • Rate: 18.000% • Country: IN',
-                'TaxCode' => 'K1',
-                'TaxCodeName' => 'IGST 18% - Imports',
-                'Country' => 'IN',
-                'TaxCalculationProcedure' => '0TXIN',
-                'VATConditionType' => 'JIMN',
-                'ConditionRateRatio' => '18.000',
-                'ConditionRateRatioUnit' => '%',
-                'CndnRecordValidityStartDate' => '1900-01-01',
-                'CndnRecordValidityEndDate' => '9999-12-31',
-            ],
-        ];
-
-        if (!empty($search)) {
-            $term = strtolower(trim($search));
-            $items = array_values(array_filter($items, function ($it) use ($term) {
-                return str_contains(strtolower($it['TaxCode'] ?? $it['code'] ?? ''), $term)
-                    || str_contains(strtolower($it['TaxCodeName'] ?? $it['name'] ?? ''), $term)
-                    || str_contains(strtolower($it['VATConditionType'] ?? ''), $term)
-                    || str_contains(strtolower($it['TaxCalculationProcedure'] ?? ''), $term)
-                    || str_contains(strtolower($it['Country'] ?? ''), $term)
-                    || str_contains(strtolower($it['ConditionRateRatio'] ?? ''), $term);
-            }));
-        }
-
-        return $items;
+        return [];
     }
 
     /**
@@ -4336,92 +3838,15 @@ class SapMasterDataService
             ];
         }
 
-        return !empty($parsed) ? $parsed : $this->getFormattedFallbackOutlineContracts();
+        return $parsed;
     }
 
     /**
-     * Fallback realistic outline contract types representing SAP S/4HANA Cloud
-     * YY1_OUTLINECONTRACT_CDS view data for Assam Petro-Chemicals Ltd.
+     * Fallback outline contract types (empty - live only).
      */
     public function getFormattedFallbackOutlineContracts(?string $search = null): array
     {
-        $items = [
-            [
-                'code' => 'CMK',
-                'name' => 'CMK - Qty Contract-PSE',
-                'extra' => 'Cat: K • Type: CMK • Qty Contract-PSE',
-                'PurchaseContractType' => 'CMK',
-                'PurchasingDocumentType' => 'CMK',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Qty Contract-PSE',
-            ],
-            [
-                'code' => 'CWK',
-                'name' => 'CWK - Value Contract-PSE',
-                'extra' => 'Cat: K • Type: CWK • Value Contract-PSE',
-                'PurchaseContractType' => 'CWK',
-                'PurchasingDocumentType' => 'CWK',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Value Contract-PSE',
-            ],
-            [
-                'code' => 'MK',
-                'name' => 'MK - Quantity Contract',
-                'extra' => 'Cat: K • Type: MK • Quantity Contract',
-                'PurchaseContractType' => 'MK',
-                'PurchasingDocumentType' => 'MK',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Quantity Contract',
-            ],
-            [
-                'code' => 'WK',
-                'name' => 'WK - Value Contract',
-                'extra' => 'Cat: K • Type: WK • Value Contract',
-                'PurchaseContractType' => 'WK',
-                'PurchasingDocumentType' => 'WK',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Value Contract',
-            ],
-            [
-                'code' => 'ZCMC',
-                'name' => 'ZCMC - Composite Contract',
-                'extra' => 'Cat: K • Type: ZCMC • Composite Contract',
-                'PurchaseContractType' => 'ZCMC',
-                'PurchasingDocumentType' => 'ZCMC',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Composite Contract',
-            ],
-            [
-                'code' => 'ZMAC',
-                'name' => 'ZMAC - Material Contract',
-                'extra' => 'Cat: K • Type: ZMAC • Material Contract',
-                'PurchaseContractType' => 'ZMAC',
-                'PurchasingDocumentType' => 'ZMAC',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Material Contract',
-            ],
-            [
-                'code' => 'ZSRC',
-                'name' => 'ZSRC - Service Contract',
-                'extra' => 'Cat: K • Type: ZSRC • Service Contract',
-                'PurchaseContractType' => 'ZSRC',
-                'PurchasingDocumentType' => 'ZSRC',
-                'PurchasingDocumentCategory' => 'K',
-                'PurchasingDocumentTypeName' => 'Service Contract',
-            ],
-        ];
-
-        if (!empty($search)) {
-            $term = strtolower(trim($search));
-            $items = array_values(array_filter($items, function ($it) use ($term) {
-                return str_contains(strtolower($it['PurchaseContractType'] ?? $it['code'] ?? ''), $term)
-                    || str_contains(strtolower($it['PurchasingDocumentTypeName'] ?? $it['name'] ?? ''), $term)
-                    || str_contains(strtolower($it['PurchasingDocumentType'] ?? ''), $term)
-                    || str_contains(strtolower($it['PurchasingDocumentCategory'] ?? ''), $term);
-            }));
-        }
-
-        return $items;
+        return [];
     }
 }
 

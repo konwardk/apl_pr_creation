@@ -112,10 +112,14 @@ export default function SapSearchHelpModal({
             const contractType = String(opt.PurchaseContractType || opt.PurchasingDocumentType || '').toLowerCase();
             const contractTypeName = String(opt.PurchasingDocumentTypeName || '').toLowerCase();
             const contractCat = String(opt.PurchasingDocumentCategory || '').toLowerCase();
+            const costCenterName = String(opt.CostCenterName || '').toLowerCase();
+            const costCenterDesc = String(opt.CostCenterDescription || opt.description || '').toLowerCase();
 
             return (
                 product.includes(q) ||
                 productName.includes(q) ||
+                costCenterName.includes(q) ||
+                costCenterDesc.includes(q) ||
                 storLoc.includes(q) ||
                 storLocName.includes(q) ||
                 companyCode.includes(q) ||
@@ -331,8 +335,12 @@ export default function SapSearchHelpModal({
                     ) : filteredOptions.length === 0 ? (
                         <div className="p-8 text-center text-xs text-[#556b82]">
                             <Database className="mx-auto h-8 w-8 text-slate-300 mb-2" />
-                            <p className="font-semibold text-slate-600">No matching entries found</p>
-                            <p className="text-[11px] text-slate-400 mt-1">Try another search term or enter value manually.</p>
+                            <p className="font-bold text-slate-700 text-sm">No Value Found</p>
+                            <p className="text-[11px] text-slate-400 mt-1">
+                                {searchQuery.trim()
+                                    ? `No entries matching "${searchQuery}"`
+                                    : 'No data found or accessible from SAP CDS View.'}
+                            </p>
                         </div>
                     ) : (
                         <table className="w-full text-left text-xs text-[#1c2d42]">
@@ -618,8 +626,25 @@ export default function SapSearchHelpModal({
                                                             <span className="text-slate-400">-</span>
                                                         )}
                                                     </td>
-                                                    <td className="py-2.5 px-4 text-[11px] text-[#556b82]">
-                                                        {opt.Plant ? `Plant ${opt.Plant} • ` : ''}{opt.extra || 'Cost Center'}
+                                                    <td className="py-2.5 px-4 text-xs">
+                                                        <div className="flex flex-col gap-0.5">
+                                                            {opt.CostCenterName || (opt.name && opt.name !== opt.code) ? (
+                                                                <span className="font-semibold text-[#1c2d42]">
+                                                                    {opt.CostCenterName || opt.name}
+                                                                </span>
+                                                            ) : null}
+                                                            {(opt.CostCenterDescription && opt.CostCenterDescription !== (opt.CostCenterName || opt.name)) ? (
+                                                                <span className="text-[11px] text-[#556b82] leading-tight">
+                                                                    {opt.CostCenterDescription}
+                                                                </span>
+                                                            ) : (opt.description && opt.description !== (opt.CostCenterName || opt.name)) ? (
+                                                                <span className="text-[11px] text-[#556b82] leading-tight">
+                                                                    {opt.description}
+                                                                </span>
+                                                            ) : !opt.CostCenterName && !opt.name ? (
+                                                                <span className="text-slate-400">-</span>
+                                                            ) : null}
+                                                        </div>
                                                     </td>
                                                 </>
                                             ) : isSupplierSearch ? (

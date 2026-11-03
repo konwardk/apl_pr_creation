@@ -54,6 +54,8 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
 
         // Manage Users
         Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
+        Route::get('users/template-excel', [UserManagementController::class, 'downloadTemplate'])->name('users.template-excel');
+        Route::post('users/import-excel', [UserManagementController::class, 'importExcel'])->name('users.import-excel');
         Route::post('users', [UserManagementController::class, 'store'])->name('users.store');
         Route::put('users/{user}', [UserManagementController::class, 'update'])->name('users.update');
         Route::delete('users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');

@@ -7,12 +7,14 @@ use App\Models\PurchasingGroup;
 use App\Models\PurchasingOrganization;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\UserExcelService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class UserManagementController extends Controller
 {
@@ -68,7 +70,7 @@ class UserManagementController extends Controller
             ->pluck('plants')
             ->flatten()
             ->filter()
-            ->map(fn($p) => trim((string)$p))
+            ->map(fn ($p) => trim((string) $p))
             ->unique()
             ->sort()
             ->values()
@@ -87,6 +89,7 @@ class UserManagementController extends Controller
 
         $availablePlants = array_map(function ($code) use ($plantDescriptions) {
             $name = $plantDescriptions[$code] ?? "{$code} - Plant Facility {$code}";
+
             return [
                 'code' => $code,
                 'name' => $name,
@@ -100,6 +103,7 @@ class UserManagementController extends Controller
             ->get(['id', 'code', 'name', 'description'])
             ->map(function ($pg) {
                 $desc = $pg->description ?: $pg->name;
+
                 return [
                     'id' => $pg->id,
                     'code' => $pg->code,
@@ -122,6 +126,57 @@ class UserManagementController extends Controller
                 'purchasing_group' => $request->query('purchasing_group', ''),
             ],
         ]);
+    }
+
+    /**
+     * Download pre-formatted Excel template for bulk user imports.
+     */
+    public function downloadTemplate(UserExcelService $excelService): StreamedResponse
+    {
+        return $excelService->downloadTemplateResponse();
+    }
+
+    /**
+     * Import users and credentials from an uploaded Excel or CSV file.
+     */
+    public function importExcel(Request $request, UserExcelService $excelService): RedirectResponse
+    {
+        $request->validate([
+            'excel_file' => [
+                'required',
+                'file',
+                'mimes:xlsx,xls,csv',
+                'max:10240', // 10MB limit
+            ],
+        ], [
+            'excel_file.required' => 'Please select an Excel or CSV spreadsheet file to upload.',
+            'excel_file.file' => 'The uploaded file is invalid.',
+            'excel_file.mimes' => 'The uploaded file must be in Excel (.xlsx, .xls) or CSV (.csv) format.',
+            'excel_file.max' => 'The uploaded spreadsheet must not exceed 10 MB.',
+        ]);
+
+        try {
+            $file = $request->file('excel_file');
+            $result = $excelService->import($file->getRealPath());
+
+            if ($result['imported_count'] > 0 && $result['failed_count'] === 0) {
+                return back()
+                    ->with('success', "Batch import completed: {$result['imported_count']} user accounts created and activated successfully.")
+                    ->with('import_summary', $result);
+            }
+
+            if ($result['imported_count'] > 0 && $result['failed_count'] > 0) {
+                return back()
+                    ->with('success', "Batch import partial success: {$result['imported_count']} users imported successfully. {$result['failed_count']} rows had validation errors and were skipped.")
+                    ->with('import_summary', $result);
+            }
+
+            return back()
+                ->with('error', "No user accounts were imported. All {$result['failed_count']} rows had validation errors.")
+                ->with('import_summary', $result);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Import error: '.$e->getMessage());
+        }
     }
 
     /**
@@ -152,7 +207,7 @@ class UserManagementController extends Controller
                 'admin' => 'APL-ADM-',
                 default => 'APL-EMP-',
             };
-            $validated['employee_id'] = $prefix . rand(1000, 9999);
+            $validated['employee_id'] = $prefix.rand(1000, 9999);
         }
 
         $user = User::create([
@@ -164,8 +219,8 @@ class UserManagementController extends Controller
             'employee_id' => $validated['employee_id'],
             'designation' => $validated['designation'] ?? null,
             'phone' => $validated['phone'] ?? null,
-            'plant' => !empty($validated['plant']) ? $validated['plant'] : '1200 - Dibrugarh Manufacturing Plant',
-            'purchasing_group' => !empty($validated['purchasing_group']) ? $validated['purchasing_group'] : null,
+            'plant' => ! empty($validated['plant']) ? $validated['plant'] : '1200 - Dibrugarh Manufacturing Plant',
+            'purchasing_group' => ! empty($validated['purchasing_group']) ? $validated['purchasing_group'] : null,
             'is_active' => $request->boolean('is_active', true),
             'email_verified_at' => now(), // Auto-verified: user can directly log in without email verification
         ]);
@@ -200,8 +255,8 @@ class UserManagementController extends Controller
             'employee_id' => $validated['employee_id'] ?? $user->employee_id,
             'designation' => $validated['designation'] ?? null,
             'phone' => $validated['phone'] ?? null,
-            'plant' => !empty($validated['plant']) ? $validated['plant'] : $user->plant,
-            'purchasing_group' => !empty($validated['purchasing_group']) ? $validated['purchasing_group'] : null,
+            'plant' => ! empty($validated['plant']) ? $validated['plant'] : $user->plant,
+            'purchasing_group' => ! empty($validated['purchasing_group']) ? $validated['purchasing_group'] : null,
             'is_active' => $request->boolean('is_active', true),
         ];
 

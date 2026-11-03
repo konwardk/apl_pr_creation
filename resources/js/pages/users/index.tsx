@@ -24,6 +24,11 @@ import {
     Briefcase,
     BadgeAlert,
     RefreshCw,
+    FileSpreadsheet,
+    Download,
+    UploadCloud,
+    FileText,
+    AlertTriangle,
 } from 'lucide-react';
 import type { User, Role, Department } from '@/types';
 
@@ -38,6 +43,18 @@ export interface PurchasingGroupOption {
     code: string;
     name: string;
     description?: string;
+}
+
+export interface ImportSummary {
+    total_rows: number;
+    imported_count: number;
+    failed_count: number;
+    errors: Array<{
+        row: number;
+        email?: string;
+        message: string;
+    }>;
+    users?: string[];
 }
 
 interface PageProps {
@@ -63,6 +80,7 @@ interface PageProps {
     flash?: {
         success?: string | null;
         error?: string | null;
+        import_summary?: ImportSummary | null;
     };
 }
 
@@ -82,7 +100,14 @@ export default function UsersIndex({
     },
     filters,
 }: PageProps) {
-    const { auth, flash } = usePage().props as { auth?: { user?: User }; flash?: { success?: string; error?: string } };
+    const { auth, flash } = usePage().props as {
+        auth?: { user?: User };
+        flash?: {
+            success?: string;
+            error?: string;
+            import_summary?: ImportSummary;
+        };
+    };
     const currentUser = auth?.user;
 
     // Filter states
@@ -97,8 +122,17 @@ export default function UsersIndex({
 
     // Modal states
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isImportOpen, setIsImportOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [deletingUser, setDeletingUser] = useState<User | null>(null);
+
+    // Form & state for Excel Import
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importError, setImportError] = useState<string | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dismissSummary, setDismissSummary] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
     // Form states for Create
     const [createForm, setCreateForm] = useState({
@@ -162,6 +196,56 @@ export default function UsersIndex({
             return matchesSearch && matchesRole && matchesDept && matchesPg && matchesStatus;
         });
     }, [users, searchQuery, selectedRole, selectedDept, selectedPg, selectedStatus]);
+
+    // Handle file selection from drag-and-drop or file picker
+    const handleFileSelect = (file: File) => {
+        const validExtensions = ['.xlsx', '.xls', '.csv'];
+        const fileName = file.name.toLowerCase();
+        const isValid = validExtensions.some((ext) => fileName.endsWith(ext));
+        if (!isValid) {
+            setImportError('Please select an Excel (.xlsx, .xls) or CSV (.csv) file.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            setImportError('The selected file size exceeds the 10 MB limit.');
+            return;
+        }
+        setImportError(null);
+        setSelectedFile(file);
+    };
+
+    // Handle Excel Import Submit
+    const handleImportSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedFile) {
+            setImportError('Please choose an Excel or CSV file to upload.');
+            return;
+        }
+        setIsImporting(true);
+        setImportError(null);
+
+        const formData = new FormData();
+        formData.append('excel_file', selectedFile);
+
+        router.post('/users/import-excel', formData, {
+            forceFormData: true,
+            onSuccess: () => {
+                setIsImportOpen(false);
+                setSelectedFile(null);
+                setDismissSummary(false);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            },
+            onError: (errs) => {
+                const msg = errs.excel_file || Object.values(errs)[0] || 'An error occurred during import.';
+                setImportError(msg);
+            },
+            onFinish: () => {
+                setIsImporting(false);
+            },
+        });
+    };
 
     // Handle Create User
     const handleCreateSubmit = (e: React.FormEvent) => {
@@ -288,6 +372,72 @@ export default function UsersIndex({
                     </div>
                 )}
 
+                {/* Excel Import Execution Report */}
+                {flash?.import_summary && !dismissSummary && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-2.5">
+                                <div
+                                    className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                                        flash.import_summary.failed_count === 0
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                >
+                                    <FileSpreadsheet className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-[#1c2d42]">Excel Import Execution Report</h3>
+                                    <p className="text-xs text-[#556b82]">
+                                        Processed {flash.import_summary.total_rows} rows from the uploaded spreadsheet.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setDismissSummary(true)}
+                                className="text-slate-400 hover:text-slate-600 rounded p-1 transition-colors"
+                                title="Dismiss report"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 pt-1">
+                            <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                <span>{flash.import_summary.imported_count} Created & Activated</span>
+                            </span>
+                            {flash.import_summary.failed_count > 0 && (
+                                <span className="inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 border border-rose-200">
+                                    <AlertCircle className="h-3.5 w-3.5 text-rose-600" />
+                                    <span>{flash.import_summary.failed_count} Rows Skipped / Failed</span>
+                                </span>
+                            )}
+                        </div>
+
+                        {flash.import_summary.errors && flash.import_summary.errors.length > 0 && (
+                            <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50/50 p-3">
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-800 mb-2">
+                                    <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                                    <span>Validation Details for Skipped Rows:</span>
+                                </div>
+                                <div className="max-h-48 overflow-y-auto divide-y divide-rose-100 text-[11px]">
+                                    {flash.import_summary.errors.map((err, idx) => (
+                                        <div key={idx} className="py-1.5 flex items-start gap-2">
+                                            <span className="font-semibold text-rose-700 shrink-0 font-mono">Row {err.row}:</span>
+                                            {err.email && err.email !== 'N/A' && (
+                                                <span className="text-slate-600 shrink-0">({err.email})</span>
+                                            )}
+                                            <span className="text-rose-900">{err.message}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Sub-Navigation Tabs: System Configuration Hub */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#d9e2ec] pb-3">
                     <div className="flex items-center gap-2">
@@ -322,7 +472,33 @@ export default function UsersIndex({
                             </p>
                         </div>
 
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            {/* Download Template Button */}
+                            <a
+                                href="/users/template-excel"
+                                download="APL_User_Import_Template.xlsx"
+                                className="inline-flex items-center gap-1.5 rounded-md border border-[#d9e2ec] bg-white px-3 py-2 text-xs font-semibold text-[#1c2d42] shadow-2xs hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                                title="Download pre-configured Excel spreadsheet template with required columns and reference data"
+                            >
+                                <Download className="h-3.5 w-3.5 text-[#0070f2]" />
+                                <span>Download Template</span>
+                            </a>
+
+                            {/* Import Excel Button */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsImportOpen(true);
+                                    setImportError(null);
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-[#0070f2] bg-blue-50/70 px-3.5 py-2 text-xs font-semibold text-[#0070f2] shadow-2xs hover:bg-blue-100 transition-colors"
+                                title="Batch import users and credentials from Excel"
+                            >
+                                <FileSpreadsheet className="h-4 w-4 text-[#0070f2]" />
+                                <span>Import from Excel</span>
+                            </button>
+
+                            {/* Add User Button */}
                             <button
                                 type="button"
                                 onClick={() => setIsCreateOpen(true)}
@@ -1238,6 +1414,224 @@ export default function UsersIndex({
                                 Delete User
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* IMPORT USERS FROM EXCEL MODAL */}
+            {isImportOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="import-dialog-title"
+                >
+                    <div className="relative w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-2xl my-8 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-[#d9e2ec] px-6 py-4 bg-[#f8fafc]">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0070f2] text-white shadow-2xs">
+                                    <FileSpreadsheet className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h2 id="import-dialog-title" className="text-base font-bold text-[#1c2d42]">
+                                        Batch Import Users from Excel
+                                    </h2>
+                                    <p className="text-xs text-[#556b82]">
+                                        Upload a populated Excel or CSV spreadsheet to create users and credentials
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsImportOpen(false);
+                                    setSelectedFile(null);
+                                    setImportError(null);
+                                }}
+                                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                                aria-label="Close dialog"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        {/* Body / Form */}
+                        <form onSubmit={handleImportSubmit} className="p-6 space-y-5 text-xs">
+                            {/* Template Download & Instructions Card */}
+                            <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-4 space-y-3">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div>
+                                        <h4 className="font-bold text-[#0070f2] flex items-center gap-1.5">
+                                            <FileText className="h-4 w-4" />
+                                            Required Template Structure
+                                        </h4>
+                                        <p className="mt-1 text-[11px] text-[#556b82] leading-relaxed">
+                                            Use the official APL template with pre-configured headers and validation reference data.
+                                        </p>
+                                    </div>
+                                    <a
+                                        href="/users/template-excel"
+                                        download="APL_User_Import_Template.xlsx"
+                                        className="inline-flex items-center gap-1.5 rounded-md border border-[#0070f2] bg-white px-3 py-1.5 text-xs font-semibold text-[#0070f2] shadow-2xs hover:bg-[#0070f2] hover:text-white transition-colors shrink-0"
+                                    >
+                                        <Download className="h-3.5 w-3.5" />
+                                        <span>Download Template (.xlsx)</span>
+                                    </a>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] border-t border-blue-100 pt-3 text-slate-600">
+                                    <div>
+                                        <strong className="text-[#1c2d42]">Mandatory Columns:</strong>
+                                        <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-slate-600">
+                                            <li>Full Name</li>
+                                            <li>Email Address (Unique)</li>
+                                            <li>Initial Password (Min 6 chars)</li>
+                                            <li>System Role (Employee / Admin / Superadmin)</li>
+                                        </ul>
+                                    </div>
+                                    <div>
+                                        <strong className="text-[#1c2d42]">Optional Columns:</strong>
+                                        <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-slate-600">
+                                            <li>Department Code / Name</li>
+                                            <li>Employee ID (Auto-generated if empty)</li>
+                                            <li>Plant Facility (Defaults to 1200)</li>
+                                            <li>Purchasing Group, Designation, Phone</li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <div className="text-[10px] text-slate-500 bg-white/70 rounded p-2 border border-blue-100">
+                                    * Note: Initial passwords will be securely encrypted. Email verification is automatically granted so users can log in immediately upon upload.
+                                </div>
+                            </div>
+
+                            {/* Drag and Drop File Upload Area */}
+                            <div>
+                                <label htmlFor="excel_file" className="block font-semibold text-[#1c2d42] mb-1.5">
+                                    Select Excel Spreadsheet File <span className="text-rose-500">*</span>
+                                </label>
+
+                                <div
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        setIsDragging(true);
+                                    }}
+                                    onDragLeave={(e) => {
+                                        e.preventDefault();
+                                        setIsDragging(false);
+                                    }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        setIsDragging(false);
+                                        if (e.dataTransfer.files?.[0]) {
+                                            handleFileSelect(e.dataTransfer.files[0]);
+                                        }
+                                    }}
+                                    className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-colors cursor-pointer ${
+                                        isDragging
+                                            ? 'border-[#0070f2] bg-blue-50/50'
+                                            : selectedFile
+                                            ? 'border-emerald-300 bg-emerald-50/30'
+                                            : 'border-slate-300 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-400'
+                                    }`}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <input
+                                        ref={fileInputRef}
+                                        id="excel_file"
+                                        name="excel_file"
+                                        type="file"
+                                        accept=".xlsx, .xls, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, text/csv"
+                                        className="sr-only"
+                                        onChange={(e) => {
+                                            if (e.target.files?.[0]) {
+                                                handleFileSelect(e.target.files[0]);
+                                            }
+                                        }}
+                                    />
+
+                                    {selectedFile ? (
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                                                <FileSpreadsheet className="h-6 w-6" />
+                                            </div>
+                                            <div className="text-left">
+                                                <div className="font-bold text-[#1c2d42]">{selectedFile.name}</div>
+                                                <div className="text-[11px] text-slate-500">
+                                                    {(selectedFile.size / 1024).toFixed(1)} KB &bull; Ready to process
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSelectedFile(null);
+                                                    if (fileInputRef.current) {
+                                                        fileInputRef.current.value = '';
+                                                    }
+                                                }}
+                                                className="ml-4 rounded-md p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+                                                title="Remove file"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-blue-50 text-[#0070f2]">
+                                                <UploadCloud className="h-6 w-6" />
+                                            </div>
+                                            <div className="text-xs text-slate-600">
+                                                <span className="font-semibold text-[#0070f2]">Click to choose a file</span> or drag and drop here
+                                            </div>
+                                            <div className="text-[11px] text-slate-400">
+                                                Supports .xlsx, .xls, and .csv (Max 10 MB)
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {importError && (
+                                    <div className="mt-2 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                                        <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                                        <span>{importError}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="mt-6 flex items-center justify-end gap-2.5 border-t border-slate-100 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsImportOpen(false);
+                                        setSelectedFile(null);
+                                        setImportError(null);
+                                    }}
+                                    className="rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!selectedFile || isImporting}
+                                    className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#0057c2] active:bg-[#003884] disabled:opacity-50 transition-colors"
+                                >
+                                    {isImporting ? (
+                                        <>
+                                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                            <span>Processing Spreadsheet...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <UploadCloud className="h-3.5 w-3.5" />
+                                            <span>Upload & Import Users</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

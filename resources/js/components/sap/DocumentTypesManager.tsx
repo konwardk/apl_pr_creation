@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { router } from '@inertiajs/react';
+import React, { useState, useEffect } from 'react';
+import { router, usePage } from '@inertiajs/react';
 import {
     CloudDownload,
     Database,
@@ -45,13 +45,19 @@ export default function DocumentTypesManager({
     const [selectedStagedCodes, setSelectedStagedCodes] = useState<Set<string>>(new Set());
     const [isSavingToDb, setIsSavingToDb] = useState(false);
 
+    const { activeSapUrl } = usePage().props as { activeSapUrl?: string };
+    const currentBaseUrl = (activeSapUrl || 'https://my443658.s4hana.cloud.sap').replace(/\/+$/, '');
+    const defaultEndpoint = `${currentBaseUrl}/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json`;
+
     // SAP Credentials Modal State
     const [isCredentialsModalOpen, setIsCredentialsModalOpen] = useState(false);
     const [sapUsername, setSapUsername] = useState('');
     const [sapPassword, setSapPassword] = useState('');
-    const [sapEndpoint, setSapEndpoint] = useState(
-        'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json'
-    );
+    const [sapEndpoint, setSapEndpoint] = useState(defaultEndpoint);
+
+    useEffect(() => {
+        setSapEndpoint(defaultEndpoint);
+    }, [defaultEndpoint]);
 
     // Feedback message
     const [alertFeedback, setAlertFeedback] = useState<{
@@ -346,7 +352,7 @@ export default function DocumentTypesManager({
                         <Server className="h-3.5 w-3.5 text-[#0070f2]" />
                         <span className="font-medium">Target SAP Tenant:</span>
                         <code className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                            my443544-api.s4hana.cloud.sap
+                            {currentBaseUrl.replace(/^https?:\/\//, '')}
                         </code>
                         <span className="hidden sm:inline text-slate-300">•</span>
                         <span className="hidden sm:inline text-slate-500">Service: <strong className="text-slate-700">YY1_PURCHASEREQTYPE_CDS</strong></span>

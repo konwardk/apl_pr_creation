@@ -70,6 +70,7 @@ class PrDocumentTypeController extends Controller
         }, $result['items'] ?? []);
 
         $result['items'] = $enhancedItems;
+        $result['count'] = count($enhancedItems);
 
         return response()->json($result);
     }

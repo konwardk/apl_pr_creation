@@ -8,6 +8,7 @@ use App\Http\Controllers\PrDocumentTypeController;
 use App\Http\Controllers\PurchasingOrganizationController;
 use App\Http\Controllers\PurchasingGroupController;
 use App\Http\Controllers\PurchaseRequisitionController;
+use App\Http\Controllers\SapUrlController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
@@ -67,6 +68,14 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
         Route::put('departments/{department}', [DeptManagementController::class, 'update'])->name('departments.update');
         Route::delete('departments/{department}', [DeptManagementController::class, 'destroy'])->name('departments.destroy');
         Route::post('departments/{department}/toggle-status', [DeptManagementController::class, 'toggleStatus'])->name('departments.toggle-status');
+
+        // Change URL Management (SAP S/4HANA Cloud System URLs)
+        Route::get('change-url', [SapUrlController::class, 'index'])->name('change-url.index');
+        Route::post('change-url', [SapUrlController::class, 'store'])->name('change-url.store');
+        Route::put('change-url/{sapUrl}', [SapUrlController::class, 'update'])->name('change-url.update');
+        Route::delete('change-url/{sapUrl}', [SapUrlController::class, 'destroy'])->name('change-url.destroy');
+        Route::post('change-url/{sapUrl}/activate', [SapUrlController::class, 'activate'])->name('change-url.activate');
+        Route::post('change-url/test-connection', [SapUrlController::class, 'testConnection'])->name('change-url.test-connection');
 
         // PR Configuration Hub
         Route::get('pr-configuration', function (\Illuminate\Http\Request $request) {

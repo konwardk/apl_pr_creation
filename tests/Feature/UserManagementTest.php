@@ -153,11 +153,12 @@ class UserManagementTest extends TestCase
     public function test_employee_cannot_trigger_direct_sap_sync(): void
     {
         $employee = User::where('email', 'employee@example.com')->first();
+        $admin = User::where('email', 'admin@example.com')->first();
 
         $pr = PurchaseRequisition::create([
             'pr_number' => 'PR-2026-00001',
-            'user_id' => $employee->id,
-            'description' => 'Employee Test PR',
+            'user_id' => $admin->id,
+            'description' => 'Admin Test PR',
             'pr_type' => 'ZCOM',
             'plant' => '1200',
             'company_code' => '1010',

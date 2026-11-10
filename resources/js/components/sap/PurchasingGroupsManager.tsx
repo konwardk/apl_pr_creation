@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import {
     Users2,
     Plus,
@@ -68,14 +68,20 @@ export default function PurchasingGroupsManager({
         message: string;
     } | null>(null);
 
+    const { activeSapUrl } = usePage().props as { activeSapUrl?: string };
+    const currentBaseUrl = (activeSapUrl || 'https://my443658.s4hana.cloud.sap').replace(/\/+$/, '');
+    const defaultPurchasingGroupEndpoint = `${currentBaseUrl}/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI`;
+
     // Staging Preview Modal
     const [isStageModalOpen, setIsStageModalOpen] = useState(false);
     const [stagedResponse, setStagedResponse] = useState<SapPurchasingGroupFetchResponse | null>(null);
     const [selectedStagedCodes, setSelectedStagedCodes] = useState<Set<string>>(new Set());
     const [stagedSearchQuery, setStagedSearchQuery] = useState('');
-    const [sapEndpoint, setSapEndpoint] = useState(
-        'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI'
-    );
+    const [sapEndpoint, setSapEndpoint] = useState(defaultPurchasingGroupEndpoint);
+
+    useEffect(() => {
+        setSapEndpoint(defaultPurchasingGroupEndpoint);
+    }, [defaultPurchasingGroupEndpoint]);
 
     // Manual Create Modal
     const [isCreateOpen, setIsCreateOpen] = useState(false);

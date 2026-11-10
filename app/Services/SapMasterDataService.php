@@ -29,10 +29,27 @@ class SapMasterDataService
 
     public function __construct(?string $baseUrl = null)
     {
-        $this->baseUrl = rtrim(
-            $baseUrl ?: config('sap.tenant_url', env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap')),
-            '/'
-        );
+        $resolved = $baseUrl ?: static::resolveActiveBaseUrl();
+        $this->baseUrl = rtrim($resolved, '/');
+    }
+
+    /**
+     * Resolve the active SAP S/4HANA Cloud base URL from database or config.
+     */
+    public static function resolveActiveBaseUrl(): string
+    {
+        if (class_exists(\App\Models\SapUrl::class)) {
+            try {
+                $active = \App\Models\SapUrl::getActiveUrl();
+                if (!empty($active)) {
+                    return $active;
+                }
+            } catch (\Throwable $e) {
+                // Table might not exist yet during initial migrations
+            }
+        }
+
+        return config('sap.tenant_url', env('SAP_S4HANA_URL', 'https://my443658.s4hana.cloud.sap'));
     }
 
     /**
@@ -41,6 +58,64 @@ class SapMasterDataService
     public function getBaseUrl(): string
     {
         return $this->baseUrl;
+    }
+
+    /**
+     * Resolve the appropriate SAP Communication User credentials based on overrides,
+     * the active database environment record, or environment config.
+     *
+     * @return array{0: string, 1: string}
+     */
+    public function getAuthCredentials(?string $username = null, ?string $password = null): array
+    {
+        if (!empty($username) && !empty($password)) {
+            return [$username, $password];
+        }
+
+        // 1. If active SapUrl model has stored credentials, use them
+        if (class_exists(\App\Models\SapUrl::class)) {
+            try {
+                $active = \App\Models\SapUrl::getActiveRecord();
+                if ($active) {
+                    if (!empty($active->username) && !empty($active->password)) {
+                        return [
+                            $username ?: $active->username,
+                            $password ?: $active->password,
+                        ];
+                    }
+
+                    $url = $active->url;
+                    $envName = strtolower($active->environment_name ?? '');
+
+                    // Quality / Test environment credentials
+                    if (str_contains($url, 'my443658') || str_contains($envName, 'quality') || str_contains($envName, 'test')) {
+                        return [
+                            $username ?: env('SAP_TEST_ODATA_USER', env('SAP_QUALITY_ODATA_USER', env('SAP_ODATA_USER', 'Communication_user'))),
+                            $password ?: env('SAP_TEST_ODATA_PASSWORD', env('SAP_QUALITY_ODATA_PASSWORD', env('SAP_ODATA_PASSWORD', 'Communication@1123456789'))),
+                        ];
+                    }
+
+                    // Development environment credentials
+                    if (str_contains($url, 'my443544') || str_contains($envName, 'dev')) {
+                        return [
+                            $username ?: env('SAP_DEV_ODATA_USER', 'BTP_S4_INTEGRATION'),
+                            $password ?: env('SAP_DEV_ODATA_PASSWORD', 'Assampetrochemical@123#'),
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Table might not exist yet
+            }
+        }
+
+        // 2. Default fallback from config or .env
+        $defaultUser = config('sap.auth.username', env('SAP_ODATA_USER', 'Communication_user'));
+        $defaultPass = config('sap.auth.password', env('SAP_ODATA_PASSWORD', 'Communication@1123456789'));
+
+        return [
+            $username ?: $defaultUser,
+            $password ?: $defaultPass,
+        ];
     }
 
     /**
@@ -57,10 +132,13 @@ class SapMasterDataService
             // Clean up any literal escaped dollar signs (e.g. \$format -> $format)
             $configured = str_replace('\$', '$', $configured);
 
-            if (!str_starts_with($configured, 'http://') && !str_starts_with($configured, 'https://')) {
-                return $this->baseUrl . '/' . ltrim($configured, '/');
+            if (str_starts_with($configured, 'http://') || str_starts_with($configured, 'https://')) {
+                // Re-anchor path & query to the current active baseUrl
+                $parts = parse_url($configured);
+                $path = ($parts['path'] ?? '') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+                return $this->baseUrl . '/' . ltrim($path, '/');
             }
-            return $configured;
+            return $this->baseUrl . '/' . ltrim($configured, '/');
         }
 
         return $this->baseUrl . '/' . ltrim($relativePath, '/');
@@ -85,8 +163,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_PURCHASEREQTYPE_CDS/YY1_PURCHASEREQTYPE?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         // If credentials are provided, attempt live HTTP fetch to SAP S/4HANA Cloud
         if (!empty($authUser) && !empty($authPass)) {
@@ -139,6 +216,7 @@ class SapMasterDataService
                     'endpoint' => $endpoint,
                     'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}: " .
                         ($response->status() === 401 ? 'Invalid or unauthorized Communication User credentials.' : 'Check CDS View service exposure.'),
+                    'count' => 0,
                     'items' => [],
                     'error_details' => substr($errorBody, 0, 300),
                 ];
@@ -152,6 +230,7 @@ class SapMasterDataService
                     'source' => 'SAP S/4HANA Cloud (Connection Error)',
                     'endpoint' => $endpoint,
                     'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
+                    'count' => 0,
                     'items' => [],
                 ];
             }
@@ -172,8 +251,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized document type records.
      */
-    protected function parseODataItems(array $json): array
+    protected function parseODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
 
         // OData V2 payload: { "d": { "results": [ ... ] } } or { "d": [ ... ] }
@@ -353,8 +436,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_PRODUCTPLANTVALUATION_CDS/YY1_ProductPlantValuation?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -537,8 +619,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized material items.
      */
-    protected function parseMaterialODataItems(array $json): array
+    protected function parseMaterialODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -734,8 +820,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_ACCOUNTASSIGNMENTCAT_CDS/YY1_AccountAssignmentCat?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -829,8 +914,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized account assignment category items.
      */
-    protected function parseAccountAssignmentCategoryODataItems(array $json): array
+    protected function parseAccountAssignmentCategoryODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -960,8 +1049,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -1014,6 +1102,16 @@ class SapMasterDataService
                     'body' => substr($errorBody, 0, 500),
                 ]);
 
+                $fallbackPlants = $this->getFormattedFallbackPlants();
+                if (!empty($search)) {
+                    $term = strtolower(trim($search));
+                    $fallbackPlants = array_values(array_filter($fallbackPlants, function ($it) use ($term) {
+                        return str_contains(strtolower($it['code']), $term)
+                            || str_contains(strtolower($it['name']), $term)
+                            || str_contains(strtolower($it['PlantName'] ?? ''), $term);
+                    }));
+                }
+
                 return [
                     'success' => false,
                     'is_live' => false,
@@ -1021,11 +1119,22 @@ class SapMasterDataService
                     'source' => 'SAP S/4HANA Cloud (Live Request Failed)',
                     'endpoint' => $endpoint,
                     'message' => "SAP S/4HANA Cloud responded with HTTP {$response->status()}",
-                    'items' => $this->getFormattedFallbackPlants(),
+                    'count' => count($fallbackPlants),
+                    'items' => $fallbackPlants,
                     'error_details' => substr($errorBody, 0, 300),
                 ];
             } catch (\Exception $e) {
                 Log::error('Exception connecting to SAP PlantVH: ' . $e->getMessage());
+
+                $fallbackPlants = $this->getFormattedFallbackPlants();
+                if (!empty($search)) {
+                    $term = strtolower(trim($search));
+                    $fallbackPlants = array_values(array_filter($fallbackPlants, function ($it) use ($term) {
+                        return str_contains(strtolower($it['code']), $term)
+                            || str_contains(strtolower($it['name']), $term)
+                            || str_contains(strtolower($it['PlantName'] ?? ''), $term);
+                    }));
+                }
 
                 return [
                     'success' => false,
@@ -1034,7 +1143,8 @@ class SapMasterDataService
                     'source' => 'SAP S/4HANA Cloud (Connection Error)',
                     'endpoint' => $endpoint,
                     'message' => "Network connection to SAP Cloud endpoint timed out or failed: " . $e->getMessage(),
-                    'items' => $this->getFormattedFallbackPlants(),
+                    'count' => count($fallbackPlants),
+                    'items' => $fallbackPlants,
                 ];
             }
         }
@@ -1054,8 +1164,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized plant items.
      */
-    protected function parsePlantODataItems(array $json): array
+    protected function parsePlantODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -1099,7 +1213,40 @@ class SapMasterDataService
      */
     public function getFormattedFallbackPlants(): array
     {
-        return [];
+        return [
+            [
+                'code' => '1100',
+                'name' => '1100 - Corporate Office',
+                'plantName' => 'Corporate Office',
+                'extra' => 'Plant 1100 • Corporate Office',
+                'Plant' => '1100',
+                'PlantName' => 'Corporate Office',
+            ],
+            [
+                'code' => '1200',
+                'name' => '1200 - Namrup',
+                'plantName' => 'Namrup',
+                'extra' => 'Plant 1200 • Namrup',
+                'Plant' => '1200',
+                'PlantName' => 'Namrup',
+            ],
+            [
+                'code' => '1300',
+                'name' => '1300 - Boitamari',
+                'plantName' => 'Boitamari',
+                'extra' => 'Plant 1300 • Boitamari',
+                'Plant' => '1300',
+                'PlantName' => 'Boitamari',
+            ],
+            [
+                'code' => '1400',
+                'name' => '1400 - Rani Nagar',
+                'plantName' => 'Rani Nagar',
+                'extra' => 'Plant 1400 • Rani Nagar',
+                'Plant' => '1400',
+                'PlantName' => 'Rani Nagar',
+            ],
+        ];
     }
 
     /**
@@ -1118,8 +1265,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -1220,8 +1366,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 payload into standardized storage location items.
      */
-    protected function parseStorageLocationODataItems(array $json): array
+    protected function parseStorageLocationODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -1300,8 +1450,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_MATERIALGROUP_CDS/YY1_MATERIALGROUP?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -1399,8 +1548,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized material group items.
      */
-    protected function parseMaterialGroupODataItems(array $json): array
+    protected function parseMaterialGroupODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -1482,8 +1635,7 @@ class SapMasterDataService
      */
     public function postPurchaseRequisition(PurchaseRequisition $purchaseRequisition, bool $doOnlyValidation = false): array
     {
-        $username = config('sap.auth.username', env('SAP_ODATA_USER'));
-        $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$username, $password] = $this->getAuthCredentials();
         $endpoint = $this->getEndpoint(
             'purchase_requisition_process',
             '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/PurchaseReqn'
@@ -1626,8 +1778,7 @@ class SapMasterDataService
      */
     public function uploadAttachmentToSap(Attachment $attachment, string $sapPrNumber, ?string $itemNumber = null): array
     {
-        $username = config('sap.auth.username', env('SAP_ODATA_USER'));
-        $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$username, $password] = $this->getAuthCredentials();
         $endpoint = $this->getEndpoint(
             'attachment_content',
             '/sap/opu/odata/sap/API_CV_ATTACHMENT_SRV/AttachmentContentSet'
@@ -1776,8 +1927,7 @@ class SapMasterDataService
      */
     public function postContractRequisition(ContractRequisition $contractRequisition, ?string $sapPrNumber = null): array
     {
-        $username = config('sap.auth.username', env('SAP_ODATA_USER'));
-        $password = config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$username, $password] = $this->getAuthCredentials();
         $endpoint = $this->getEndpoint(
             'contract_requisition',
             '/sap/opu/odata4/sap/yy1_api_contractrequisition/srvd_a2x/sap/yy1_api_contractrequisition/0001/ContractRequisition'
@@ -1910,8 +2060,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_I_GLACCOUNTINCOMPANYCO_CDS/YY1_I_GLACCOUNTINCOMPANYCO?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -2018,8 +2167,12 @@ class SapMasterDataService
      * Parse raw SAP OData V2 or V4 payload into standardized G/L Account items.
      * Uses GLAccount, CompanyCode, and GLAccountName from YY1_I_GLACCOUNTINCOMPANYCO_CDS.
      */
-    public function parseGlAccountODataItems(array $json): array
+    public function parseGlAccountODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -2091,8 +2244,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_COSTCENTER_CDS/YY1_COSTCENTER?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -2213,8 +2365,12 @@ class SapMasterDataService
      * Parse raw SAP OData V2 or V4 payload into standardized Cost Center items.
      * Uses CostCenter, ControllingArea, CompanyCode, ProfitCenter, and Plant from YY1_COSTCENTER_CDS.
      */
-    public function parseCostCenterODataItems(array $json): array
+    public function parseCostCenterODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -2401,8 +2557,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_SUPPLIER_CDS/YY1_Supplier?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -2502,8 +2657,12 @@ class SapMasterDataService
      * Parse raw SAP OData V2 or V4 payload into standardized Supplier items.
      * Uses Supplier, SupplierName, SupplierFullName, and BPSupplierName from YY1_SUPPLIER_CDS.
      */
-    public function parseSupplierODataItems(array $json): array
+    public function parseSupplierODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -2571,8 +2730,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -2660,8 +2818,12 @@ class SapMasterDataService
      * Parse raw SAP OData V2 or V4 payload into standardized Purchasing Organization items.
      * Aggregates by PurchasingOrganization and collects associated Plants.
      */
-    public function parsePurchasingOrganizationODataItems(array $json): array
+    public function parsePurchasingOrganizationODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -2805,8 +2967,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_PURCHASINGGROUPAPI_CDS/YY1_PurchasingGroupAPI?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -2893,8 +3054,12 @@ class SapMasterDataService
     /**
      * Parse raw SAP OData V2 or V4 payload into standardized Purchasing Group items.
      */
-    public function parsePurchasingGroupODataItems(array $json): array
+    public function parsePurchasingGroupODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -3099,8 +3264,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_UNITOFMEASUREMENT_CDS/YY1_UnitOfMeasurement?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -3214,8 +3378,12 @@ class SapMasterDataService
      * - UnitOfMeasureISOCode (ISO code required by OData V4, e.g. "ACT")
      * - UnitOfMeasureSAPCode (SAP internal code, e.g. "AU")
      */
-    protected function parseUnitOfMeasureODataItems(array $json): array
+    protected function parseUnitOfMeasureODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -3287,8 +3455,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_INFORECORD_CDS/YY1_INFORECORD?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -3415,8 +3582,12 @@ class SapMasterDataService
      * - Supplier (e.g. "V1200")
      * - Material (e.g. "1000000005")
      */
-    protected function parseInfoRecordODataItems(array $json): array
+    protected function parseInfoRecordODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -3498,8 +3669,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_TAXCODE_CDS/YY1_TAXCODE?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -3619,8 +3789,12 @@ class SapMasterDataService
      * - ConditionRateRatio (e.g. "9.000")
      * - ConditionRateRatioUnit (e.g. "%")
      */
-    public function parseTaxCodeODataItems(array $json): array
+    public function parseTaxCodeODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];
@@ -3737,8 +3911,7 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_OUTLINECONTRACT_CDS/YY1_OUTLINECONTRACT?$format=json'
         );
 
-        $authUser = $username ?: config('sap.auth.username', env('SAP_ODATA_USER'));
-        $authPass = $password ?: config('sap.auth.password', env('SAP_ODATA_PASSWORD'));
+        [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
             try {
@@ -3833,8 +4006,12 @@ class SapMasterDataService
      * - PurchasingDocumentCategory (e.g. "K")
      * - PurchasingDocumentTypeName (e.g. "Qty Contract-PSE")
      */
-    public function parseOutlineContractODataItems(array $json): array
+    public function parseOutlineContractODataItems(?array $json = null): array
     {
+        if (empty($json) || !is_array($json)) {
+            return [];
+        }
+
         $rawRecords = [];
         if (isset($json['d']['results']) && is_array($json['d']['results'])) {
             $rawRecords = $json['d']['results'];

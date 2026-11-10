@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { usePage } from '@inertiajs/react';
 import {
     Building2,
     RefreshCw,
@@ -68,6 +69,10 @@ export default function PlantsManager({
     initialPurchasingOrganizations = [],
     defaultSection = 'purchasing-orgs',
 }: PlantsManagerProps) {
+    const { activeSapUrl } = usePage().props as { activeSapUrl?: string };
+    const currentBaseUrl = (activeSapUrl || 'https://my443658.s4hana.cloud.sap').replace(/\/+$/, '');
+    const defaultPlantEndpoint = `${currentBaseUrl}/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json`;
+
     const [activeSection, setActiveSection] = useState<'purchasing-orgs' | 'plants'>(defaultSection);
     const [plants, setPlants] = useState<SapPlantItem[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -76,7 +81,7 @@ export default function PlantsManager({
         is_live: true,
         status: 200,
         source: 'SAP S/4HANA Cloud (Live Service: ZUI_TMS_DESPATCH_04 / PlantVH)',
-        endpoint: 'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json',
+        endpoint: defaultPlantEndpoint,
         latency_ms: 0,
     });
     const [searchQuery, setSearchQuery] = useState('');
@@ -104,7 +109,7 @@ export default function PlantsManager({
                     is_live: data.is_live ?? true,
                     status: data.status ?? 200,
                     source: data.source ?? 'SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / PlantVH)',
-                    endpoint: data.endpoint ?? 'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json',
+                    endpoint: data.endpoint ?? defaultPlantEndpoint,
                     latency_ms: data.latency_ms ?? 0,
                     count: data.count ?? data.items.length,
                     message: data.message,

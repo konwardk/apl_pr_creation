@@ -23,6 +23,7 @@ import {
     ArrowRight,
     Boxes,
     Users2,
+    Globe,
 } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -75,6 +76,15 @@ export default function SapAppLayout({
             href: '/departments',
             badge: 'Org Units',
             badgeColor: 'bg-blue-100 text-[#0070f2] border-blue-200',
+        },
+        {
+            id: 'change-url',
+            label: 'Change URL',
+            description: 'Configure and switch active SAP S/4HANA Cloud environment URLs',
+            icon: Globe,
+            href: '/change-url',
+            badge: 'SAP Cloud',
+            badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         },
     ];
 
@@ -257,7 +267,7 @@ export default function SapAppLayout({
                             const isSysConfig = tab.id === 'system-configuration';
                             const isActive =
                                 activeTab === tab.id ||
-                                (isSysConfig && (activeTab === 'system-configuration' || activeTab === 'users' || activeTab === 'departments'));
+                                (isSysConfig && (activeTab === 'system-configuration' || activeTab === 'users' || activeTab === 'departments' || activeTab === 'change-url'));
 
                             if (isSysConfig) {
                                 return (

@@ -145,8 +145,8 @@ export default function Dashboard({
         odata_version: 'OData V4 (JSON format)',
         entity_set: 'PurchaseReqn',
         status: 'Active & Connected',
-        tenant_url: 'https://my443544-api.s4hana.cloud.sap',
-        endpoint_url: 'https://my443544-api.s4hana.cloud.sap/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/',
+        tenant_url: 'https://my443658.s4hana.cloud.sap',
+        endpoint_url: 'https://my443658.s4hana.cloud.sap/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/',
         communication_scenario: 'SAP_COM_0053 (Purchase Requisition Integration)',
     },
 }: DashboardProps) {
@@ -828,7 +828,7 @@ export default function Dashboard({
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                                 <div className="text-xs font-semibold text-[#556b82]">Endpoint URL</div>
                                 <div className="mt-1 font-mono text-xs text-[#1c2d42] break-all">
-                                    {sapConfig?.endpoint_url || `${sapConfig?.tenant_url || 'https://my443544-api.s4hana.cloud.sap'}/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/`}
+                                    {sapConfig?.endpoint_url || `${sapConfig?.tenant_url || 'https://my443658.s4hana.cloud.sap'}/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/`}
                                 </div>
                             </div>
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

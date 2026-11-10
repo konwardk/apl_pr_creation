@@ -7,4 +7,5 @@ export type * from './item-category';
 export type * from './purchasing-organization';
 export type * from './contract-requisition';
 export type * from './purchasing-group';
+export type * from './sap-url';
 

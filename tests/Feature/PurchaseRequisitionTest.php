@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\SapMasterDataService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -364,6 +365,22 @@ class PurchaseRequisitionTest extends TestCase
     {
         $user = User::factory()->create();
 
+        Http::fake([
+            '*YY1_PRODUCTPLANTVALUATION_CDS*' => Http::response([
+                'd' => [
+                    'results' => [
+                        [
+                            'Product' => 'CHAIR-001',
+                            'ProductName' => 'Office Revolving Chair',
+                            'BaseUnit' => 'EA',
+                            'ProductGroup' => 'FURN',
+                            'ProductType' => 'ZROH',
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
         $response = $this->actingAs($user)->get(route('sap-materials.index'));
 
         $response->assertOk();
@@ -387,6 +404,22 @@ class PurchaseRequisitionTest extends TestCase
     public function test_authenticated_user_can_search_sap_materials(): void
     {
         $user = User::factory()->create();
+
+        Http::fake([
+            '*YY1_PRODUCTPLANTVALUATION_CDS*' => Http::response([
+                'd' => [
+                    'results' => [
+                        [
+                            'Product' => 'CHAIR-001',
+                            'ProductName' => 'Office Revolving Chair',
+                            'BaseUnit' => 'EA',
+                            'ProductGroup' => 'FURN',
+                            'ProductType' => 'ZROH',
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
 
         $response = $this->actingAs($user)->get(route('sap-materials.index', ['query' => 'Chair']));
 

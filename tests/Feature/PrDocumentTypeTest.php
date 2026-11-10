@@ -7,6 +7,7 @@ use App\Models\User;
 use Database\Seeders\PrDocumentTypeSeeder;
 use Database\Seeders\RoleAndDepartmentSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PrDocumentTypeTest extends TestCase
@@ -63,6 +64,25 @@ class PrDocumentTypeTest extends TestCase
     public function test_superadmin_can_fetch_from_sap_cds_view(): void
     {
         $superadmin = User::where('email', 'superadmin@example.com')->first();
+
+        Http::fake([
+            '*YY1_PURCHASEREQTYPE*' => Http::response([
+                'd' => [
+                    'results' => [
+                        [
+                            'PurchaseRequisitionType' => 'NB',
+                            'PurchasingDocumentTypeName_1' => 'Standard Purchase Requisition (NB)',
+                            'Description' => 'Standard purchase requisition for materials',
+                        ],
+                        [
+                            'PurchaseRequisitionType' => 'ZNB',
+                            'PurchasingDocumentTypeName_1' => 'Custom S/4HANA Special Requisition (ZNB)',
+                            'Description' => 'Custom PR imported directly from CDS View',
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
 
         $response = $this->actingAs($superadmin)->post(route('pr-document-types.fetch-sap'), [
             'endpoint' => config('sap.endpoints.pr_document_types'),

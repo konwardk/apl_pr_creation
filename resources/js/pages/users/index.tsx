@@ -29,6 +29,7 @@ import {
     UploadCloud,
     FileText,
     AlertTriangle,
+    Globe,
 } from 'lucide-react';
 import type { User, Role, Department } from '@/types';
 
@@ -451,6 +452,13 @@ export default function UsersIndex({
                         >
                             <Building2 className="h-3.5 w-3.5 text-slate-500" />
                             <span>Manage Departments</span>
+                        </Link>
+                        <Link
+                            href="/change-url"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#d9e2ec] bg-white px-3.5 py-1.5 text-xs font-semibold text-[#556b82] transition-colors hover:border-slate-300 hover:text-[#1c2d42]"
+                        >
+                            <Globe className="h-3.5 w-3.5 text-slate-500" />
+                            <span>Change URL</span>
                         </Link>
                     </div>
                 </div>

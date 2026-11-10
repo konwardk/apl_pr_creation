@@ -9,6 +9,7 @@ import {
     Boxes,
     Users,
     Shield,
+    Globe,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -120,6 +121,12 @@ export function AppSidebar() {
                   href: '/departments',
                   icon: Shield,
                   isActive: currentPath.startsWith('/departments'),
+              },
+              {
+                  title: 'Change URL',
+                  href: '/change-url',
+                  icon: Globe,
+                  isActive: currentPath.startsWith('/change-url'),
               },
           ]
         : [];

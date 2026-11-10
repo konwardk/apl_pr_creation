@@ -1,6 +1,6 @@
 <?php
 
-$baseUrl = rtrim(env('SAP_S4HANA_URL', 'https://my443544-api.s4hana.cloud.sap'), '/');
+$baseUrl = rtrim(env('SAP_S4HANA_URL', 'https://my443658.s4hana.cloud.sap'), '/');
 
 return [
     /*
@@ -20,8 +20,19 @@ return [
     'verify_ssl' => env('SAP_VERIFY_SSL', false),
 
     'auth' => [
-        'username' => env('SAP_ODATA_USER', ''),
-        'password' => env('SAP_ODATA_PASSWORD', ''),
+        'username' => env('SAP_ODATA_USER', 'Communication_user'),
+        'password' => env('SAP_ODATA_PASSWORD', 'Communication@1123456789'),
+    ],
+
+    'environments' => [
+        'quality' => [
+            'username' => env('SAP_QUALITY_ODATA_USER', env('SAP_TEST_ODATA_USER', 'Communication_user')),
+            'password' => env('SAP_QUALITY_ODATA_PASSWORD', env('SAP_TEST_ODATA_PASSWORD', 'Communication@1123456789')),
+        ],
+        'development' => [
+            'username' => env('SAP_DEV_ODATA_USER', 'BTP_S4_INTEGRATION'),
+            'password' => env('SAP_DEV_ODATA_PASSWORD', 'Assampetrochemical@123#'),
+        ],
     ],
 
     'endpoints' => [

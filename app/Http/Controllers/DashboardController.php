@@ -73,8 +73,12 @@ class DashboardController extends Controller
             ->orderBy('code')
             ->get();
 
-        $tenantUrl = config('sap.tenant_url');
-        $serviceRoot = config('sap.endpoints.service_root');
+        $sapService = app(\App\Services\SapMasterDataService::class);
+        $tenantUrl = $sapService->getBaseUrl();
+        $serviceRoot = $sapService->getEndpoint(
+            'service_root',
+            '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/'
+        );
 
         $sapConfig = [
             'system_name' => config('sap.system_name', 'SAP S/4HANA Cloud (Public Edition)'),

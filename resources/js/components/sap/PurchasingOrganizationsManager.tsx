@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { usePage } from '@inertiajs/react';
 import {
     Building2,
     RefreshCw,
@@ -59,13 +60,19 @@ export default function PurchasingOrganizationsManager({
         message: string;
     } | null>(null);
 
+    const { activeSapUrl } = usePage().props as { activeSapUrl?: string };
+    const currentBaseUrl = (activeSapUrl || 'https://my443658.s4hana.cloud.sap').replace(/\/+$/, '');
+    const defaultPurchasingOrgEndpoint = `${currentBaseUrl}/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION`;
+
     // Staging Modal for "Fetch & Stage"
     const [stagedResponse, setStagedResponse] = useState<SapPurchasingOrgFetchResponse | null>(null);
     const [selectedStagedCodes, setSelectedStagedCodes] = useState<Set<string>>(new Set());
     const [isStageModalOpen, setIsStageModalOpen] = useState(false);
-    const [sapEndpoint, setSapEndpoint] = useState(
-        'https://my443544-api.s4hana.cloud.sap/sap/opu/odata/sap/YY1_PURCHASEORGANIZATION_CDS/YY1_PURCHASEORGANIZATION'
-    );
+    const [sapEndpoint, setSapEndpoint] = useState(defaultPurchasingOrgEndpoint);
+
+    useEffect(() => {
+        setSapEndpoint(defaultPurchasingOrgEndpoint);
+    }, [defaultPurchasingOrgEndpoint]);
 
     // Add / Edit Modal states
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);

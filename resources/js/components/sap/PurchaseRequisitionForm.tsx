@@ -554,7 +554,7 @@ export default function PurchaseRequisitionForm({
                     requirement_tracking_number: it.requirement_tracking_number || '',
                     cost_center: it.cost_center || '',
                     gl_account: it.gl_account || '',
-                    purchasing_organization: it.purchasing_organization || '1100',
+                    purchasing_organization: it.purchasing_organization || '',
                     purchasing_group: it.purchasing_group || defaultPurchasingGroup,
                     delivery_date: rawDelDate,
                     requisition_date: rawReqDate,
@@ -922,6 +922,7 @@ export default function PurchaseRequisitionForm({
                 if (idx !== targetIdx) return item;
                 return {
                     ...item,
+                    item_type: item.item_type || 'material',
                     material_code: productCode || item.material_code,
                     plant: plantFromApi || item.plant,
                     description: productName || item.description,
@@ -2502,6 +2503,7 @@ export default function PurchaseRequisitionForm({
                     };
                 })
             );
+            clearFieldError(`item_${targetIdx}_purchasing_organization`);
             return;
         }
 
@@ -2572,6 +2574,7 @@ export default function PurchaseRequisitionForm({
 
         setItems((prev) => [...prev, newItem]);
         setActiveItemIndex(items.length);
+        setActiveItemTab('general');
     };
 
     const setItemType = (index: number, newType: 'material' | 'service') => {
@@ -2603,6 +2606,7 @@ export default function PurchaseRequisitionForm({
                 };
             })
         );
+        clearFieldError(`item_${index}_item_type`);
     };
 
     const handleClearItem = (index: number) => {
@@ -2854,24 +2858,21 @@ export default function PurchaseRequisitionForm({
         items.forEach((it, idx) => {
             const prefix = `item_${idx}_`;
 
-            // Item Type
-            if (!it.item_type) {
-                errs[prefix + 'item_type'] = 'Line item type must be selected (Material or Service).';
-            }
-
             // Description
             if (!it.description || !String(it.description).trim()) {
                 errs[prefix + 'description'] = 'Item Description is mandatory.';
             }
 
-            // Material Number
+            // Material Number: Mandatory if item_type === 'material'
+            const matCodeTrimmed = String(it.material_code || '').trim();
             if (it.item_type === 'material') {
-                const matCodeTrimmed = String(it.material_code || '').trim();
                 if (!matCodeTrimmed) {
                     errs[prefix + 'material_code'] = 'Material Number is mandatory for Material line items.';
                 } else if (matCodeTrimmed.toUpperCase() === 'NUTS') {
                     errs[prefix + 'material_code'] = "Material 'NUTS' is not maintained by Purchasing in Plant 1200 in SAP (ME/046). Please choose another material.";
                 }
+            } else if (matCodeTrimmed.toUpperCase() === 'NUTS') {
+                errs[prefix + 'material_code'] = "Material 'NUTS' is not maintained by Purchasing in Plant 1200 in SAP (ME/046). Please choose another material.";
             }
 
             // Plant
@@ -2890,11 +2891,9 @@ export default function PurchaseRequisitionForm({
                 errs[prefix + 'purchasing_group'] = `Invalid Purchasing Group '${it.purchasing_group}'. Press F4 to select a valid group.`;
             }
 
-            // Purchasing Organization
+            // Purchasing Organization (Optional)
             const poUpper = String(it.purchasing_organization || '').trim().toUpperCase();
-            if (!poUpper) {
-                errs[prefix + 'purchasing_organization'] = 'Purchasing Organization is mandatory.';
-            } else if (validPurchasingOrgs.length > 0 && !validPurchasingOrgs.includes(poUpper)) {
+            if (poUpper && validPurchasingOrgs.length > 0 && !validPurchasingOrgs.includes(poUpper)) {
                 errs[prefix + 'purchasing_organization'] = `Invalid Purchasing Org '${it.purchasing_organization}'. Must match a valid Org (e.g. 1100).`;
             }
 
@@ -3122,7 +3121,7 @@ export default function PurchaseRequisitionForm({
             if (it.requirement_tracking_number) formData.append(`items[${index}][requirement_tracking_number]`, it.requirement_tracking_number);
             if (it.cost_center) formData.append(`items[${index}][cost_center]`, it.cost_center);
             if (it.gl_account) formData.append(`items[${index}][gl_account]`, it.gl_account);
-            formData.append(`items[${index}][purchasing_organization]`, it.purchasing_organization || '1100');
+            formData.append(`items[${index}][purchasing_organization]`, it.purchasing_organization || '');
             formData.append(`items[${index}][purchasing_group]`, it.purchasing_group || defaultPurchasingGroup);
             if (it.delivery_date) formData.append(`items[${index}][delivery_date]`, it.delivery_date);
             if (it.requisition_date) formData.append(`items[${index}][requisition_date]`, it.requisition_date);
@@ -4051,30 +4050,18 @@ export default function PurchaseRequisitionForm({
                         </div>
                     </div>
 
-                    {/* Action buttons: Create Dropdown, Copy, Clear, Delete */}
+                    {/* Action buttons: Add Item, Copy, Clear, Delete */}
                     <div className="flex items-center gap-2">
-                        {/* Create Dropdown (Material / Service) */}
-                        <div className="relative inline-block text-left">
-                            <div className="inline-flex rounded-md shadow-xs">
-                                <button
-                                    type="button"
-                                    onClick={() => handleAddItem('material')}
-                                    className="flex items-center gap-1.5 rounded-l-md bg-[#0070f2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0057c2] transition-colors"
-                                    title="Add new material line item"
-                                >
-                                    <Plus className="h-3.5 w-3.5" />
-                                    <span>Material</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleAddItem('service')}
-                                    className="flex items-center gap-1 rounded-r-md border-l border-blue-400 bg-[#0070f2] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#0057c2] transition-colors"
-                                    title="Add new service line item"
-                                >
-                                    <span>+ Service</span>
-                                </button>
-                            </div>
-                        </div>
+                        {/* Single Add Line Item Button */}
+                        <button
+                            type="button"
+                            onClick={() => handleAddItem()}
+                            className="flex items-center gap-1.5 rounded-md bg-[#0070f2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0057c2] transition-colors shadow-xs"
+                            title="Add new line item"
+                        >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Add Item</span>
+                        </button>
 
                         <button
                             type="button"
@@ -4111,11 +4098,10 @@ export default function PurchaseRequisitionForm({
 
                 {/* Items Table with Vertical Scroll (shows up to 4 items, scrollable for more) */}
                 <div className="overflow-x-auto overflow-y-auto max-h-[238px] divide-y divide-slate-100">
-                    <table className="w-full text-left text-xs text-[#1c2d42] min-w-[1300px] border-collapse">
+                    <table className="w-full text-left text-xs text-[#1c2d42] min-w-[1200px] border-collapse">
                         <thead className="sticky top-0 z-10 bg-[#f8fafc] text-[11px] font-semibold text-[#556b82] border-b border-slate-200 shadow-[0_1px_0_0_#e2e8f0]">
                             <tr>
                                 <th className="py-2.5 px-3 w-16 bg-[#f8fafc]">Item</th>
-                                <th className="py-2.5 px-2.5 w-32 bg-[#f8fafc]">Type</th>
                                 <th className="py-2.5 px-2.5 w-28 bg-[#f8fafc]">
                                     <span className="flex items-center gap-1">
                                         Item Cat.
@@ -4187,75 +4173,16 @@ export default function PurchaseRequisitionForm({
                                                     <span className="h-2 w-2 rounded-full bg-[#0070f2] shrink-0" title="Selected item" />
                                                 )}
                                                 <span>{it.item_number}</span>
+                                                {it.item_type === 'material' ? (
+                                                    <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded font-sans font-semibold">
+                                                        Mat
+                                                    </span>
+                                                ) : it.item_type === 'service' ? (
+                                                    <span className="text-[10px] text-purple-700 bg-purple-50 border border-purple-200 px-1 py-0.2 rounded font-sans font-semibold">
+                                                        Serv
+                                                    </span>
+                                                ) : null}
                                             </div>
-                                        </td>
-                                        {/* Item Type Badge / Selector: Material vs Service */}
-                                        <td className="py-2 px-2.5">
-                                            {!it.item_type ? (
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setActiveItemIndex(idx);
-                                                                setItemType(idx, 'material');
-                                                            }}
-                                                            className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold transition-all shadow-xs ${
-                                                                fieldErrors[`item_${idx}_item_type`]
-                                                                    ? 'bg-rose-50 border border-rose-400 text-rose-700 hover:bg-rose-100'
-                                                                    : 'bg-blue-50 border border-blue-300 text-[#0070f2] hover:bg-[#0070f2] hover:text-white'
-                                                            }`}
-                                                            title="Select Material type (Auto-collects from SAP)"
-                                                        >
-                                                            <Package className="h-3 w-3" /> Mat.
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setActiveItemIndex(idx);
-                                                                setItemType(idx, 'service');
-                                                            }}
-                                                            className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold transition-all shadow-xs ${
-                                                                fieldErrors[`item_${idx}_item_type`]
-                                                                    ? 'bg-rose-50 border border-rose-400 text-rose-700 hover:bg-rose-100'
-                                                                    : 'bg-purple-50 border border-purple-300 text-purple-700 hover:bg-purple-700 hover:text-white'
-                                                            }`}
-                                                            title="Select Service type"
-                                                        >
-                                                            <Wrench className="h-3 w-3" /> Serv.
-                                                        </button>
-                                                    </div>
-                                                    {fieldErrors[`item_${idx}_item_type`] && (
-                                                        <p className="text-[10px] text-rose-600 font-semibold leading-tight flex items-center gap-0.5">
-                                                            <AlertCircle className="h-2.5 w-2.5 shrink-0" />
-                                                            <span>Select Type</span>
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="relative flex flex-col">
-                                                    <select
-                                                        value={it.item_type}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onChange={(e) => {
-                                                            setActiveItemIndex(idx);
-                                                            setItemType(idx, e.target.value as 'material' | 'service');
-                                                        }}
-                                                        className={`h-7 rounded border text-[10px] font-bold pl-1.5 pr-5 py-0.5 focus:outline-none cursor-pointer transition-colors ${
-                                                            fieldErrors[`item_${idx}_item_type`]
-                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500'
-                                                                : it.item_type === 'material'
-                                                                ? 'border-blue-300 bg-blue-50 text-[#0070f2] focus:border-[#0070f2]'
-                                                                : 'border-purple-300 bg-purple-50 text-purple-700 focus:border-purple-500'
-                                                        }`}
-                                                    >
-                                                        <option value="material">📦 Material</option>
-                                                        <option value="service">🔧 Service</option>
-                                                    </select>
-                                                </div>
-                                            )}
                                         </td>
                                          {/* Item Category with F4 */}
                                         <td className="py-2 px-2.5">
@@ -4357,79 +4284,71 @@ export default function PurchaseRequisitionForm({
                                                 )}
                                             </div>
                                         </td>
-                                        {/* Material Number with F4 Search Help (Optional for Service) */}
+                                        {/* Material Number with F4 Search Help */}
                                         <td className="py-2 px-2.5">
-                                            {!it.item_type ? (
-                                                <div className={`h-8 w-full rounded border border-dashed px-2 flex items-center justify-center text-[10px] font-semibold select-none ${
-                                                    fieldErrors[`item_${idx}_material_code`]
-                                                        ? 'border-rose-400 bg-rose-50/50 text-rose-700'
-                                                        : 'border-amber-300 bg-amber-50/50 text-amber-700'
-                                                }`}>
-                                                    <span>Select Type first</span>
-                                                </div>
-                                            ) : (
-                                                <div className="relative flex flex-col">
-                                                    <div className="relative flex items-center">
-                                                        <input
-                                                            type="text"
-                                                            value={it.material_code || ''}
-                                                            onFocus={() => setActiveItemIndex(idx)}
-                                                            onChange={(e) => {
-                                                                const val = e.target.value;
-                                                                updateItemById(it.id, { material_code: val });
-                                                                handleMaterialCodeInputChange(idx, val, it.plant);
-                                                            }}
-                                                            onBlur={(e) => {
-                                                                if (e.target.value.trim()) {
-                                                                    triggerMaterialValuationLookup(idx, e.target.value, it.plant);
+                                            <div className="relative flex flex-col">
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="text"
+                                                        value={it.material_code || ''}
+                                                        onFocus={() => setActiveItemIndex(idx)}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            updateItemById(it.id, {
+                                                                material_code: val,
+                                                            });
+                                                            handleMaterialCodeInputChange(idx, val, it.plant);
+                                                        }}
+                                                        onBlur={(e) => {
+                                                            if (e.target.value.trim()) {
+                                                                triggerMaterialValuationLookup(idx, e.target.value, it.plant);
+                                                            }
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'F4') {
+                                                                e.preventDefault();
+                                                                handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
+                                                            } else if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                if (it.material_code?.trim()) {
+                                                                    triggerMaterialValuationLookup(idx, it.material_code, it.plant);
                                                                 }
+                                                            }
+                                                        }}
+                                                        placeholder="Material No. (F4)"
+                                                        title="Material Search Help (F4) - Press F4 to search SAP Materials"
+                                                        className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                                            fieldErrors[`item_${idx}_material_code`]
+                                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                                : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                        }`}
+                                                    />
+                                                    {fetchingValuation[it.id] ? (
+                                                        <div className="absolute right-1.5 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveItemIndex(idx);
+                                                                handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
                                                             }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'F4') {
-                                                                    e.preventDefault();
-                                                                    handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
-                                                                } else if (e.key === 'Enter') {
-                                                                    e.preventDefault();
-                                                                    if (it.material_code?.trim()) {
-                                                                        triggerMaterialValuationLookup(idx, it.material_code, it.plant);
-                                                                    }
-                                                                }
-                                                            }}
-                                                            placeholder={it.item_type === 'service' ? "Optional (F4)" : "DINING CHAIR (F4)"}
-                                                            title={it.item_type === 'service' ? "Material Number (Optional for Service - Enter or select with F4)" : "Material Search Help (F4) - Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS"}
-                                                            className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                                                fieldErrors[`item_${idx}_material_code`]
-                                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
-                                                                    : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
-                                                            } ${it.item_type === 'service' && !it.material_code ? 'placeholder:italic' : ''}`}
-                                                        />
-                                                        {fetchingValuation[it.id] ? (
-                                                            <div className="absolute right-1.5 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
-                                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                            </div>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setActiveItemIndex(idx);
-                                                                    handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
-                                                                }}
-                                                                className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
-                                                                title={it.item_type === 'service' ? "Material Search Help (F4) - Optional for Service" : "Material Search Help (F4) - Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS"}
-                                                            >
-                                                                <Search className="h-3 w-3" />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    {fieldErrors[`item_${idx}_material_code`] && (
-                                                        <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
-                                                            <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
-                                                            <span>{fieldErrors[`item_${idx}_material_code`]}</span>
-                                                        </p>
+                                                            className="absolute right-1 text-[#0070f2] hover:bg-blue-100 p-0.5 rounded transition-colors"
+                                                            title="Material Search Help (F4) - Optional"
+                                                        >
+                                                            <Search className="h-3 w-3" />
+                                                        </button>
                                                     )}
                                                 </div>
-                                            )}
+                                                {fieldErrors[`item_${idx}_material_code`] && (
+                                                    <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
+                                                        <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                                                        <span>{fieldErrors[`item_${idx}_material_code`]}</span>
+                                                    </p>
+                                                )}
+                                            </div>
                                         </td>
                                         {/* Description */}
                                         <td className="py-2 px-2.5">
@@ -4439,7 +4358,7 @@ export default function PurchaseRequisitionForm({
                                                     value={it.description || ''}
                                                     onFocus={() => setActiveItemIndex(idx)}
                                                     onChange={(e) => updateItemById(it.id, { description: e.target.value })}
-                                                    placeholder={!it.item_type ? "Select Material or Service first" : it.item_type === 'material' ? "Material Description (Auto-collected)" : "Service Description (Required)"}
+                                                    placeholder={it.item_type === 'material' ? "Material Description (Auto-collected)" : "Item Description (Required)"}
                                                     className={`h-8 w-full rounded border px-2 text-xs placeholder-[#8c9ba5] focus:outline-none transition-colors ${
                                                         fieldErrors[`item_${idx}_description`]
                                                             ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -4837,9 +4756,9 @@ export default function PurchaseRequisitionForm({
                                 className="h-9 w-full appearance-none rounded-lg border border-[#0070f2]/40 bg-white pr-9 pl-3 text-xs font-semibold text-[#1c2d42] shadow-xs hover:border-[#0070f2] focus:border-[#0070f2] focus:ring-2 focus:ring-[#0070f2]/20 focus:outline-none transition-colors"
                             >
                                 {items.map((it, idx) => {
-                                    const typeIcon = it.item_type === 'material' ? '📦 ' : it.item_type === 'service' ? '🔧 ' : '❓ ';
+                                    const typeIcon = it.item_type === 'material' ? '📦 ' : it.item_type === 'service' ? '🔧 ' : '';
                                     const codePart = it.material_code ? `[${it.material_code}] ` : '';
-                                    const descPart = it.description || (!it.item_type ? '(Select Material or Service)' : it.item_type === 'material' ? '(Empty Material)' : '(Empty Service)');
+                                    const descPart = it.description || (it.item_type === 'service' ? '(Empty Service)' : '(Empty Item)');
                                     const label = `Item ${it.item_number}: ${typeIcon}${codePart}${descPart}`;
                                     return (
                                         <option key={it.id || idx} value={idx}>
@@ -4918,13 +4837,9 @@ export default function PurchaseRequisitionForm({
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Product Type Group (Select Type)
+                                            Product Type Group
                                         </label>
-                                        {!currentItem?.item_type && (
-                                            <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                                Select type
-                                            </span>
-                                        )}
+                                        <span className="text-[10px] text-[#556b82]">Optional</span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 h-9">
                                         <button
@@ -4933,8 +4848,6 @@ export default function PurchaseRequisitionForm({
                                             className={`flex items-center justify-center gap-1.5 rounded-md border text-xs font-bold transition-all ${
                                                 currentItem?.item_type === 'material'
                                                     ? 'border-[#0070f2] bg-blue-50 text-[#0070f2] shadow-xs ring-1 ring-[#0070f2]'
-                                                    : fieldErrors[`item_${activeItemIndex}_item_type`]
-                                                    ? 'border-rose-400 bg-rose-50/20 text-[#556b82] hover:bg-slate-50'
                                                     : 'border-[#d9e2ec] bg-white text-[#556b82] hover:bg-slate-50'
                                             }`}
                                         >
@@ -4947,8 +4860,6 @@ export default function PurchaseRequisitionForm({
                                             className={`flex items-center justify-center gap-1.5 rounded-md border text-xs font-bold transition-all ${
                                                 currentItem?.item_type === 'service'
                                                     ? 'border-purple-600 bg-purple-50 text-purple-700 shadow-xs ring-1 ring-purple-600'
-                                                    : fieldErrors[`item_${activeItemIndex}_item_type`]
-                                                    ? 'border-rose-400 bg-rose-50/20 text-[#556b82] hover:bg-slate-50'
                                                     : 'border-[#d9e2ec] bg-white text-[#556b82] hover:bg-slate-50'
                                             }`}
                                         >
@@ -4956,14 +4867,8 @@ export default function PurchaseRequisitionForm({
                                             <span>Service (2)</span>
                                         </button>
                                     </div>
-                                    {fieldErrors[`item_${activeItemIndex}_item_type`] && (
-                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
-                                            <AlertCircle className="h-3 w-3 shrink-0" />
-                                            <span>{fieldErrors[`item_${activeItemIndex}_item_type`]}</span>
-                                        </p>
-                                    )}
                                     <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Choose Material (stock items) or Service (labor / contract)
+                                        Material (stock items) or Service (labor / contract) - Optional
                                     </span>
                                 </div>
 
@@ -4972,85 +4877,69 @@ export default function PurchaseRequisitionForm({
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Material Number (F4)
-                                            {currentItem?.item_type === 'material' ? (
-                                                <span className="text-rose-500 ml-0.5">*</span>
-                                            ) : currentItem?.item_type === 'service' ? (
-                                                <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-normal text-slate-600">
-                                                    Optional for Service
-                                                </span>
-                                            ) : null}
+                                            {currentItem?.item_type === 'material' && (
+                                                <span className="text-rose-500 ml-1">*</span>
+                                            )}
                                         </label>
-                                        {!currentItem?.item_type ? (
-                                            <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                                Select Type above
-                                            </span>
-                                        ) : currentItem?.item_type === 'material' ? (
-                                            <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                                Auto-populates fields & Valuation Price
-                                            </span>
+                                        <span className="text-[10px] text-[#556b82]">
+                                            {currentItem?.item_type === 'material'
+                                                ? 'Mandatory for Material items'
+                                                : 'Optional (F4 Search available)'}
+                                        </span>
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={currentItem?.material_code || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                updateCurrentItem({
+                                                    material_code: val,
+                                                });
+                                                handleMaterialCodeInputChange(activeItemIndex, val, currentItem?.plant);
+                                            }}
+                                            onBlur={(e) => {
+                                                if (e.target.value.trim()) {
+                                                    triggerMaterialValuationLookup(activeItemIndex, e.target.value, currentItem?.plant);
+                                                }
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'F4') {
+                                                    e.preventDefault();
+                                                    handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant);
+                                                } else if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    if (currentItem?.material_code?.trim()) {
+                                                        triggerMaterialValuationLookup(activeItemIndex, currentItem?.material_code, currentItem?.plant);
+                                                    }
+                                                }
+                                            }}
+                                            placeholder={
+                                                currentItem?.item_type === 'material'
+                                                    ? 'Material # (Mandatory) (F4)'
+                                                    : 'Optional: Material # or leave blank (F4)'
+                                            }
+                                            className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_material_code`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
+                                        />
+                                        {fetchingValuation[currentItem?.id || ''] ? (
+                                            <div className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            </div>
                                         ) : (
-                                            <span className="text-[10px] text-purple-700 font-semibold bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-                                                Optional (F4 Search available)
-                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant)}
+                                                className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
+                                                title="Select Material (Optional) - F4 Search Help"
+                                            >
+                                                <Search className="h-3.5 w-3.5" />
+                                            </button>
                                         )}
                                     </div>
-                                    {!currentItem?.item_type ? (
-                                        <div className={`h-9 w-full rounded-md border border-dashed px-3 flex items-center text-xs font-medium ${
-                                            fieldErrors[`item_${activeItemIndex}_material_code`]
-                                                ? 'border-rose-400 bg-rose-50/50 text-rose-800'
-                                                : 'border-amber-300 bg-amber-50/50 text-amber-800'
-                                        }`}>
-                                            <span>Select Material or Service above to enable fields</span>
-                                        </div>
-                                    ) : (
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={currentItem?.material_code || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    updateCurrentItem({ material_code: val });
-                                                    handleMaterialCodeInputChange(activeItemIndex, val, currentItem?.plant);
-                                                }}
-                                                onBlur={(e) => {
-                                                    if (e.target.value.trim()) {
-                                                        triggerMaterialValuationLookup(activeItemIndex, e.target.value, currentItem?.plant);
-                                                    }
-                                                }}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'F4') {
-                                                        e.preventDefault();
-                                                        handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant);
-                                                    } else if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        if (currentItem?.material_code?.trim()) {
-                                                            triggerMaterialValuationLookup(activeItemIndex, currentItem?.material_code, currentItem?.plant);
-                                                        }
-                                                    }
-                                                }}
-                                                placeholder={currentItem?.item_type === 'service' ? "Optional: Service Material # or leave blank (F4)" : "DINING CHAIR (Type or press F4 for Search Help)"}
-                                                className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                    fieldErrors[`item_${activeItemIndex}_material_code`]
-                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
-                                                        : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
-                                                }`}
-                                            />
-                                            {fetchingValuation[currentItem?.id || ''] ? (
-                                                <div className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
-                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant)}
-                                                    className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2] hover:bg-blue-50 transition-colors"
-                                                    title={currentItem?.item_type === 'service' ? "Select Material (Optional) - F4 Search Help" : "Select Material - F4 Search Help (Hits SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS)"}
-                                                >
-                                                    <Search className="h-3.5 w-3.5" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
                                     {fieldErrors[`item_${activeItemIndex}_material_code`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
@@ -5059,9 +4948,7 @@ export default function PurchaseRequisitionForm({
                                     )}
                                     <div className="mt-1 flex items-center justify-between text-[10px]">
                                         <span className="text-[#556b82]">
-                                            {currentItem?.item_type === 'service'
-                                                ? 'Optional for service line items. You can select a service material code or leave blank for a text service line.'
-                                                : <>Plant / Valuation Area: <span className="font-semibold text-slate-700">{currentItem?.plant || 'Not selected'}</span></>}
+                                            Plant / Valuation Area: <span className="font-semibold text-slate-700">{currentItem?.plant || 'Not selected'}</span>
                                         </span>
                                         {currentItem?.inventory_valuation_procedure === 'V' && (
                                             <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title={`Moving Average Price: ${currentItem?.moving_average_price || currentItem?.unit_price}`}>
@@ -5838,13 +5725,7 @@ export default function PurchaseRequisitionForm({
                             </div>
 
                             {/* Valuation & Price Control Parameters Card */}
-                            {!currentItem?.item_type ? (
-                                <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/50 p-4 text-center">
-                                    <p className="text-xs font-semibold text-amber-800">
-                                        Please select Item Type (Material or Service) in the General Information tab to configure valuation parameters.
-                                    </p>
-                                </div>
-                            ) : currentItem?.item_type === 'material' ? (
+                            {currentItem?.item_type !== 'service' ? (
                                 <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-4">
                                     <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
@@ -6716,7 +6597,7 @@ export default function PurchaseRequisitionForm({
                                             <label className="block text-xs font-semibold text-[#1c2d42]">
                                                 Purchase Organisation (F4)
                                             </label>
-                                            {/* <span className="text-[10px] text-[#556b82]">Manual / F4</span> */}
+                                            <span className="text-[10px] text-[#556b82]">Optional</span>
                                         </div>
                                         <div className="relative">
                                             <input
@@ -6730,7 +6611,11 @@ export default function PurchaseRequisitionForm({
                                                     }
                                                 }}
                                                 placeholder="e.g. 1100"
-                                                className="h-9 w-full rounded-md border border-[#d9e2ec] pr-9 pl-3 text-xs text-[#1c2d42] font-mono focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                                className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
+                                                    fieldErrors[`item_${activeItemIndex}_purchasing_organization`]
+                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                        : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                }`}
                                             />
                                             <button
                                                 type="button"
@@ -6743,6 +6628,12 @@ export default function PurchaseRequisitionForm({
                                                 <Search className="h-3.5 w-3.5" />
                                             </button>
                                         </div>
+                                        {fieldErrors[`item_${activeItemIndex}_purchasing_organization`] && (
+                                            <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                                <AlertCircle className="h-3 w-3 shrink-0" />
+                                                <span>{fieldErrors[`item_${activeItemIndex}_purchasing_organization`]}</span>
+                                            </p>
+                                        )}
                                         {getPurchasingOrgLabel(currentItem?.purchasing_organization) ? (
                                             <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
@@ -6750,7 +6641,7 @@ export default function PurchaseRequisitionForm({
                                             </span>
                                         ) : (
                                             <span className="mt-1 block text-[10px] text-[#556b82]">
-                                                Procuring organizational unit
+                                                Procuring organizational unit (Optional)
                                             </span>
                                         )}
                                     </div>
@@ -7013,7 +6904,7 @@ export default function PurchaseRequisitionForm({
                                     <div className="rounded-md border border-slate-200/80 bg-white p-2.5 shadow-2xs">
                                         <span className="text-[#556b82] block text-[11px] mb-0.5">Plant & Purchasing Org</span>
                                         <strong className="text-[#1c2d42] block font-mono">
-                                            Org: {currentItem?.purchasing_organization || '1100'}
+                                            Org: {currentItem?.purchasing_organization || 'Not specified'}
                                         </strong>
                                         <span className="text-[11px] text-slate-500 block">
                                             Supplying Plant: {currentItem?.supplying_plant || 'None (Direct Vendor)'}
@@ -7076,7 +6967,7 @@ export default function PurchaseRequisitionForm({
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Purchasing Organization (F4)
                                         </label>
-                                        {/* <span className="text-[10px] text-[#556b82]">Manual / F4</span> */}
+                                        <span className="text-[10px] text-[#556b82]">Optional</span>
                                     </div>
                                     <div className="relative">
                                         <input
@@ -7115,10 +7006,14 @@ export default function PurchaseRequisitionForm({
                                             <span>{fieldErrors[`item_${activeItemIndex}_purchasing_organization`]}</span>
                                         </p>
                                     )}
-                                    {getPurchasingOrgLabel(currentItem?.purchasing_organization) && (
+                                    {getPurchasingOrgLabel(currentItem?.purchasing_organization) ? (
                                         <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-emerald-700">
                                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                                             {getPurchasingOrgLabel(currentItem?.purchasing_organization)}
+                                        </span>
+                                    ) : (
+                                        <span className="mt-1 block text-[10px] text-[#556b82]">
+                                            Procuring organizational unit (Optional)
                                         </span>
                                     )}
                                 </div>

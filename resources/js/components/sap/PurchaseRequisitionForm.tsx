@@ -1,4 +1,4 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import {
     Save,
@@ -62,6 +62,8 @@ export interface PrItemData {
     unit_of_measure: string;
     unit_price: number | string;
     price_unit: number;
+    expected_value?: number | string;
+    overall_limit?: number | string;
     currency: string;
     tax_code: string;
     po_price_type: string;
@@ -76,6 +78,8 @@ export interface PrItemData {
     delivery_date: string;
     requisition_date: string;
     release_date: string;
+    start_date?: string;
+    end_date?: string;
     planned_delivery_time: number;
     gr_processing_time: number;
     item_text: string;
@@ -437,6 +441,7 @@ export default function PurchaseRequisitionForm({
     // Active item selection & Item Level Tab
     const [activeItemIndex, setActiveItemIndex] = useState(0);
     const [activeItemTab, setActiveItemTab] = useState<
+        | 'enhanced-limits'
         | 'general'
         | 'quantity-date'
         | 'valuation'
@@ -477,6 +482,10 @@ export default function PurchaseRequisitionForm({
         quantity: '',
         unit_of_measure: '',
         unit_price: '',
+        expected_value: '',
+        overall_limit: '',
+        start_date: '',
+        end_date: '',
 
         price_unit: 1,
         currency: currency,
@@ -545,6 +554,8 @@ export default function PurchaseRequisitionForm({
                     unit_of_measure: it.unit_of_measure || 'PC',
                     unit_price: it.unit_price !== null && it.unit_price !== undefined ? it.unit_price : '',
                     price_unit: it.price_unit ? Number(it.price_unit) : 1,
+                    expected_value: it.expected_value !== null && it.expected_value !== undefined ? it.expected_value : '',
+                    overall_limit: it.overall_limit !== null && it.overall_limit !== undefined ? it.overall_limit : '',
                     currency: it.currency || data?.currency || currency,
                     tax_code: it.tax_code || '',
                     po_price_type: it.po_price_type || 'Do not adopt',
@@ -559,6 +570,8 @@ export default function PurchaseRequisitionForm({
                     delivery_date: rawDelDate,
                     requisition_date: rawReqDate,
                     release_date: rawRelDate,
+                    start_date: it.start_date ? String(it.start_date).substring(0, 10) : '',
+                    end_date: it.end_date ? String(it.end_date).substring(0, 10) : '',
                     planned_delivery_time: it.planned_delivery_time ? Number(it.planned_delivery_time) : 0,
                     gr_processing_time: it.gr_processing_time ? Number(it.gr_processing_time) : 0,
                     item_text: it.item_text || '',
@@ -1045,6 +1058,13 @@ export default function PurchaseRequisitionForm({
     };
 
     const currentItem = items[activeItemIndex] || items[0];
+    const isEnhancedLimits = String(currentItem?.item_category || '').trim().toUpperCase() === 'E';
+
+    useEffect(() => {
+        if (activeItemTab === 'enhanced-limits' && !isEnhancedLimits) {
+            setActiveItemTab('general');
+        }
+    }, [isEnhancedLimits, activeItemTab]);
 
     const openSearchHelp = (
         field: keyof PrItemData | 'documentType',
@@ -2522,7 +2542,23 @@ export default function PurchaseRequisitionForm({
             return;
         }
 
-        // Other fields: plant, item_category, account_assignment_category, material_type, material_group, unit_of_measure, storage_location, cost_center, gl_account, etc.
+        // Special handling when selecting Item Category:
+        if (field === 'item_category') {
+            const catCode = opt.code || '';
+            const isCatE = String(catCode).trim().toUpperCase() === 'E';
+            setItems((prev) =>
+                prev.map((item, idx) => (idx === targetIdx ? { ...item, item_category: catCode } : item))
+            );
+            if (targetIdx !== undefined && targetIdx >= 0) {
+                clearFieldError(`item_${targetIdx}_item_category`);
+            }
+            if (isCatE && targetIdx === activeItemIndex) {
+                setActiveItemTab('enhanced-limits');
+            }
+            return;
+        }
+
+        // Other fields: plant, account_assignment_category, material_type, material_group, unit_of_measure, storage_location, cost_center, gl_account, etc.
         setItems((prev) =>
             prev.map((item, idx) => (idx === targetIdx ? { ...item, [field]: opt.code } : item))
         );
@@ -2550,6 +2586,9 @@ export default function PurchaseRequisitionForm({
         setItems((prev) =>
             prev.map((item, idx) => (idx === activeItemIndex ? { ...item, ...updates } : item))
         );
+        if (updates.item_category !== undefined && String(updates.item_category).trim().toUpperCase() === 'E') {
+            setActiveItemTab('enhanced-limits');
+        }
         Object.keys(updates).forEach((k) => {
             clearFieldError(`item_${activeItemIndex}_${k}`);
         });
@@ -2561,6 +2600,9 @@ export default function PurchaseRequisitionForm({
             prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
         );
         if (itemIdx >= 0) {
+            if (updates.item_category !== undefined && itemIdx === activeItemIndex && String(updates.item_category).trim().toUpperCase() === 'E') {
+                setActiveItemTab('enhanced-limits');
+            }
             Object.keys(updates).forEach((k) => {
                 clearFieldError(`item_${itemIdx}_${k}`);
             });
@@ -2635,6 +2677,10 @@ export default function PurchaseRequisitionForm({
                     quantity: '',
                     unit_of_measure: '',
                     unit_price: '',
+        expected_value: '',
+        overall_limit: '',
+        start_date: '',
+        end_date: '',
                     price_unit: 1,
                     currency: currency,
                     tax_code: '',
@@ -2746,6 +2792,12 @@ export default function PurchaseRequisitionForm({
     // Tab Error Indicator Helper
     const getItemTabHasError = (tabId: string, itemIdx: number) => {
         const prefix = `item_${itemIdx}_`;
+        if (tabId === 'enhanced-limits') {
+            return Boolean(
+                fieldErrors[prefix + 'expected_value'] ||
+                fieldErrors[prefix + 'overall_limit']
+            );
+        }
         if (tabId === 'general') {
             return Boolean(
                 fieldErrors[prefix + 'item_type'] ||
@@ -2757,7 +2809,11 @@ export default function PurchaseRequisitionForm({
             );
         }
         if (tabId === 'quantity-date') {
-            return Boolean(fieldErrors[prefix + 'quantity']);
+            return Boolean(
+                fieldErrors[prefix + 'quantity'] ||
+                fieldErrors[prefix + 'start_date'] ||
+                fieldErrors[prefix + 'end_date']
+            );
         }
         if (tabId === 'valuation') {
             return Boolean(
@@ -2828,7 +2884,7 @@ export default function PurchaseRequisitionForm({
         const validItemCats = Array.from(new Set([
             '',
             ...(dataCatalog.itemCategories || []).map((ic) => String(ic?.code || '').trim().toUpperCase()),
-            'B', 'D', 'L', 'S', 'U',
+            'B', 'D', 'E', 'L', 'S', 'U',
         ]));
 
         const validAacs = Array.from(new Set([
@@ -2945,6 +3001,44 @@ export default function PurchaseRequisitionForm({
             if (!String(it.material_group || '').trim()) {
                 errs[prefix + 'material_group'] = 'Material Group is mandatory.';
             }
+
+            // Category E: Enhanced Limits Validation
+            const isCatE = String(it.item_category || '').trim().toUpperCase() === 'E';
+            if (isCatE) {
+                // Expected Value: Mandatory number >= 0
+                const expValRaw = it.expected_value;
+                const expValNum = Number(expValRaw);
+                if (expValRaw === '' || expValRaw === null || expValRaw === undefined || isNaN(expValNum)) {
+                    errs[prefix + 'expected_value'] = 'Expected Value is mandatory when Item Category is E (Enhanced Limits).';
+                } else if (expValNum < 0) {
+                    errs[prefix + 'expected_value'] = 'Expected Value cannot be negative.';
+                }
+
+                // Overall Limit: Mandatory number >= 0
+                const ovLimitRaw = it.overall_limit;
+                const ovLimitNum = Number(ovLimitRaw);
+                if (ovLimitRaw === '' || ovLimitRaw === null || ovLimitRaw === undefined || isNaN(ovLimitNum)) {
+                    errs[prefix + 'overall_limit'] = 'Overall Limit is mandatory when Item Category is E (Enhanced Limits).';
+                } else if (ovLimitNum < 0) {
+                    errs[prefix + 'overall_limit'] = 'Overall Limit cannot be negative.';
+                } else if (!isNaN(expValNum) && expValNum > ovLimitNum) {
+                    errs[prefix + 'overall_limit'] = 'Overall Limit cannot be less than Expected Value.';
+                }
+
+                // Start Date: Mandatory date
+                if (!it.start_date || !String(it.start_date).trim()) {
+                    errs[prefix + 'start_date'] = 'Start Date is mandatory when Item Category is E (Enhanced Limits).';
+                }
+
+                // End Date: Mandatory date
+                if (!it.end_date || !String(it.end_date).trim()) {
+                    errs[prefix + 'end_date'] = 'End Date is mandatory when Item Category is E (Enhanced Limits).';
+                } else if (it.start_date && it.end_date && it.end_date < it.start_date) {
+                    errs[prefix + 'end_date'] = 'End Date cannot be earlier than Start Date.';
+                }
+            } else if (it.start_date && it.end_date && it.end_date < it.start_date) {
+                errs[prefix + 'end_date'] = 'End Date cannot be earlier than Start Date.';
+            }
         });
 
         // Contract Requisition validation
@@ -2997,7 +3091,9 @@ export default function PurchaseRequisitionForm({
                     foundItemErr = true;
                     setActiveItemIndex(i);
                     const firstKey = itemErrKeys[0];
-                    if (firstKey.includes('quantity')) {
+                    if (firstKey.includes('expected_value') || firstKey.includes('overall_limit')) {
+                        setActiveItemTab('enhanced-limits');
+                    } else if (firstKey.includes('start_date') || firstKey.includes('end_date') || firstKey.includes('quantity')) {
                         setActiveItemTab('quantity-date');
                     } else if (firstKey.includes('unit_price') || firstKey.includes('unit_of_measure') || firstKey.includes('currency')) {
                         setActiveItemTab('valuation');
@@ -3112,6 +3208,8 @@ export default function PurchaseRequisitionForm({
             formData.append(`items[${index}][unit_of_measure]`, it.unit_of_measure || 'PC');
             formData.append(`items[${index}][unit_price]`, String(Number(it.unit_price) >= 0 ? it.unit_price : 0));
             formData.append(`items[${index}][price_unit]`, String(it.price_unit || 1));
+            if (it.expected_value !== undefined && it.expected_value !== '') formData.append(`items[${index}][expected_value]`, String(it.expected_value));
+            if (it.overall_limit !== undefined && it.overall_limit !== '') formData.append(`items[${index}][overall_limit]`, String(it.overall_limit));
             formData.append(`items[${index}][currency]`, it.currency || currency);
             if (it.tax_code) formData.append(`items[${index}][tax_code]`, it.tax_code);
             if (it.po_price_type) formData.append(`items[${index}][po_price_type]`, it.po_price_type);
@@ -3126,6 +3224,8 @@ export default function PurchaseRequisitionForm({
             if (it.delivery_date) formData.append(`items[${index}][delivery_date]`, it.delivery_date);
             if (it.requisition_date) formData.append(`items[${index}][requisition_date]`, it.requisition_date);
             if (it.release_date) formData.append(`items[${index}][release_date]`, it.release_date);
+            if (it.start_date) formData.append(`items[${index}][start_date]`, it.start_date);
+            if (it.end_date) formData.append(`items[${index}][end_date]`, it.end_date);
             if (it.planned_delivery_time !== undefined) formData.append(`items[${index}][planned_delivery_time]`, String(it.planned_delivery_time));
             if (it.gr_processing_time !== undefined) formData.append(`items[${index}][gr_processing_time]`, String(it.gr_processing_time));
             if (it.item_text) formData.append(`items[${index}][item_text]`, it.item_text);
@@ -4773,8 +4873,9 @@ export default function PurchaseRequisitionForm({
                 </div>
                 {/* Item Tabs Navigation */}
                 <div className="border-b border-[#d9e2ec] bg-[#f8fafc] px-4 overflow-x-auto no-scrollbar">
-                    <nav className="flex space-x-2 py-1">
+                    <nav className="flex space-x-2 py-1" role="tablist" aria-label="Item Details and Specifications">
                         {[
+                            ...(isEnhancedLimits ? [{ id: 'enhanced-limits', label: 'Enhanced Limits' }] : []),
                             { id: 'general', label: 'General Information' },
                             { id: 'quantity-date', label: 'Quantity and Date' },
                             { id: 'valuation', label: 'Valuation' },
@@ -4788,7 +4889,11 @@ export default function PurchaseRequisitionForm({
                             return (
                                 <button
                                     key={tab.id}
+                                    id={`item-tab-${tab.id}`}
                                     type="button"
+                                    role="tab"
+                                    aria-selected={isActive}
+                                    aria-controls={`item-panel-${tab.id}`}
                                     onClick={() => setActiveItemTab(tab.id as any)}
                                     className={`relative border-b-2 px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                                         isActive
@@ -4799,6 +4904,11 @@ export default function PurchaseRequisitionForm({
                                     }`}
                                 >
                                     <span>{tab.label}</span>
+                                    {tab.id === 'enhanced-limits' && (
+                                        <span className="rounded bg-amber-100 text-amber-800 px-1 py-0.2 text-[9px] font-bold border border-amber-300">
+                                            E
+                                        </span>
+                                    )}
                                     {hasError && (
                                         <span className="h-2 w-2 rounded-full bg-rose-500 ring-2 ring-rose-200 animate-pulse" />
                                     )}
@@ -4809,6 +4919,134 @@ export default function PurchaseRequisitionForm({
                 </div>
 
                 <div className="p-6">
+                    {/* TAB 0: Enhanced Limits (Item Category E) */}
+                    {activeItemTab === 'enhanced-limits' && isEnhancedLimits && (
+                        <div
+                            role="tabpanel"
+                            id="item-panel-enhanced-limits"
+                            aria-labelledby="item-tab-enhanced-limits"
+                            className="space-y-6"
+                        >
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                <div className="flex items-center gap-3">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#556b82]">
+                                        Enhanced Limits (Item {currentItem?.item_number})
+                                    </h3>
+                                    <span className="inline-flex items-center gap-1 rounded bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                        Item Category E: Enhanced Limits
+                                    </span>
+                                </div>
+                                <span className="text-[11px] text-[#556b82]">
+                                    Expected Value and Overall Limit are mandatory for Category E items
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
+                                {/* Expected Value */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label htmlFor={`item_${activeItemIndex}_expected_value`} className="block text-xs font-semibold text-[#1c2d42]">
+                                            Expected Value <span className="text-rose-500">*</span>
+                                        </label>
+                                        <span className="text-[10px] text-blue-600 font-semibold">
+                                            {currentItem?.currency || currency}
+                                        </span>
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            id={`item_${activeItemIndex}_expected_value`}
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={currentItem?.expected_value !== null && currentItem?.expected_value !== undefined ? currentItem.expected_value : ''}
+                                            onChange={(e) =>
+                                                updateCurrentItem({
+                                                    expected_value: e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
+                                                })
+                                            }
+                                            onWheel={(e) => e.currentTarget.blur()}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+                                            }}
+                                            placeholder="0.00"
+                                            required
+                                            className={`h-9 w-full rounded-md border pr-14 pl-3 text-xs text-[#1c2d42] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_expected_value`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                            <span className="text-xs font-semibold text-[#556b82]">
+                                                {currentItem?.currency || currency}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {fieldErrors[`item_${activeItemIndex}_expected_value`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_expected_value`]}</span>
+                                        </p>
+                                    )}
+                                    <span className="mt-1 block text-[10px] text-[#556b82]">
+                                        Expected overall value/expenditure for this limit line item.
+                                    </span>
+                                </div>
+
+                                {/* Overall Limit */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label htmlFor={`item_${activeItemIndex}_overall_limit`} className="block text-xs font-semibold text-[#1c2d42]">
+                                            Overall Limit <span className="text-rose-500">*</span>
+                                        </label>
+                                        <span className="text-[10px] text-blue-600 font-semibold">
+                                            {currentItem?.currency || currency}
+                                        </span>
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            id={`item_${activeItemIndex}_overall_limit`}
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={currentItem?.overall_limit !== null && currentItem?.overall_limit !== undefined ? currentItem.overall_limit : ''}
+                                            onChange={(e) =>
+                                                updateCurrentItem({
+                                                    overall_limit: e.target.value === '' ? '' : parseFloat(e.target.value) || 0,
+                                                })
+                                            }
+                                            onWheel={(e) => e.currentTarget.blur()}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+                                            }}
+                                            placeholder="0.00"
+                                            required
+                                            className={`h-9 w-full rounded-md border pr-14 pl-3 text-xs text-[#1c2d42] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:outline-none transition-colors ${
+                                                fieldErrors[`item_${activeItemIndex}_overall_limit`]
+                                                    ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                    : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                            }`}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                            <span className="text-xs font-semibold text-[#556b82]">
+                                                {currentItem?.currency || currency}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {fieldErrors[`item_${activeItemIndex}_overall_limit`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_overall_limit`]}</span>
+                                        </p>
+                                    )}
+                                    <span className="mt-1 block text-[10px] text-[#556b82]">
+                                        Maximum allowable upper ceiling limit (cannot be exceeded during invoice/service entry).
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* TAB 1: General Information (Item Level) */}
                     {activeItemTab === 'general' && (
                         <div className="space-y-6">
@@ -5665,6 +5903,65 @@ export default function PurchaseRequisitionForm({
                                         required
                                         className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none bg-white"
                                     />
+                                </div>
+
+                                {/* Start Date (Mandatory when Category is E) */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label htmlFor={`item_${activeItemIndex}_start_date`} className="block text-xs font-semibold text-[#1c2d42]">
+                                            Start Date {isEnhancedLimits && <span className="text-rose-500">*</span>}
+                                        </label>
+                                        <span className="text-[10px] text-[#556b82]">
+                                            {isEnhancedLimits ? 'Mandatory for Limit' : 'Validity Start'}
+                                        </span>
+                                    </div>
+                                    <input
+                                        id={`item_${activeItemIndex}_start_date`}
+                                        type="date"
+                                        value={currentItem?.start_date || ''}
+                                        onChange={(e) => updateCurrentItem({ start_date: e.target.value })}
+                                        className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors bg-white ${
+                                            fieldErrors[`item_${activeItemIndex}_start_date`]
+                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                        }`}
+                                    />
+                                    {fieldErrors[`item_${activeItemIndex}_start_date`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_start_date`]}</span>
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* End Date (Mandatory when Category is E) */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label htmlFor={`item_${activeItemIndex}_end_date`} className="block text-xs font-semibold text-[#1c2d42]">
+                                            End Date {isEnhancedLimits && <span className="text-rose-500">*</span>}
+                                        </label>
+                                        <span className="text-[10px] text-[#556b82]">
+                                            {isEnhancedLimits ? 'Mandatory for Limit' : 'Validity End'}
+                                        </span>
+                                    </div>
+                                    <input
+                                        id={`item_${activeItemIndex}_end_date`}
+                                        type="date"
+                                        value={currentItem?.end_date || ''}
+                                        min={currentItem?.start_date || undefined}
+                                        onChange={(e) => updateCurrentItem({ end_date: e.target.value })}
+                                        className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors bg-white ${
+                                            fieldErrors[`item_${activeItemIndex}_end_date`]
+                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                        }`}
+                                    />
+                                    {fieldErrors[`item_${activeItemIndex}_end_date`] && (
+                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3 shrink-0" />
+                                            <span>{fieldErrors[`item_${activeItemIndex}_end_date`]}</span>
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Planned Delivery Time (in Days) (Input) */}

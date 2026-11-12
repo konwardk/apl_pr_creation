@@ -49,6 +49,8 @@ interface PrItem {
     unit_price: number | string;
     price_unit: number;
     total_price: number | string;
+    expected_value?: number | string;
+    overall_limit?: number | string;
     currency: string;
     tax_code?: string;
     po_price_type?: string;
@@ -67,6 +69,8 @@ interface PrItem {
     delivery_date?: string;
     requisition_date?: string;
     release_date?: string;
+    start_date?: string;
+    end_date?: string;
     planned_delivery_time?: number;
     gr_processing_time?: number;
     item_text?: string;

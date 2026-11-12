@@ -890,6 +890,123 @@ class PurchaseRequisitionTest extends TestCase
         $errorMsg = $errors['contract_requisition.cr_no'][0] ?? '';
         $this->assertStringContainsString("Contract Requisition number '{$existingCrNo}' already exists in the local database", $errorMsg);
     }
+
+    public function test_purchase_requisition_item_can_persist_expected_value_overall_limit_and_dates(): void
+    {
+        $pr = PurchaseRequisition::create([
+            'pr_number' => 'PR-LIMIT-TEST-001',
+            'description' => 'Test PR with Limits and Period',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'currency' => 'INR',
+            'approval_status' => 'draft',
+        ]);
+
+        $item = PurchaseRequisitionItem::create([
+            'purchase_requisition_id' => $pr->id,
+            'item_number' => '00010',
+            'description' => 'Service Item with Limits',
+            'quantity' => 1,
+            'unit_of_measure' => 'AU',
+            'unit_price' => 0,
+            'expected_value' => 50000.00,
+            'overall_limit' => 75000.00,
+            'start_date' => '2026-11-01',
+            'end_date' => '2026-12-31',
+            'material_group' => 'YBPM01',
+            'plant' => '1200',
+        ]);
+
+        $item->refresh();
+
+        $this->assertEquals(50000.00, (float) $item->expected_value);
+        $this->assertEquals(75000.00, (float) $item->overall_limit);
+        $this->assertEquals('2026-11-01', $item->start_date->format('Y-m-d'));
+        $this->assertEquals('2026-12-31', $item->end_date->format('Y-m-d'));
+    }
+
+    public function test_purchase_requisition_store_validates_category_e_mandatory_fields(): void
+    {
+        $user = User::factory()->create();
+
+        $payload = [
+            'description' => 'Enhanced Limits Test PR',
+            'pr_type' => 'NB',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'currency' => 'INR',
+            'is_draft' => false,
+            'items' => [
+                [
+                    'item_category' => 'E',
+                    'description' => 'Enhanced Limit Item Missing Fields',
+                    'material_group' => 'YBPM01',
+                    'quantity' => 1,
+                    'unit_of_measure' => 'AU',
+                    'unit_price' => 100.00,
+                    'plant' => '1200',
+                    'purchasing_organization' => '1100',
+                    'purchasing_group' => '103',
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)
+            ->withHeaders(['Accept' => 'application/json'])
+            ->postJson(route('purchase-requisitions.store'), $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'items.0.expected_value',
+                'items.0.overall_limit',
+                'items.0.start_date',
+                'items.0.end_date',
+            ]);
+    }
+
+    public function test_purchase_requisition_store_succeeds_with_category_e_and_valid_limits(): void
+    {
+        $user = User::factory()->create();
+
+        $payload = [
+            'description' => 'Valid Enhanced Limits PR',
+            'pr_type' => 'NB',
+            'company_code' => '1000',
+            'plant' => '1200',
+            'currency' => 'INR',
+            'is_draft' => false,
+            'items' => [
+                [
+                    'item_category' => 'E',
+                    'description' => 'Valid Enhanced Limit Item',
+                    'material_group' => 'YBPM01',
+                    'quantity' => 1,
+                    'unit_of_measure' => 'AU',
+                    'unit_price' => 0.00,
+                    'expected_value' => 25000.00,
+                    'overall_limit' => 30000.00,
+                    'start_date' => '2026-11-01',
+                    'end_date' => '2026-11-30',
+                    'plant' => '1200',
+                    'purchasing_organization' => '1100',
+                    'purchasing_group' => '103',
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user)
+            ->withHeaders(['Accept' => 'application/json'])
+            ->postJson(route('purchase-requisitions.store'), $payload);
+
+        $response->assertStatus(200);
+
+        $savedItem = PurchaseRequisitionItem::where('item_category', 'E')->first();
+        $this->assertNotNull($savedItem);
+        $this->assertEquals(25000.00, (float) $savedItem->expected_value);
+        $this->assertEquals(30000.00, (float) $savedItem->overall_limit);
+        $this->assertEquals('2026-11-01', $savedItem->start_date->format('Y-m-d'));
+        $this->assertEquals('2026-11-30', $savedItem->end_date->format('Y-m-d'));
+    }
 }
 
 

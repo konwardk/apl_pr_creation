@@ -688,6 +688,8 @@ class PurchaseRequisitionController extends Controller
             'items.*.unit_of_measure' => 'required|string|max:10',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.price_unit' => 'nullable|numeric|min:1',
+            'items.*.expected_value' => 'nullable|numeric|min:0',
+            'items.*.overall_limit' => 'nullable|numeric|min:0',
             'items.*.currency' => 'nullable|string|size:3',
             'items.*.tax_code' => 'nullable|string|max:20',
             'items.*.po_price_type' => 'nullable|string|max:50',
@@ -702,6 +704,8 @@ class PurchaseRequisitionController extends Controller
             'items.*.delivery_date' => 'nullable|date',
             'items.*.requisition_date' => 'nullable|date',
             'items.*.release_date' => 'nullable|date',
+            'items.*.start_date' => 'nullable|date',
+            'items.*.end_date' => 'nullable|date',
             'items.*.planned_delivery_time' => 'nullable|numeric',
             'items.*.gr_processing_time' => 'nullable|numeric',
             'items.*.item_text' => 'nullable|string',
@@ -803,6 +807,32 @@ class PurchaseRequisitionController extends Controller
                         "items.{$index}.material_code" => "Material 'NUTS' has not been extended to the Purchasing View for Plant 1200 in SAP S/4HANA Cloud (SAP error ME/046). Please maintain its Purchasing View in SAP or choose a maintained material such as '1300000001' or '1200000000'.",
                     ]);
                 }
+
+                $itemCat = strtoupper(trim($item['item_category'] ?? ''));
+                if ($itemCat === 'E') {
+                    $catEErrors = [];
+                    if (!isset($item['expected_value']) || $item['expected_value'] === '' || (float)$item['expected_value'] < 0) {
+                        $catEErrors["items.{$index}.expected_value"] = "Expected Value is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (!isset($item['overall_limit']) || $item['overall_limit'] === '' || (float)$item['overall_limit'] < 0) {
+                        $catEErrors["items.{$index}.overall_limit"] = "Overall Limit is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (isset($item['overall_limit']) && isset($item['expected_value']) && $item['overall_limit'] !== '' && $item['expected_value'] !== '' && (float)$item['overall_limit'] < (float)$item['expected_value']) {
+                        $catEErrors["items.{$index}.overall_limit"] = "Overall Limit cannot be less than Expected Value.";
+                    }
+                    if (empty($item['start_date'])) {
+                        $catEErrors["items.{$index}.start_date"] = "Start Date is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (empty($item['end_date'])) {
+                        $catEErrors["items.{$index}.end_date"] = "End Date is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (!empty($item['start_date']) && !empty($item['end_date']) && $item['end_date'] < $item['start_date']) {
+                        $catEErrors["items.{$index}.end_date"] = "End Date cannot be earlier than Start Date.";
+                    }
+                    if (!empty($catEErrors)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages($catEErrors);
+                    }
+                }
             }
         }
 
@@ -897,6 +927,8 @@ class PurchaseRequisitionController extends Controller
                             'unit_price' => $itemData['unit_price'],
                             'price_unit' => $pu,
                             'total_price' => $itemTotal,
+                            'expected_value' => $itemData['expected_value'] ?? null,
+                            'overall_limit' => $itemData['overall_limit'] ?? null,
                             'currency' => $itemData['currency'] ?? $pr->currency,
                             'tax_code' => $itemData['tax_code'] ?? null,
                             'po_price_type' => $itemData['po_price_type'] ?? 'Do not adopt',
@@ -911,6 +943,8 @@ class PurchaseRequisitionController extends Controller
                             'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
                             'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
                             'release_date' => $itemData['release_date'] ?? now()->format('Y-m-d'),
+                            'start_date' => $itemData['start_date'] ?? null,
+                            'end_date' => $itemData['end_date'] ?? null,
                             'planned_delivery_time' => $itemData['planned_delivery_time'] ?? 0,
                             'gr_processing_time' => $itemData['gr_processing_time'] ?? 0,
                             'item_text' => $itemData['item_text'] ?? null,
@@ -1299,6 +1333,8 @@ class PurchaseRequisitionController extends Controller
             'items.*.unit_of_measure' => 'required|string|max:10',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.price_unit' => 'nullable|numeric|min:1',
+            'items.*.expected_value' => 'nullable|numeric|min:0',
+            'items.*.overall_limit' => 'nullable|numeric|min:0',
             'items.*.currency' => 'nullable|string|size:3',
             'items.*.tax_code' => 'nullable|string|max:20',
             'items.*.po_price_type' => 'nullable|string|max:50',
@@ -1313,6 +1349,8 @@ class PurchaseRequisitionController extends Controller
             'items.*.delivery_date' => 'nullable|date',
             'items.*.requisition_date' => 'nullable|date',
             'items.*.release_date' => 'nullable|date',
+            'items.*.start_date' => 'nullable|date',
+            'items.*.end_date' => 'nullable|date',
             'items.*.planned_delivery_time' => 'nullable|numeric',
             'items.*.gr_processing_time' => 'nullable|numeric',
             'items.*.item_text' => 'nullable|string',
@@ -1411,6 +1449,32 @@ class PurchaseRequisitionController extends Controller
                         "items.{$index}.material_code" => "Material 'NUTS' has not been extended to the Purchasing View for Plant 1200 in SAP S/4HANA Cloud (SAP error ME/046). Please maintain its Purchasing View in SAP or choose a maintained material such as '1300000001' or '1200000000'.",
                     ]);
                 }
+
+                $itemCat = strtoupper(trim($item['item_category'] ?? ''));
+                if ($itemCat === 'E') {
+                    $catEErrors = [];
+                    if (!isset($item['expected_value']) || $item['expected_value'] === '' || (float)$item['expected_value'] < 0) {
+                        $catEErrors["items.{$index}.expected_value"] = "Expected Value is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (!isset($item['overall_limit']) || $item['overall_limit'] === '' || (float)$item['overall_limit'] < 0) {
+                        $catEErrors["items.{$index}.overall_limit"] = "Overall Limit is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (isset($item['overall_limit']) && isset($item['expected_value']) && $item['overall_limit'] !== '' && $item['expected_value'] !== '' && (float)$item['overall_limit'] < (float)$item['expected_value']) {
+                        $catEErrors["items.{$index}.overall_limit"] = "Overall Limit cannot be less than Expected Value.";
+                    }
+                    if (empty($item['start_date'])) {
+                        $catEErrors["items.{$index}.start_date"] = "Start Date is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (empty($item['end_date'])) {
+                        $catEErrors["items.{$index}.end_date"] = "End Date is mandatory for Enhanced Limits items (Category E).";
+                    }
+                    if (!empty($item['start_date']) && !empty($item['end_date']) && $item['end_date'] < $item['start_date']) {
+                        $catEErrors["items.{$index}.end_date"] = "End Date cannot be earlier than Start Date.";
+                    }
+                    if (!empty($catEErrors)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages($catEErrors);
+                    }
+                }
             }
         }
 
@@ -1504,6 +1568,8 @@ class PurchaseRequisitionController extends Controller
                     'unit_price' => $itemData['unit_price'],
                     'price_unit' => $pu,
                     'total_price' => $itemTotal,
+                    'expected_value' => $itemData['expected_value'] ?? null,
+                    'overall_limit' => $itemData['overall_limit'] ?? null,
                     'currency' => $itemData['currency'] ?? $purchaseRequisition->currency,
                     'tax_code' => $itemData['tax_code'] ?? null,
                     'po_price_type' => $itemData['po_price_type'] ?? 'Do not adopt',
@@ -1518,6 +1584,8 @@ class PurchaseRequisitionController extends Controller
                     'delivery_date' => $itemData['delivery_date'] ?? now()->addDays(14)->format('Y-m-d'),
                     'requisition_date' => $itemData['requisition_date'] ?? now()->format('Y-m-d'),
                     'release_date' => $itemData['release_date'] ?? now()->format('Y-m-d'),
+                    'start_date' => $itemData['start_date'] ?? null,
+                    'end_date' => $itemData['end_date'] ?? null,
                     'planned_delivery_time' => $itemData['planned_delivery_time'] ?? 0,
                     'gr_processing_time' => $itemData['gr_processing_time'] ?? 0,
                     'item_text' => $itemData['item_text'] ?? null,

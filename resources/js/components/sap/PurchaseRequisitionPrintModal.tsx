@@ -42,6 +42,11 @@ export interface PrintPurchaseRequisition {
     currency?: string;
     requisitioner?: string | null;
     approval_status?: string;
+    sap_release_status?: string | null;
+    sap_release_status_text?: string | null;
+    sap_processing_status?: string | null;
+    sap_processing_status_text?: string | null;
+    sap_status_synced_at?: string | null;
     is_draft?: boolean | number;
     created_at: string;
     user?: {

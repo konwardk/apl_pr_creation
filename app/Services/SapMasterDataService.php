@@ -1716,9 +1716,18 @@ class SapMasterDataService
                     ?? ($resJson['d']['PurchaseRequisition']
                     ?? ($resJson['_PurchaseRequisitionItem'][0]['PurchaseRequisition'] ?? null));
 
+                $firstItem = $resJson['_PurchaseRequisitionItem'][0] ?? ($resJson['d']['_PurchaseRequisitionItem'][0] ?? []);
+                $initRelStatus = isset($firstItem['PurReqnReleaseStatus']) ? (string) $firstItem['PurReqnReleaseStatus'] : null;
+                $initProcStatus = isset($firstItem['ProcessingStatus']) ? (string) $firstItem['ProcessingStatus'] : null;
+
                 return [
                     'success' => true,
                     'sap_pr_number' => $sapPrNum,
+                    'release_status' => $initRelStatus,
+                    'release_status_text' => PurchaseRequisition::getReleaseStatusLabel($initRelStatus),
+                    'processing_status' => $initProcStatus,
+                    'processing_status_text' => PurchaseRequisition::getProcessingStatusLabel($initProcStatus),
+                    'system_approval_status' => PurchaseRequisition::mapReleaseStatusToSystem($initRelStatus),
                     'status' => $statusCode,
                     'latency_ms' => $durationMs,
                     'message' => "Successfully posted to SAP S/4HANA Cloud. Assigned SAP PR #{$sapPrNum} in {$durationMs}ms.",
@@ -1764,6 +1773,222 @@ class SapMasterDataService
                 'message' => 'Connection error: ' . $e->getMessage(),
                 'response' => [],
                 'payload' => $payload,
+            ];
+        }
+    }
+
+    /**
+     * Fetch the real-time Purchase Requisition release/approval status and processing status from SAP S/4HANA Cloud OData V4 API.
+     *
+     * @param string $sapPrNumber SAP Purchase Requisition Number (e.g. '10001234')
+     * @return array{
+     *     success: bool,
+     *     sap_pr_number: string,
+     *     release_status: string|null,
+     *     release_status_text: string|null,
+     *     processing_status: string|null,
+     *     processing_status_text: string|null,
+     *     system_approval_status: string,
+     *     items: array,
+     *     message: string,
+     *     latency_ms: int,
+     *     raw_response?: array
+     * }
+     */
+    public function fetchPurchaseRequisitionStatus(string $sapPrNumber): array
+    {
+        $sapPrNumber = trim($sapPrNumber);
+        if (empty($sapPrNumber)) {
+            return [
+                'success' => false,
+                'sap_pr_number' => '',
+                'release_status' => null,
+                'release_status_text' => null,
+                'processing_status' => null,
+                'processing_status_text' => null,
+                'system_approval_status' => 'draft',
+                'items' => [],
+                'message' => 'SAP Purchase Requisition Number is required to fetch status.',
+                'latency_ms' => 0,
+            ];
+        }
+
+        [$username, $password] = $this->getAuthCredentials();
+        $baseEndpoint = $this->getEndpoint(
+            'purchase_requisition_items',
+            '/sap/opu/odata4/sap/api_purchaserequisition_2/srvd_a2x/sap/purchaserequisition/0001/PurchaseReqnItem'
+        );
+
+        if (empty($username) || empty($password)) {
+            return [
+                'success' => false,
+                'sap_pr_number' => $sapPrNumber,
+                'release_status' => null,
+                'release_status_text' => null,
+                'processing_status' => null,
+                'processing_status_text' => null,
+                'system_approval_status' => 'draft',
+                'items' => [],
+                'message' => 'SAP Communication User credentials not configured.',
+                'latency_ms' => 0,
+            ];
+        }
+
+        // Query items for this PR using OData V4 filter syntax
+        $delimiter = str_contains($baseEndpoint, '?') ? '&' : '?';
+        $filterUrl = $baseEndpoint . $delimiter . '$filter=' . rawurlencode("PurchaseRequisition eq '{$sapPrNumber}'");
+
+        try {
+            $startTime = microtime(true);
+            $verifySsl = config('sap.verify_ssl', false);
+
+            $request = Http::timeout(25)
+                ->withBasicAuth($username, $password)
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ]);
+
+            if (!$verifySsl) {
+                $request = $request->withoutVerifying();
+            }
+
+            $response = $request->get($filterUrl);
+            $latencyMs = round((microtime(true) - $startTime) * 1000);
+
+            if (!$response->successful()) {
+                $status = $response->status();
+                $body = $response->body();
+                $json = $response->json();
+                $errorMsg = $json['error']['message'] ?? ("HTTP {$status} while querying SAP PR status: " . substr($body, 0, 200));
+
+                Log::warning("Failed to fetch SAP PR status for #{$sapPrNumber} (HTTP {$status}): {$errorMsg}");
+
+                return [
+                    'success' => false,
+                    'sap_pr_number' => $sapPrNumber,
+                    'release_status' => null,
+                    'release_status_text' => null,
+                    'processing_status' => null,
+                    'processing_status_text' => null,
+                    'system_approval_status' => 'in_approval',
+                    'items' => [],
+                    'message' => $errorMsg,
+                    'latency_ms' => $latencyMs,
+                    'raw_response' => $json,
+                ];
+            }
+
+            $json = $response->json() ?: [];
+            $rawItems = $json['value'] ?? ($json['d']['results'] ?? ($json['d'] ?? []));
+
+            if (!is_array($rawItems) || empty($rawItems)) {
+                return [
+                    'success' => false,
+                    'sap_pr_number' => $sapPrNumber,
+                    'release_status' => null,
+                    'release_status_text' => null,
+                    'processing_status' => null,
+                    'processing_status_text' => null,
+                    'system_approval_status' => 'in_approval',
+                    'items' => [],
+                    'message' => "No items returned from SAP for PR #{$sapPrNumber}.",
+                    'latency_ms' => $latencyMs,
+                    'raw_response' => $json,
+                ];
+            }
+
+            $parsedItems = [];
+            $releaseStatuses = [];
+            $processingStatuses = [];
+
+            foreach ($rawItems as $raw) {
+                $itemNum = (string) ($raw['PurchaseRequisitionItem'] ?? '');
+                $relStatus = isset($raw['PurReqnReleaseStatus']) ? (string) $raw['PurReqnReleaseStatus'] : null;
+                $procStatus = isset($raw['ProcessingStatus']) ? (string) $raw['ProcessingStatus'] : null;
+
+                $relText = PurchaseRequisition::getReleaseStatusLabel($relStatus);
+                $procText = PurchaseRequisition::getProcessingStatusLabel($procStatus);
+
+                if (!empty($relStatus)) {
+                    $releaseStatuses[] = $relStatus;
+                }
+                if (!empty($procStatus)) {
+                    $processingStatuses[] = $procStatus;
+                }
+
+                $parsedItems[] = [
+                    'item_number' => $itemNum,
+                    'release_status' => $relStatus,
+                    'release_status_text' => $relText,
+                    'processing_status' => $procStatus,
+                    'processing_status_text' => $procText,
+                    'description' => $raw['PurchaseRequisitionItemText'] ?? null,
+                    'quantity' => isset($raw['RequestedQuantity']) ? (float) $raw['RequestedQuantity'] : null,
+                    'uom' => $raw['BaseUnit'] ?? null,
+                    'raw' => $raw,
+                ];
+            }
+
+            // Overall release status logic:
+            // 1. If ANY item is '08' (Rejected), overall status is Rejected ('08')
+            // 2. If ANY item is '03' (In Release / Awaiting Approval), overall is In Approval ('03')
+            // 3. If ALL items are '05' (Approved) or '02' (Active), overall is Approved ('05')
+            // 4. Default to first item's status or '03'
+            $overallReleaseStatus = '03';
+            if (in_array('08', $releaseStatuses, true)) {
+                $overallReleaseStatus = '08';
+            } elseif (in_array('03', $releaseStatuses, true)) {
+                $overallReleaseStatus = '03';
+            } elseif (!empty($releaseStatuses) && count(array_filter($releaseStatuses, fn($s) => $s === '05' || $s === '02')) === count($releaseStatuses)) {
+                $overallReleaseStatus = '05';
+            } elseif (!empty($releaseStatuses)) {
+                $overallReleaseStatus = $releaseStatuses[0];
+            }
+
+            // Overall processing status logic:
+            $overallProcessingStatus = 'N';
+            if (in_array('B', $processingStatuses, true)) {
+                $overallProcessingStatus = 'B';
+            } elseif (in_array('A', $processingStatuses, true)) {
+                $overallProcessingStatus = 'A';
+            } elseif (!empty($processingStatuses)) {
+                $overallProcessingStatus = $processingStatuses[0];
+            }
+
+            $overallReleaseText = PurchaseRequisition::getReleaseStatusLabel($overallReleaseStatus);
+            $overallProcessingText = PurchaseRequisition::getProcessingStatusLabel($overallProcessingStatus);
+            $systemStatus = PurchaseRequisition::mapReleaseStatusToSystem($overallReleaseStatus);
+
+            return [
+                'success' => true,
+                'sap_pr_number' => $sapPrNumber,
+                'release_status' => $overallReleaseStatus,
+                'release_status_text' => $overallReleaseText,
+                'processing_status' => $overallProcessingStatus,
+                'processing_status_text' => $overallProcessingText,
+                'system_approval_status' => $systemStatus,
+                'items' => $parsedItems,
+                'message' => "Successfully retrieved status from SAP for PR #{$sapPrNumber}: {$overallReleaseText} (Release: {$overallReleaseStatus}, Processing: {$overallProcessingStatus}) in {$latencyMs}ms.",
+                'latency_ms' => $latencyMs,
+                'raw_response' => $json,
+            ];
+        } catch (\Throwable $e) {
+            Log::error("Exception querying SAP PR status for #{$sapPrNumber}: " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'sap_pr_number' => $sapPrNumber,
+                'release_status' => null,
+                'release_status_text' => null,
+                'processing_status' => null,
+                'processing_status_text' => null,
+                'system_approval_status' => 'in_approval',
+                'items' => [],
+                'message' => 'Connection error checking SAP PR status: ' . $e->getMessage(),
+                'latency_ms' => 0,
             ];
         }
     }

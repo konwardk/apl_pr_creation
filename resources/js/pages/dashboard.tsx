@@ -32,6 +32,7 @@ import {
 import PrConfigurationDashboard from '@/components/sap/PrConfigurationDashboard';
 import type { User, HeaderOption, PrDocumentType, ItemCategory, PurchasingOrganization, PurchasingGroup } from '@/types';
 import { formatCurrency } from '@/lib/utils';
+import { SapPrStatusBadge, SapPrRefreshButton } from '@/components/sap/SapPrStatusBadge';
 
 interface PrItem {
     id: number;
@@ -78,6 +79,11 @@ interface PurchaseRequisition {
     total_amount: number | string;
     currency: string;
     approval_status: 'draft' | 'in_approval' | 'approved' | 'rejected';
+    sap_release_status?: string | null;
+    sap_release_status_text?: string | null;
+    sap_processing_status?: string | null;
+    sap_processing_status_text?: string | null;
+    sap_status_synced_at?: string | null;
     is_draft?: boolean | number;
     sap_sync_status: 'pending' | 'synced' | 'failed';
     sap_sync_message?: string | null;
@@ -691,22 +697,44 @@ export default function Dashboard({
 
                                                 {/* Approval */}
                                                 <td className="py-3 px-3 text-center">
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                                                        pr.is_draft
-                                                            ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                                                            : pr.approval_status === 'approved'
-                                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                            : pr.approval_status === 'in_approval'
-                                                            ? 'bg-blue-50 text-[#0070f2] border border-blue-200'
-                                                            : 'bg-slate-100 text-slate-600'
-                                                    }`}>
-                                                        {pr.is_draft ? 'Draft' : pr.approval_status.replace('_', ' ')}
-                                                    </span>
+                                                    {pr.is_draft ? (
+                                                        <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase bg-slate-100 text-slate-700 border border-slate-300">
+                                                            Draft
+                                                        </span>
+                                                    ) : pr.sap_release_status ? (
+                                                        <SapPrStatusBadge
+                                                            releaseStatus={pr.sap_release_status}
+                                                            releaseStatusText={pr.sap_release_status_text}
+                                                            processingStatus={pr.sap_processing_status}
+                                                            processingStatusText={pr.sap_processing_status_text}
+                                                            size="sm"
+                                                        />
+                                                    ) : (
+                                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                                                            pr.approval_status === 'approved'
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                : pr.approval_status === 'in_approval'
+                                                                ? 'bg-blue-50 text-[#0070f2] border border-blue-200'
+                                                                : pr.approval_status === 'rejected'
+                                                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                                : 'bg-slate-100 text-slate-600'
+                                                        }`}>
+                                                            {pr.approval_status.replace('_', ' ')}
+                                                        </span>
+                                                    )}
                                                 </td>
 
                                                 {/* Actions */}
                                                 <td className="py-3 px-3 text-right">
                                                     <div className="flex items-center justify-end gap-1.5">
+                                                        {pr.sap_pr_number && (
+                                                            <SapPrRefreshButton
+                                                                prId={pr.id}
+                                                                sapPrNumber={pr.sap_pr_number}
+                                                                lastCheckedAt={pr.sap_status_synced_at}
+                                                                variant="icon"
+                                                            />
+                                                        )}
                                                         <button
                                                             type="button"
                                                             onClick={() => router.visit(`/purchase-requisitions/${pr.id}`)}

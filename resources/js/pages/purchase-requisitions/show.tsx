@@ -40,12 +40,17 @@ import {
     Info,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { SapPrStatusBadge, SapPrRefreshButton } from '@/components/sap/SapPrStatusBadge';
 
 interface PrItem {
     id: number;
     item_number: string;
     item_type?: string;
     item_category?: string;
+    pur_reqn_release_status?: string | null;
+    pur_reqn_release_status_text?: string | null;
+    processing_status?: string | null;
+    processing_status_text?: string | null;
     material_code?: string;
     supplier_material_number?: string;
     manufacturer_part_number?: string;
@@ -139,6 +144,11 @@ interface PurchaseRequisition {
     currency: string;
     requisitioner?: string | null;
     approval_status: string;
+    sap_release_status?: string | null;
+    sap_release_status_text?: string | null;
+    sap_processing_status?: string | null;
+    sap_processing_status_text?: string | null;
+    sap_status_synced_at?: string | null;
     is_draft: boolean | number;
     sap_sync_status: string;
     sap_sync_message?: string | null;
@@ -332,6 +342,15 @@ export default function ShowPurchaseRequisitionPage({
                                         </span>
                                     )}
 
+                                    {pr.sap_release_status && (
+                                        <SapPrStatusBadge
+                                            releaseStatus={pr.sap_release_status}
+                                            releaseStatusText={pr.sap_release_status_text}
+                                            processingStatus={pr.sap_processing_status}
+                                            processingStatusText={pr.sap_processing_status_text}
+                                        />
+                                    )}
+
                                     {cr?.cr_no && (
                                         <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-mono font-semibold text-purple-700 border border-purple-200">
                                             CR #{cr.cr_no}
@@ -345,12 +364,25 @@ export default function ShowPurchaseRequisitionPage({
                                             {' '}• Created by <strong className="text-[#1c2d42]">{pr.user.name}</strong> ({pr.user.department?.name || 'Assam Petro-Chemicals Ltd.'})
                                         </span>
                                     )}
+                                    {pr.sap_status_synced_at && (
+                                        <span className="ml-2 inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 text-[10px]">
+                                            ✓ SAP Status Verified: {new Date(pr.sap_status_synced_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        </span>
+                                    )}
                                 </p>
                             </div>
                         </div>
 
                         {/* Top Action Buttons */}
                         <div className="flex flex-wrap items-center gap-2">
+                            {/* Refresh Status from SAP Button */}
+                            {pr.sap_pr_number && (
+                                <SapPrRefreshButton
+                                    prId={pr.id}
+                                    sapPrNumber={pr.sap_pr_number}
+                                    lastCheckedAt={pr.sap_status_synced_at}
+                                />
+                            )}
                             {/* Print Indent Form (F-2) Button */}
                             <button
                                 type="button"
@@ -744,6 +776,7 @@ export default function ShowPurchaseRequisitionPage({
                             <thead className="bg-[#f8fafc] text-[11px] font-semibold text-[#556b82] border-b border-slate-200">
                                 <tr>
                                     <th className="py-3 px-3">Item #</th>
+                                    <th className="py-3 px-2.5">SAP Status</th>
                                     <th className="py-3 px-2.5">Type</th>
                                     <th className="py-3 px-2.5">Item Cat.</th>
                                     <th className="py-3 px-2.5">Acct. Assign.</th>
@@ -761,7 +794,7 @@ export default function ShowPurchaseRequisitionPage({
                             <tbody className="divide-y divide-slate-100 bg-white">
                                 {!pr.items || pr.items.length === 0 ? (
                                     <tr>
-                                        <td colSpan={13} className="py-8 text-center text-xs text-[#556b82]">
+                                        <td colSpan={14} className="py-8 text-center text-xs text-[#556b82]">
                                             No line items found for this purchase requisition.
                                         </td>
                                     </tr>
@@ -783,6 +816,19 @@ export default function ShowPurchaseRequisitionPage({
                                                         )}
                                                         <span>{item.item_number}</span>
                                                     </div>
+                                                </td>
+                                                <td className="py-3 px-2.5">
+                                                    {item.pur_reqn_release_status ? (
+                                                        <SapPrStatusBadge
+                                                            releaseStatus={item.pur_reqn_release_status}
+                                                            releaseStatusText={item.pur_reqn_release_status_text}
+                                                            processingStatus={item.processing_status}
+                                                            processingStatusText={item.processing_status_text}
+                                                            size="sm"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-slate-400 text-[10px]">—</span>
+                                                    )}
                                                 </td>
                                                 <td className="py-3 px-2.5">
                                                     <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
@@ -878,6 +924,15 @@ export default function ShowPurchaseRequisitionPage({
                                         <span className="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-800">
                                             Cat: {currentItem.item_category === 'E' ? 'E (Enhanced Limits)' : currentItem.item_category}
                                         </span>
+                                    )}
+                                    {currentItem.pur_reqn_release_status && (
+                                        <SapPrStatusBadge
+                                            releaseStatus={currentItem.pur_reqn_release_status}
+                                            releaseStatusText={currentItem.pur_reqn_release_status_text}
+                                            processingStatus={currentItem.processing_status}
+                                            processingStatusText={currentItem.processing_status_text}
+                                            size="sm"
+                                        />
                                     )}
                                     <h3 className="text-sm font-bold text-[#1c2d42] truncate max-w-md" title={currentItem.description}>
                                         {currentItem.description}

@@ -1103,8 +1103,14 @@ class PurchaseRequisitionController extends Controller
             $sapPrNum = $syncResult['sap_pr_number'];
             $pr->update([
                 'sap_pr_number' => $sapPrNum,
+                'sap_release_status' => $syncResult['release_status'] ?? null,
+                'sap_release_status_text' => $syncResult['release_status_text'] ?? null,
+                'sap_processing_status' => $syncResult['processing_status'] ?? null,
+                'sap_processing_status_text' => $syncResult['processing_status_text'] ?? null,
+                'approval_status' => $syncResult['system_approval_status'] ?? 'in_approval',
                 'sap_sync_status' => 'synced',
                 'sap_synced_at' => now(),
+                'sap_status_synced_at' => now(),
                 'sap_sync_message' => $syncResult['message'],
                 'sap_payload' => $syncResult['payload'],
                 'sap_response' => $syncResult['response'],
@@ -1216,8 +1222,14 @@ class PurchaseRequisitionController extends Controller
             $sapPrNum = $syncResult['sap_pr_number'];
             $purchaseRequisition->update([
                 'sap_pr_number' => $sapPrNum,
+                'sap_release_status' => $syncResult['release_status'] ?? null,
+                'sap_release_status_text' => $syncResult['release_status_text'] ?? null,
+                'sap_processing_status' => $syncResult['processing_status'] ?? null,
+                'sap_processing_status_text' => $syncResult['processing_status_text'] ?? null,
+                'approval_status' => $syncResult['system_approval_status'] ?? 'in_approval',
                 'sap_sync_status' => 'synced',
                 'sap_synced_at' => now(),
+                'sap_status_synced_at' => now(),
                 'sap_sync_message' => $syncResult['message'],
                 'sap_payload' => $syncResult['payload'],
                 'sap_response' => $syncResult['response'],
@@ -1748,8 +1760,14 @@ class PurchaseRequisitionController extends Controller
             $sapPrNum = $syncResult['sap_pr_number'];
             $purchaseRequisition->update([
                 'sap_pr_number' => $sapPrNum,
+                'sap_release_status' => $syncResult['release_status'] ?? null,
+                'sap_release_status_text' => $syncResult['release_status_text'] ?? null,
+                'sap_processing_status' => $syncResult['processing_status'] ?? null,
+                'sap_processing_status_text' => $syncResult['processing_status_text'] ?? null,
+                'approval_status' => $syncResult['system_approval_status'] ?? 'in_approval',
                 'sap_sync_status' => 'synced',
                 'sap_synced_at' => now(),
+                'sap_status_synced_at' => now(),
                 'sap_sync_message' => $syncResult['message'],
                 'sap_payload' => $syncResult['payload'],
                 'sap_response' => $syncResult['response'],
@@ -1849,5 +1867,93 @@ class PurchaseRequisitionController extends Controller
         }
 
         return Storage::disk('public')->download($attachment->file_path, $attachment->file_name);
+    }
+
+    /**
+     * Fetch and synchronize real-time PR approval release status and follow-on processing status from SAP S/4HANA Cloud.
+     */
+    public function refreshSapStatus(Request $request, PurchaseRequisition $purchaseRequisition): JsonResponse|RedirectResponse
+    {
+        $sapPrNumber = trim((string) ($purchaseRequisition->sap_pr_number ?? ''));
+
+        if (empty($sapPrNumber)) {
+            $msg = "Cannot refresh SAP status: Purchase Requisition {$purchaseRequisition->pr_number} has not been synced to SAP yet.";
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => false,
+                    'message' => $msg,
+                ], 422);
+            }
+            return back()->with('error', $msg);
+        }
+
+        $result = $this->sapService->fetchPurchaseRequisitionStatus($sapPrNumber);
+
+        if (!$result['success']) {
+            $errorMsg = $result['message'] ?? 'Failed to retrieve status from SAP S/4HANA Cloud.';
+            if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+                return response()->json([
+                    'success' => false,
+                    'message' => $errorMsg,
+                    'details' => $result,
+                ], 400);
+            }
+            return back()->with('error', "SAP Status check failed: {$errorMsg}");
+        }
+
+        $purchaseRequisition->load('items');
+
+        DB::transaction(function () use ($purchaseRequisition, $result) {
+            // 1. Update Header
+            $purchaseRequisition->update([
+                'sap_release_status' => $result['release_status'],
+                'sap_release_status_text' => $result['release_status_text'],
+                'sap_processing_status' => $result['processing_status'],
+                'sap_processing_status_text' => $result['processing_status_text'],
+                'approval_status' => $result['system_approval_status'],
+                'sap_status_synced_at' => now(),
+            ]);
+
+            // 2. Update line items
+            $sapItems = collect($result['items'] ?? [])->keyBy(function ($it) {
+                return ltrim((string) ($it['item_number'] ?? ''), '0');
+            });
+
+            foreach ($purchaseRequisition->items as $item) {
+                $cleanItemNum = ltrim((string) $item->item_number, '0');
+                if ($sapItems->has($cleanItemNum)) {
+                    $matched = $sapItems->get($cleanItemNum);
+                    $item->update([
+                        'pur_reqn_release_status' => $matched['release_status'],
+                        'pur_reqn_release_status_text' => $matched['release_status_text'],
+                        'processing_status' => $matched['processing_status'],
+                        'processing_status_text' => $matched['processing_status_text'],
+                    ]);
+                }
+            }
+        });
+
+        $purchaseRequisition->refresh();
+        $purchaseRequisition->load('items');
+
+        $successMsg = "SAP PR #{$sapPrNumber} Status: {$result['release_status_text']} (Code: {$result['release_status']}) • Processing: {$result['processing_status_text']} (Code: {$result['processing_status']})";
+
+        if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+            return response()->json([
+                'success' => true,
+                'message' => $successMsg,
+                'sap_pr_number' => $sapPrNumber,
+                'release_status' => $result['release_status'],
+                'release_status_text' => $result['release_status_text'],
+                'processing_status' => $result['processing_status'],
+                'processing_status_text' => $result['processing_status_text'],
+                'approval_status' => $result['system_approval_status'],
+                'sap_status_synced_at' => $purchaseRequisition->sap_status_synced_at?->toIso8601String(),
+                'items' => $result['items'],
+                'purchase_requisition' => $purchaseRequisition,
+            ]);
+        }
+
+        return back()->with('success', $successMsg);
     }
 }

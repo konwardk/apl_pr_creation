@@ -27,6 +27,7 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('purchase-requisitions/{purchaseRequisition}/edit', [PurchaseRequisitionController::class, 'edit'])->name('purchase-requisitions.edit');
     Route::match(['put', 'post'], 'purchase-requisitions/{purchaseRequisition}', [PurchaseRequisitionController::class, 'update'])->name('purchase-requisitions.update');
     Route::post('purchase-requisitions/{purchaseRequisition}/sync', [PurchaseRequisitionController::class, 'sync'])->name('purchase-requisitions.sync');
+    Route::post('purchase-requisitions/{purchaseRequisition}/refresh-sap-status', [PurchaseRequisitionController::class, 'refreshSapStatus'])->name('purchase-requisitions.refresh-sap-status');
     Route::post('purchase-requisitions/{purchaseRequisition}/finalize', [PurchaseRequisitionController::class, 'finalizeDraft'])->name('purchase-requisitions.finalize');
     Route::get('attachments/{attachment}/download', [PurchaseRequisitionController::class, 'downloadAttachment'])->name('attachments.download');
     Route::delete('attachments/{attachment}', [PurchaseRequisitionController::class, 'deleteAttachment'])->name('attachments.destroy');

@@ -12,6 +12,25 @@ class PurchaseRequisition extends Model
 {
     use HasFactory;
 
+    public const RELEASE_STATUS_MAP = [
+        '01' => ['label' => 'Draft / In Process', 'badge' => 'slate', 'system_status' => 'draft'],
+        '02' => ['label' => 'Active / Approved', 'badge' => 'emerald', 'system_status' => 'approved'],
+        '03' => ['label' => 'In Approval (Pending)', 'badge' => 'amber', 'system_status' => 'in_approval'],
+        '04' => ['label' => 'For Overall Release', 'badge' => 'blue', 'system_status' => 'in_approval'],
+        '05' => ['label' => 'Approved / Release Completed', 'badge' => 'emerald', 'system_status' => 'approved'],
+        '08' => ['label' => 'Rejected / Refused', 'badge' => 'rose', 'system_status' => 'rejected'],
+    ];
+
+    public const PROCESSING_STATUS_MAP = [
+        'N' => ['label' => 'Not Processed (Open)', 'badge' => 'slate'],
+        'A' => ['label' => 'RFQ Created', 'badge' => 'purple'],
+        'B' => ['label' => 'Purchase Order Created', 'badge' => 'blue'],
+        'K' => ['label' => 'Contract Created', 'badge' => 'indigo'],
+        'L' => ['label' => 'Scheduling Agreement', 'badge' => 'cyan'],
+        'S' => ['label' => 'Service Entry Sheet', 'badge' => 'teal'],
+        'E' => ['label' => 'External RFQ Sent', 'badge' => 'violet'],
+    ];
+
     protected $fillable = [
         'pr_number',
         'sap_pr_number',
@@ -27,10 +46,15 @@ class PurchaseRequisition extends Model
         'currency',
         'requisitioner',
         'approval_status',
+        'sap_release_status',
+        'sap_release_status_text',
+        'sap_processing_status',
+        'sap_processing_status_text',
         'is_draft',
         'sap_sync_status',
         'sap_sync_message',
         'sap_synced_at',
+        'sap_status_synced_at',
         'sap_payload',
         'sap_response',
     ];
@@ -40,6 +64,7 @@ class PurchaseRequisition extends Model
         'auto_source_determination' => 'boolean',
         'is_draft' => 'boolean',
         'sap_synced_at' => 'datetime',
+        'sap_status_synced_at' => 'datetime',
         'sap_payload' => 'array',
         'sap_response' => 'array',
     ];
@@ -65,6 +90,30 @@ class PurchaseRequisition extends Model
     public function isEditable(): bool
     {
         return ((bool) $this->is_draft || $this->sap_sync_status === 'failed') && $this->sap_sync_status !== 'synced';
+    }
+
+    public static function mapReleaseStatusToSystem(?string $releaseStatus): string
+    {
+        if (empty($releaseStatus)) {
+            return 'draft';
+        }
+        return static::RELEASE_STATUS_MAP[$releaseStatus]['system_status'] ?? 'in_approval';
+    }
+
+    public static function getReleaseStatusLabel(?string $releaseStatus): string
+    {
+        if (empty($releaseStatus)) {
+            return 'Draft';
+        }
+        return static::RELEASE_STATUS_MAP[$releaseStatus]['label'] ?? "Release Status {$releaseStatus}";
+    }
+
+    public static function getProcessingStatusLabel(?string $processingStatus): string
+    {
+        if (empty($processingStatus)) {
+            return 'Not Processed (Open)';
+        }
+        return static::PROCESSING_STATUS_MAP[$processingStatus]['label'] ?? "Processing Stage {$processingStatus}";
     }
 
     public function user(): BelongsTo

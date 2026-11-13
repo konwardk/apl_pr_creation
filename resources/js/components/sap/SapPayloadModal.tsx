@@ -44,6 +44,11 @@ interface PurchaseRequisition {
     total_amount: number | string;
     currency: string;
     approval_status: string;
+    sap_release_status?: string | null;
+    sap_release_status_text?: string | null;
+    sap_processing_status?: string | null;
+    sap_processing_status_text?: string | null;
+    sap_status_synced_at?: string | null;
     is_draft?: boolean | number;
     sap_sync_status: string;
     sap_sync_message?: string | null;

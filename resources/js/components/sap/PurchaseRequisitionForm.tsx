@@ -35,6 +35,7 @@ import {
 import SapSearchHelpModal, { SearchHelpOption } from './SapSearchHelpModal';
 import { defaultSapMasterData, SapMasterDataConfig } from './sapMasterData';
 import { HeaderOption, PrDocumentType, ItemCategory, ContractRequisitionData } from '@/types';
+import { SapPrStatusBadge, SapPrRefreshButton } from './SapPrStatusBadge';
 
 export interface PrItemData {
     id: string;
@@ -43,6 +44,10 @@ export interface PrItemData {
     item_type: 'material' | 'service' | '';
     material_type: string;
     item_category: string;
+    pur_reqn_release_status?: string;
+    pur_reqn_release_status_text?: string;
+    processing_status?: string;
+    processing_status_text?: string;
     material_code: string;
     supplier_material_number: string;
     manufacturer_part_number?: string;
@@ -200,6 +205,13 @@ export default function PurchaseRequisitionForm({
     const [companyCode, setCompanyCode] = useState(initialData?.company_code || '1000');
     const [currency, setCurrency] = useState(initialData?.currency || 'INR');
     const [requisitioner, setRequisitioner] = useState(initialData?.requisitioner || defaultRequisitioner);
+
+    // Real SAP S/4HANA Cloud Approval & Processing Status State
+    const [sapReleaseStatus, setSapReleaseStatus] = useState<string | null>(initialData?.sap_release_status || null);
+    const [sapReleaseStatusText, setSapReleaseStatusText] = useState<string | null>(initialData?.sap_release_status_text || null);
+    const [sapProcessingStatus, setSapProcessingStatus] = useState<string | null>(initialData?.sap_processing_status || null);
+    const [sapProcessingStatusText, setSapProcessingStatusText] = useState<string | null>(initialData?.sap_processing_status_text || null);
+    const [sapStatusSyncedAt, setSapStatusSyncedAt] = useState<string | null>(initialData?.sap_status_synced_at || null);
 
     // Contract Requisition (SAP CBO: YY1_CONTRACTREQUISITION) State
     const initialCr =
@@ -582,6 +594,10 @@ export default function PurchaseRequisitionForm({
                     attachment_doc_type: it.attachment_doc_type || 'SL1',
                     attachment_name: it.attachment_name || '',
                     attachment_file: null,
+                    pur_reqn_release_status: it.pur_reqn_release_status || '',
+                    pur_reqn_release_status_text: it.pur_reqn_release_status_text || '',
+                    processing_status: it.processing_status || '',
+                    processing_status_text: it.processing_status_text || '',
                     source_assigned: Boolean(it.desired_supplier || it.fixed_vendor || it.info_record || it.agreement_number),
                     moving_average_price: '0.00',
                     standard_price: '0.00',
@@ -633,6 +649,11 @@ export default function PurchaseRequisitionForm({
             setCompanyCode(initialData.company_code || '1000');
             setCurrency(initialData.currency || 'INR');
             setRequisitioner(initialData.requisitioner || defaultRequisitioner);
+            setSapReleaseStatus(initialData.sap_release_status || null);
+            setSapReleaseStatusText(initialData.sap_release_status_text || null);
+            setSapProcessingStatus(initialData.sap_processing_status || null);
+            setSapProcessingStatusText(initialData.sap_processing_status_text || null);
+            setSapStatusSyncedAt(initialData.sap_status_synced_at || null);
             if (initialData.pr_number) {
                 setCurrentPrNumber(initialData.pr_number);
             }
@@ -3411,6 +3432,19 @@ export default function PurchaseRequisitionForm({
                             <h1 className="text-xl font-bold tracking-tight text-[#1c2d42]">
                                 {isEdit ? `Edit PR: ${initialData.pr_number}` : 'New Purchase Requisition'}
                             </h1>
+                            {initialData?.sap_pr_number && (
+                                <span className="rounded-md bg-blue-50 px-2.5 py-0.5 text-xs font-mono font-bold text-[#0070f2] border border-blue-200">
+                                    SAP PR #{initialData.sap_pr_number}
+                                </span>
+                            )}
+                            {sapReleaseStatus && (
+                                <SapPrStatusBadge
+                                    releaseStatus={sapReleaseStatus}
+                                    releaseStatusText={sapReleaseStatusText}
+                                    processingStatus={sapProcessingStatus}
+                                    processingStatusText={sapProcessingStatusText}
+                                />
+                            )}
                             {isEdit ? (
                                 isFailed ? (
                                     <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-semibold text-rose-800 border border-rose-300">
@@ -3433,11 +3467,51 @@ export default function PurchaseRequisitionForm({
                                     ? `Editing failed PR in local database • Correct any invalid fields and re-sync to SAP Cloud or update as draft`
                                     : `Editing draft PR in local database (is_draft = 1) • Modify fields or sync directly to SAP Cloud`
                                 : (description || 'New Requisition')}
+                            {sapStatusSyncedAt && (
+                                <span className="ml-2 inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 text-[10px]">
+                                    ✓ SAP Verified: {new Date(sapStatusSyncedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </span>
+                            )}
                         </p>
                     </div>
 
                     {/* Total Value & Actions */}
                     <div className="flex flex-wrap items-center gap-3">
+                        {initialData?.sap_pr_number && (
+                            <SapPrRefreshButton
+                                prId={initialData.id}
+                                sapPrNumber={initialData.sap_pr_number}
+                                lastCheckedAt={sapStatusSyncedAt}
+                                onStatusRefreshed={(data) => {
+                                    setSapReleaseStatus(data.release_status);
+                                    setSapReleaseStatusText(data.release_status_text);
+                                    setSapProcessingStatus(data.processing_status);
+                                    setSapProcessingStatusText(data.processing_status_text);
+                                    setSapStatusSyncedAt(data.sap_status_synced_at);
+                                    if (data.items && Array.isArray(data.items)) {
+                                        setItems((prevItems) =>
+                                            prevItems.map((item) => {
+                                                const match = data.items.find(
+                                                    (si: any) =>
+                                                        String(si.item_number || '').replace(/^0+/, '') ===
+                                                        String(item.item_number || '').replace(/^0+/, '')
+                                                );
+                                                if (match) {
+                                                    return {
+                                                        ...item,
+                                                        pur_reqn_release_status: match.release_status,
+                                                        pur_reqn_release_status_text: match.release_status_text,
+                                                        processing_status: match.processing_status,
+                                                        processing_status_text: match.processing_status_text,
+                                                    };
+                                                }
+                                                return item;
+                                            })
+                                        );
+                                    }
+                                }}
+                            />
+                        )}
                         <div className="rounded-lg border border-[#d9e2ec] bg-[#f8fafc] px-3.5 py-1.5 text-right">
                             <div className="text-[10px] font-semibold uppercase tracking-wider text-[#556b82]">
                                 Total Value

@@ -200,7 +200,11 @@ export default function PurchaseRequisitionPrintModal({
                     <style>
                         @page {
                             size: A4 portrait;
-                            margin: 6mm 8mm;
+                            margin: 6mm 8mm 6mm 18mm;
+                            margin-top: 6mm;
+                            margin-right: 8mm;
+                            margin-bottom: 6mm;
+                            margin-left: 18mm;
                         }
                         * {
                             -webkit-print-color-adjust: exact !important;
@@ -439,7 +443,11 @@ export default function PurchaseRequisitionPrintModal({
                             }
                             @page {
                                 size: A4 portrait;
-                                margin: 6mm 8mm;
+                                margin: 6mm 8mm 6mm 18mm;
+                                margin-top: 6mm;
+                                margin-right: 8mm;
+                                margin-bottom: 6mm;
+                                margin-left: 18mm;
                             }
                         }
                     `}</style>
@@ -455,7 +463,7 @@ export default function PurchaseRequisitionPrintModal({
                             boxSizing: 'border-box',
                             backgroundColor: '#ffffff',
                             color: '#000000',
-                            padding: '24px 30px',
+                            padding: '24px 30px 24px 68px',
                             fontFamily: '"Times New Roman", Times, Georgia, serif',
                             boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
                             border: '1px solid #d1d5db',
@@ -643,7 +651,7 @@ export default function PurchaseRequisitionPrintModal({
                                     <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Unit</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Qty.<br />Required</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>App.<br />Cost.(Rs.)</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Previous<br />P.O.</th>
+                                    {/* <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Previous<br />P.O.</th> */}
                                     <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Average<br />Monthly<br />Consumption</th>
                                     <th colSpan={2} style={{ padding: '0', verticalAlign: 'top' }}>
                                         <div style={{ padding: '3px 0' }}>Present stock</div>
@@ -659,7 +667,7 @@ export default function PurchaseRequisitionPrintModal({
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>3</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>4</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>5</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>6</th>
+                                    {/* <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>6</th> */}
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>7</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>8</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>9</th>
@@ -705,9 +713,9 @@ export default function PurchaseRequisitionPrintModal({
                                                 <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'right' }}>
                                                     {formatCurrencyAmount(itemCost)}
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
+                                                {/* <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
                                                     {item.previous_po || '—'}
-                                                </td>
+                                                </td> */}
                                                 <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
                                                     {item.avg_monthly_consumption || 'NA'}
                                                 </td>

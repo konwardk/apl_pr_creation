@@ -1058,7 +1058,8 @@ export default function PurchaseRequisitionForm({
     };
 
     const currentItem = items[activeItemIndex] || items[0];
-    const isEnhancedLimits = String(currentItem?.item_category || '').trim().toUpperCase() === 'E';
+    const isCurrentItemMaterial = currentItem?.item_type === 'material';
+    const isEnhancedLimits = !isCurrentItemMaterial && String(currentItem?.item_category || '').trim().toUpperCase() === 'E';
 
     useEffect(() => {
         if (activeItemTab === 'enhanced-limits' && !isEnhancedLimits) {
@@ -2552,7 +2553,9 @@ export default function PurchaseRequisitionForm({
             if (targetIdx !== undefined && targetIdx >= 0) {
                 clearFieldError(`item_${targetIdx}_item_category`);
             }
-            if (isCatE && targetIdx === activeItemIndex) {
+            const targetItem = items[targetIdx ?? -1];
+            const isTargetMaterial = targetItem?.item_type === 'material';
+            if (isCatE && !isTargetMaterial && targetIdx === activeItemIndex) {
                 setActiveItemTab('enhanced-limits');
             }
             return;
@@ -2586,7 +2589,13 @@ export default function PurchaseRequisitionForm({
         setItems((prev) =>
             prev.map((item, idx) => (idx === activeItemIndex ? { ...item, ...updates } : item))
         );
-        if (updates.item_category !== undefined && String(updates.item_category).trim().toUpperCase() === 'E') {
+        const updatedType = updates.item_type !== undefined ? updates.item_type : currentItem?.item_type;
+        const isMaterial = updatedType === 'material';
+        if (
+            updates.item_category !== undefined &&
+            String(updates.item_category).trim().toUpperCase() === 'E' &&
+            !isMaterial
+        ) {
             setActiveItemTab('enhanced-limits');
         }
         Object.keys(updates).forEach((k) => {
@@ -2596,11 +2605,19 @@ export default function PurchaseRequisitionForm({
 
     const updateItemById = (id: string, updates: Partial<PrItemData>) => {
         const itemIdx = items.findIndex((it) => it.id === id);
+        const targetItem = itemIdx >= 0 ? items[itemIdx] : undefined;
         setItems((prev) =>
             prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
         );
         if (itemIdx >= 0) {
-            if (updates.item_category !== undefined && itemIdx === activeItemIndex && String(updates.item_category).trim().toUpperCase() === 'E') {
+            const updatedType = updates.item_type !== undefined ? updates.item_type : targetItem?.item_type;
+            const isMaterial = updatedType === 'material';
+            if (
+                updates.item_category !== undefined &&
+                itemIdx === activeItemIndex &&
+                String(updates.item_category).trim().toUpperCase() === 'E' &&
+                !isMaterial
+            ) {
                 setActiveItemTab('enhanced-limits');
             }
             Object.keys(updates).forEach((k) => {
@@ -2649,6 +2666,15 @@ export default function PurchaseRequisitionForm({
             })
         );
         clearFieldError(`item_${index}_item_type`);
+        if (newType === 'material') {
+            clearFieldError(`item_${index}_expected_value`);
+            clearFieldError(`item_${index}_overall_limit`);
+            clearFieldError(`item_${index}_start_date`);
+            clearFieldError(`item_${index}_end_date`);
+            if (index === activeItemIndex && activeItemTab === 'enhanced-limits') {
+                setActiveItemTab('general');
+            }
+        }
     };
 
     const handleClearItem = (index: number) => {
@@ -2792,7 +2818,9 @@ export default function PurchaseRequisitionForm({
     // Tab Error Indicator Helper
     const getItemTabHasError = (tabId: string, itemIdx: number) => {
         const prefix = `item_${itemIdx}_`;
+        const item = items[itemIdx];
         if (tabId === 'enhanced-limits') {
+            if (item?.item_type === 'material') return false;
             return Boolean(
                 fieldErrors[prefix + 'expected_value'] ||
                 fieldErrors[prefix + 'overall_limit']
@@ -3002,9 +3030,10 @@ export default function PurchaseRequisitionForm({
                 errs[prefix + 'material_group'] = 'Material Group is mandatory.';
             }
 
-            // Category E: Enhanced Limits Validation
+            // Category E: Enhanced Limits Validation (Only for non-material items)
             const isCatE = String(it.item_category || '').trim().toUpperCase() === 'E';
-            if (isCatE) {
+            const isMaterialItem = it.item_type === 'material';
+            if (isCatE && !isMaterialItem) {
                 // Expected Value: Mandatory number >= 0
                 const expValRaw = it.expected_value;
                 const expValNum = Number(expValRaw);
@@ -3036,7 +3065,7 @@ export default function PurchaseRequisitionForm({
                 } else if (it.start_date && it.end_date && it.end_date < it.start_date) {
                     errs[prefix + 'end_date'] = 'End Date cannot be earlier than Start Date.';
                 }
-            } else if (it.start_date && it.end_date && it.end_date < it.start_date) {
+            } else if (!isMaterialItem && it.start_date && it.end_date && it.end_date < it.start_date) {
                 errs[prefix + 'end_date'] = 'End Date cannot be earlier than Start Date.';
             }
         });
@@ -3092,7 +3121,11 @@ export default function PurchaseRequisitionForm({
                     setActiveItemIndex(i);
                     const firstKey = itemErrKeys[0];
                     if (firstKey.includes('expected_value') || firstKey.includes('overall_limit')) {
-                        setActiveItemTab('enhanced-limits');
+                        if (items[i]?.item_type !== 'material') {
+                            setActiveItemTab('enhanced-limits');
+                        } else {
+                            setActiveItemTab('general');
+                        }
                     } else if (firstKey.includes('start_date') || firstKey.includes('end_date') || firstKey.includes('quantity')) {
                         setActiveItemTab('quantity-date');
                     } else if (firstKey.includes('unit_price') || firstKey.includes('unit_of_measure') || firstKey.includes('currency')) {
@@ -5905,64 +5938,68 @@ export default function PurchaseRequisitionForm({
                                     />
                                 </div>
 
-                                {/* Start Date (Mandatory when Category is E) */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label htmlFor={`item_${activeItemIndex}_start_date`} className="block text-xs font-semibold text-[#1c2d42]">
-                                            Start Date {isEnhancedLimits && <span className="text-rose-500">*</span>}
-                                        </label>
-                                        <span className="text-[10px] text-[#556b82]">
-                                            {isEnhancedLimits ? 'Mandatory for Limit' : 'Validity Start'}
-                                        </span>
-                                    </div>
-                                    <input
-                                        id={`item_${activeItemIndex}_start_date`}
-                                        type="date"
-                                        value={currentItem?.start_date || ''}
-                                        onChange={(e) => updateCurrentItem({ start_date: e.target.value })}
-                                        className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors bg-white ${
-                                            fieldErrors[`item_${activeItemIndex}_start_date`]
-                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
-                                                : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
-                                        }`}
-                                    />
-                                    {fieldErrors[`item_${activeItemIndex}_start_date`] && (
-                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
-                                            <AlertCircle className="h-3 w-3 shrink-0" />
-                                            <span>{fieldErrors[`item_${activeItemIndex}_start_date`]}</span>
-                                        </p>
-                                    )}
-                                </div>
+                                {!isCurrentItemMaterial && (
+                                    <>
+                                        {/* Start Date (Mandatory when Category is E) */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label htmlFor={`item_${activeItemIndex}_start_date`} className="block text-xs font-semibold text-[#1c2d42]">
+                                                    Start Date {isEnhancedLimits && <span className="text-rose-500">*</span>}
+                                                </label>
+                                                <span className="text-[10px] text-[#556b82]">
+                                                    {isEnhancedLimits ? 'Mandatory for Limit' : 'Validity Start'}
+                                                </span>
+                                            </div>
+                                            <input
+                                                id={`item_${activeItemIndex}_start_date`}
+                                                type="date"
+                                                value={currentItem?.start_date || ''}
+                                                onChange={(e) => updateCurrentItem({ start_date: e.target.value })}
+                                                className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors bg-white ${
+                                                    fieldErrors[`item_${activeItemIndex}_start_date`]
+                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                }`}
+                                            />
+                                            {fieldErrors[`item_${activeItemIndex}_start_date`] && (
+                                                <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                                    <AlertCircle className="h-3 w-3 shrink-0" />
+                                                    <span>{fieldErrors[`item_${activeItemIndex}_start_date`]}</span>
+                                                </p>
+                                            )}
+                                        </div>
 
-                                {/* End Date (Mandatory when Category is E) */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label htmlFor={`item_${activeItemIndex}_end_date`} className="block text-xs font-semibold text-[#1c2d42]">
-                                            End Date {isEnhancedLimits && <span className="text-rose-500">*</span>}
-                                        </label>
-                                        <span className="text-[10px] text-[#556b82]">
-                                            {isEnhancedLimits ? 'Mandatory for Limit' : 'Validity End'}
-                                        </span>
-                                    </div>
-                                    <input
-                                        id={`item_${activeItemIndex}_end_date`}
-                                        type="date"
-                                        value={currentItem?.end_date || ''}
-                                        min={currentItem?.start_date || undefined}
-                                        onChange={(e) => updateCurrentItem({ end_date: e.target.value })}
-                                        className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors bg-white ${
-                                            fieldErrors[`item_${activeItemIndex}_end_date`]
-                                                ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
-                                                : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
-                                        }`}
-                                    />
-                                    {fieldErrors[`item_${activeItemIndex}_end_date`] && (
-                                        <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
-                                            <AlertCircle className="h-3 w-3 shrink-0" />
-                                            <span>{fieldErrors[`item_${activeItemIndex}_end_date`]}</span>
-                                        </p>
-                                    )}
-                                </div>
+                                        {/* End Date (Mandatory when Category is E) */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label htmlFor={`item_${activeItemIndex}_end_date`} className="block text-xs font-semibold text-[#1c2d42]">
+                                                    End Date {isEnhancedLimits && <span className="text-rose-500">*</span>}
+                                                </label>
+                                                <span className="text-[10px] text-[#556b82]">
+                                                    {isEnhancedLimits ? 'Mandatory for Limit' : 'Validity End'}
+                                                </span>
+                                            </div>
+                                            <input
+                                                id={`item_${activeItemIndex}_end_date`}
+                                                type="date"
+                                                value={currentItem?.end_date || ''}
+                                                min={currentItem?.start_date || undefined}
+                                                onChange={(e) => updateCurrentItem({ end_date: e.target.value })}
+                                                className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] focus:outline-none transition-colors bg-white ${
+                                                    fieldErrors[`item_${activeItemIndex}_end_date`]
+                                                        ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
+                                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                                }`}
+                                            />
+                                            {fieldErrors[`item_${activeItemIndex}_end_date`] && (
+                                                <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                                    <AlertCircle className="h-3 w-3 shrink-0" />
+                                                    <span>{fieldErrors[`item_${activeItemIndex}_end_date`]}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Planned Delivery Time (in Days) (Input) */}
                                 <div>

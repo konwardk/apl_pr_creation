@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { User } from '@/types';
 import SapAppLayout from '@/layouts/sap-app-layout';
@@ -27,6 +27,17 @@ import {
     ChevronUp,
     Download,
     ExternalLink,
+    ShieldCheck,
+    Truck,
+    Sparkles,
+    Search,
+    Wrench,
+    Hash,
+    MapPin,
+    LayoutGrid,
+    ListFilter,
+    Check,
+    Info,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
@@ -81,6 +92,11 @@ interface PrItem {
     attachment_doc_type?: string;
     attachment_name?: string;
     attachments?: any[];
+    supplier_name?: string;
+    moving_average_price?: string | number;
+    standard_price?: string | number;
+    inventory_valuation_procedure?: string;
+    price_control?: string;
 }
 
 interface ContractRequisition {
@@ -133,7 +149,12 @@ interface PurchaseRequisition {
     updated_at: string;
     items?: PrItem[];
     attachments?: any[];
-    header_option?: any;
+    header_option?: {
+        id?: number;
+        code?: string;
+        name?: string;
+        description?: string;
+    } | null;
     user?: any;
     contract_requisition?: ContractRequisition;
     contract_requisition_local?: ContractRequisition;
@@ -161,6 +182,32 @@ const CR_TABS = [
     { id: 'others', label: 'Other Terms & Specs', field: 'others' },
 ] as const;
 
+const ITEM_DETAIL_TABS = [
+    { id: 'general', label: 'General Information', icon: Package },
+    { id: 'enhanced-limits', label: 'Enhanced Limits', icon: ShieldCheck },
+    { id: 'quantity-date', label: 'Quantity and Date', icon: Calendar },
+    { id: 'valuation', label: 'Valuation', icon: DollarSign },
+    { id: 'account-assignment', label: 'Account Assignment', icon: Layers },
+    { id: 'source-of-supply', label: 'Source of Supply', icon: Building2 },
+    { id: 'contact-info', label: 'Contact Information', icon: UserIcon },
+    { id: 'notes', label: 'Notes & Attachments', icon: Paperclip },
+] as const;
+
+function formatDate(dateStr?: string | null): string {
+    if (!dateStr) return '—';
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return String(dateStr);
+        return d.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+        });
+    } catch {
+        return String(dateStr);
+    }
+}
+
 export default function ShowPurchaseRequisitionPage({
     purchaseRequisition,
     contractRequisition: crProp,
@@ -179,6 +226,8 @@ export default function ShowPurchaseRequisitionPage({
 
     const [activeCrTab, setActiveCrTab] = useState<string>('contract_title');
     const [selectedItemIndex, setSelectedItemIndex] = useState<number>(0);
+    const [activeItemDetailTab, setActiveItemDetailTab] = useState<string>('general');
+    const [itemDetailViewMode, setItemDetailViewMode] = useState<'tabs' | 'all'>('tabs');
     const [showPayloadModal, setShowPayloadModal] = useState<boolean>(false);
     const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
     const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -201,6 +250,28 @@ export default function ShowPurchaseRequisitionPage({
     };
 
     const currentItem = pr.items && pr.items.length > 0 ? pr.items[selectedItemIndex] : null;
+    const isCurrentItemMaterial = currentItem?.item_type === 'material';
+
+    const isCurrentItemEnhancedLimits = !isCurrentItemMaterial && Boolean(
+        currentItem?.item_category === 'E' ||
+        (currentItem?.expected_value !== undefined && currentItem?.expected_value !== null && Number(currentItem.expected_value) > 0) ||
+        (currentItem?.overall_limit !== undefined && currentItem?.overall_limit !== null && Number(currentItem.overall_limit) > 0) ||
+        currentItem?.start_date ||
+        currentItem?.end_date
+    );
+
+    useEffect(() => {
+        if (activeItemDetailTab === 'enhanced-limits' && !isCurrentItemEnhancedLimits) {
+            setActiveItemDetailTab('general');
+        }
+    }, [isCurrentItemEnhancedLimits, activeItemDetailTab]);
+
+    // Filter matching attachments for current item
+    const currentItemAttachments = (pr.attachments || []).filter(
+        (att) =>
+            (currentItem && att.item_number === currentItem.item_number) ||
+            (currentItem && att.purchase_requisition_item_id === currentItem.id)
+    );
 
     return (
         <SapAppLayout
@@ -256,7 +327,7 @@ export default function ShowPurchaseRequisitionPage({
                                     )}
 
                                     {pr.sap_pr_number && (
-                                        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-mono font-bold text-[#0057c2] border border-blue-200">
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-xs font-mono font-bold text-[#0070f2] border border-blue-200">
                                             SAP PR #{pr.sap_pr_number}
                                         </span>
                                     )}
@@ -394,8 +465,8 @@ export default function ShowPurchaseRequisitionPage({
                     </div>
 
                     <div className="p-6 space-y-6">
-                        {/* Row 1: Description & Document Type */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Row 1: Description, Document Type & Header Option */}
+                        <div className={`grid grid-cols-1 ${pr.header_option ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6`}>
                             <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3.5">
                                 <span className="block text-[11px] font-semibold text-[#556b82] uppercase tracking-wider">
                                     Purchase Requisition Description
@@ -421,6 +492,27 @@ export default function ShowPurchaseRequisitionPage({
                                     <p className="mt-1 text-[11px] text-[#556b82]">{documentType.extra}</p>
                                 )}
                             </div>
+
+                            {pr.header_option && (
+                                <div className="rounded-lg border border-purple-100 bg-purple-50/40 p-3.5">
+                                    <span className="block text-[11px] font-semibold text-purple-700 uppercase tracking-wider">
+                                        Header Option
+                                    </span>
+                                    <div className="mt-1 flex items-center gap-2">
+                                        {pr.header_option.code && (
+                                            <span className="font-mono font-bold text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded border border-purple-200">
+                                                {pr.header_option.code}
+                                            </span>
+                                        )}
+                                        <span className="text-sm font-semibold text-[#1c2d42]">
+                                            {pr.header_option.name}
+                                        </span>
+                                    </div>
+                                    {pr.header_option.description && (
+                                        <p className="mt-1 text-[11px] text-[#556b82]">{pr.header_option.description}</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Row 2: Requisitioner Details (1. Name, 2. Designation, 3. Department) */}
@@ -651,23 +743,25 @@ export default function ShowPurchaseRequisitionPage({
                         <table className="w-full text-left text-xs text-[#1c2d42]">
                             <thead className="bg-[#f8fafc] text-[11px] font-semibold text-[#556b82] border-b border-slate-200">
                                 <tr>
-                                    <th className="py-3 px-4">Item #</th>
-                                    <th className="py-3 px-4">Type</th>
-                                    <th className="py-3 px-4">Material / Service</th>
-                                    <th className="py-3 px-4">Description</th>
-                                    <th className="py-3 px-4">Material Group</th>
-                                    <th className="py-3 px-4 text-right">Quantity</th>
-                                    <th className="py-3 px-4 text-right">Unit Price</th>
-                                    <th className="py-3 px-4 text-right">Total Price</th>
-                                    <th className="py-3 px-4">Plant</th>
-                                    <th className="py-3 px-4">Delivery Date</th>
-                                    <th className="py-3 px-4 text-center">Attachment</th>
+                                    <th className="py-3 px-3">Item #</th>
+                                    <th className="py-3 px-2.5">Type</th>
+                                    <th className="py-3 px-2.5">Item Cat.</th>
+                                    <th className="py-3 px-2.5">Acct. Assign.</th>
+                                    <th className="py-3 px-3">Material / Service</th>
+                                    <th className="py-3 px-3">Description</th>
+                                    <th className="py-3 px-2.5">Material Group</th>
+                                    <th className="py-3 px-3 text-right">Quantity & UoM</th>
+                                    <th className="py-3 px-3 text-right">Valuation Price</th>
+                                    <th className="py-3 px-3 text-right">Total Price</th>
+                                    <th className="py-3 px-2.5">Plant</th>
+                                    <th className="py-3 px-2.5">Delivery Date</th>
+                                    <th className="py-3 px-2 text-center">Attachment</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                                 {!pr.items || pr.items.length === 0 ? (
                                     <tr>
-                                        <td colSpan={11} className="py-8 text-center text-xs text-[#556b82]">
+                                        <td colSpan={13} className="py-8 text-center text-xs text-[#556b82]">
                                             No line items found for this purchase requisition.
                                         </td>
                                     </tr>
@@ -679,13 +773,18 @@ export default function ShowPurchaseRequisitionPage({
                                                 key={item.id || idx}
                                                 onClick={() => setSelectedItemIndex(idx)}
                                                 className={`cursor-pointer transition-colors ${
-                                                    isSelected ? 'bg-blue-50/60 font-medium' : 'hover:bg-slate-50'
+                                                    isSelected ? 'bg-blue-50/70 font-medium' : 'hover:bg-slate-50'
                                                 }`}
                                             >
-                                                <td className="py-3 px-4 font-mono font-bold text-[#0070f2]">
-                                                    {item.item_number}
+                                                <td className="py-3 px-3 font-mono font-bold text-[#0070f2]">
+                                                    <div className="flex items-center gap-1.5">
+                                                        {isSelected && (
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-[#0070f2] shrink-0" />
+                                                        )}
+                                                        <span>{item.item_number}</span>
+                                                    </div>
                                                 </td>
-                                                <td className="py-3 px-4">
+                                                <td className="py-3 px-2.5">
                                                     <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
                                                         item.item_type === 'service'
                                                             ? 'bg-purple-100 text-purple-800'
@@ -694,19 +793,37 @@ export default function ShowPurchaseRequisitionPage({
                                                         {item.item_type || 'material'}
                                                     </span>
                                                 </td>
-                                                <td className="py-3 px-4 font-mono font-semibold text-[#1c2d42]">
+                                                <td className="py-3 px-2.5 font-mono text-[11px]">
+                                                    {item.item_category ? (
+                                                        <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                                                            {item.item_category}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-slate-400">Standard</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-3 px-2.5 font-mono text-[11px]">
+                                                    {item.account_assignment_category ? (
+                                                        <span className="inline-flex items-center rounded bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                                                            {item.account_assignment_category}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-slate-400 text-[10px]">Stock</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-3 px-3 font-mono font-semibold text-[#1c2d42]">
                                                     {item.material_code || '—'}
                                                 </td>
-                                                <td className="py-3 px-4 max-w-xs truncate" title={item.description}>
+                                                <td className="py-3 px-3 max-w-xs truncate" title={item.description}>
                                                     {item.description}
                                                 </td>
-                                                <td className="py-3 px-4 font-mono text-[11px] text-[#556b82]">
+                                                <td className="py-3 px-2.5 font-mono text-[11px] text-[#556b82]">
                                                     {item.material_group}
                                                 </td>
-                                                <td className="py-3 px-4 text-right font-mono font-semibold text-[#1c2d42]">
+                                                <td className="py-3 px-3 text-right font-mono font-semibold text-[#1c2d42]">
                                                     {Number(item.quantity).toLocaleString()} {item.unit_of_measure}
                                                 </td>
-                                                <td className="py-3 px-4 text-right font-mono text-slate-700">
+                                                <td className="py-3 px-3 text-right font-mono text-slate-700">
                                                     {formatCurrency(Number(item.unit_price), item.currency || pr.currency)}
                                                     {item.price_unit > 1 && (
                                                         <span className="text-[10px] text-slate-400 block">
@@ -714,16 +831,16 @@ export default function ShowPurchaseRequisitionPage({
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="py-3 px-4 text-right font-mono font-bold text-[#0070f2]">
+                                                <td className="py-3 px-3 text-right font-mono font-bold text-[#0070f2]">
                                                     {formatCurrency(Number(item.total_price), item.currency || pr.currency)}
                                                 </td>
-                                                <td className="py-3 px-4 font-mono text-[11px]">
+                                                <td className="py-3 px-2.5 font-mono text-[11px]">
                                                     {item.plant}
                                                 </td>
-                                                <td className="py-3 px-4 text-[11px] text-slate-600">
-                                                    {item.delivery_date ? new Date(item.delivery_date).toLocaleDateString('en-IN') : '—'}
+                                                <td className="py-3 px-2.5 text-[11px] text-slate-600">
+                                                    {formatDate(item.delivery_date)}
                                                 </td>
-                                                <td className="py-3 px-4 text-center">
+                                                <td className="py-3 px-2 text-center">
                                                     {item.attachment_name ? (
                                                         <span className="inline-flex items-center gap-1 text-[11px] text-[#0070f2] font-semibold">
                                                             <Paperclip className="h-3 w-3" />
@@ -741,131 +858,752 @@ export default function ShowPurchaseRequisitionPage({
                         </table>
                     </div>
 
-                    {/* Selected Item Full Detail View Card */}
+                    {/* Selected Item Full Comprehensive Detail View Card */}
                     {currentItem && (
-                        <div className="border-t border-slate-200 bg-[#fbfcfd] p-6 space-y-4">
-                            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                                <div className="flex items-center gap-2">
-                                    <span className="rounded-md bg-blue-100 text-[#0070f2] px-2 py-0.5 text-xs font-mono font-bold">
+                        <div className="border-t border-slate-200 bg-[#fbfcfd] p-6 space-y-5">
+                            {/* Detail Card Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <span className="rounded-md bg-blue-100 text-[#0070f2] px-2.5 py-1 text-xs font-mono font-bold">
                                         Item #{currentItem.item_number}
                                     </span>
-                                    <h3 className="text-xs font-bold text-[#1c2d42]">
-                                        Detailed Specification: {currentItem.description}
+                                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${
+                                        currentItem.item_type === 'service'
+                                            ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                            : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                    }`}>
+                                        {currentItem.item_type === 'service' ? 'Service (2)' : 'Material (1)'}
+                                    </span>
+                                    {currentItem.item_category && (
+                                        <span className="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                                            Cat: {currentItem.item_category === 'E' ? 'E (Enhanced Limits)' : currentItem.item_category}
+                                        </span>
+                                    )}
+                                    <h3 className="text-sm font-bold text-[#1c2d42] truncate max-w-md" title={currentItem.description}>
+                                        {currentItem.description}
                                     </h3>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setExpandedItemDetails(!expandedItemDetails)}
-                                    className="text-[11px] font-semibold text-[#0070f2] flex items-center gap-1"
-                                >
-                                    <span>{expandedItemDetails ? 'Collapse Details' : 'Expand Details'}</span>
-                                    {expandedItemDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                </button>
+
+                                <div className="flex items-center gap-3 self-end sm:self-auto">
+                                    {/* View Mode Toggle: Tabbed View vs All Sections */}
+                                    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs shadow-2xs">
+                                        <button
+                                            type="button"
+                                            onClick={() => setItemDetailViewMode('tabs')}
+                                            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                                                itemDetailViewMode === 'tabs'
+                                                    ? 'bg-blue-50 text-[#0070f2]'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            <ListFilter className="h-3.5 w-3.5" />
+                                            <span>Tabbed View</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setItemDetailViewMode('all')}
+                                            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                                                itemDetailViewMode === 'all'
+                                                    ? 'bg-blue-50 text-[#0070f2]'
+                                                    : 'text-slate-600 hover:text-slate-900'
+                                            }`}
+                                        >
+                                            <LayoutGrid className="h-3.5 w-3.5" />
+                                            <span>Show All Sections</span>
+                                        </button>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setExpandedItemDetails(!expandedItemDetails)}
+                                        className="text-xs font-semibold text-[#0070f2] flex items-center gap-1 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-2xs hover:bg-slate-50 transition-colors"
+                                    >
+                                        <span>{expandedItemDetails ? 'Collapse' : 'Expand'}</span>
+                                        {expandedItemDetails ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                    </button>
+                                </div>
                             </div>
 
                             {expandedItemDetails && (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
-                                    {/* Column 1: Material & Supply Details */}
-                                    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-                                        <h4 className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-500 border-b border-slate-100 pb-1.5">
-                                            Material & Vendor Information
-                                        </h4>
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Material Code / Product</span>
-                                            <span className="font-mono font-semibold text-[#1c2d42]">
-                                                {currentItem.material_code || '— (Direct description item)'}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Supplier Part Number</span>
-                                            <span className="font-mono text-[#1c2d42]">
-                                                {currentItem.supplier_material_number || currentItem.manufacturer_part_number || '—'}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Material Group</span>
-                                            <span className="font-mono text-[#1c2d42]">{currentItem.material_group}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Desired / Fixed Vendor</span>
-                                            <span className="font-semibold text-[#1c2d42]">
-                                                {currentItem.desired_supplier || currentItem.fixed_vendor || '—'}
-                                            </span>
-                                        </div>
-                                    </div>
+                                <div className="space-y-6">
+                                    {/* In Tabbed View: Navigation Bar */}
+                                    {itemDetailViewMode === 'tabs' && (
+                                        <div className="border-b border-[#d9e2ec] bg-white rounded-lg border p-1 shadow-2xs overflow-x-auto no-scrollbar">
+                                            <nav className="flex space-x-1">
+                                                {ITEM_DETAIL_TABS.filter((tab) => tab.id !== 'enhanced-limits' || isCurrentItemEnhancedLimits).map((tab) => {
+                                                    const isActive = activeItemDetailTab === tab.id;
+                                                    const isLimitsTab = tab.id === 'enhanced-limits';
+                                                    const IconComponent = tab.icon;
 
-                                    {/* Column 2: Account Assignment & Logistics */}
-                                    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-                                        <h4 className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-500 border-b border-slate-100 pb-1.5">
-                                            Account Assignment & Organization
-                                        </h4>
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Account Assignment Cat (AAC)</span>
-                                            <span className="font-mono font-semibold text-[#1c2d42]">
-                                                {currentItem.account_assignment_category ? `${currentItem.account_assignment_category} (Cost Center)` : '— (Standard Inventory)'}
-                                            </span>
+                                                    return (
+                                                        <button
+                                                            key={tab.id}
+                                                            type="button"
+                                                            onClick={() => setActiveItemDetailTab(tab.id)}
+                                                            className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-md whitespace-nowrap transition-all ${
+                                                                isActive
+                                                                    ? 'bg-[#0070f2] text-white shadow-xs'
+                                                                    : 'text-[#556b82] hover:bg-slate-100 hover:text-[#1c2d42]'
+                                                            }`}
+                                                        >
+                                                            <IconComponent className="h-3.5 w-3.5" />
+                                                            <span>{tab.label}</span>
+                                                            {isLimitsTab && isCurrentItemEnhancedLimits && (
+                                                                <span className={`px-1 py-0.2 rounded text-[9px] font-bold ${
+                                                                    isActive ? 'bg-amber-300 text-amber-950' : 'bg-amber-100 text-amber-800'
+                                                                }`}>
+                                                                    E
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </nav>
                                         </div>
-                                        {currentItem.cost_center && (
-                                            <div>
-                                                <span className="text-[#556b82] text-[11px] block">Cost Center</span>
-                                                <span className="font-mono text-[#0070f2] font-semibold">{currentItem.cost_center}</span>
-                                            </div>
-                                        )}
-                                        {currentItem.gl_account && (
-                                            <div>
-                                                <span className="text-[#556b82] text-[11px] block">G/L Account</span>
-                                                <span className="font-mono text-[#1c2d42]">{currentItem.gl_account}</span>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Purchasing Org / Group</span>
-                                            <span className="font-mono text-[#1c2d42]">
-                                                {currentItem.purchasing_organization || '1100'} / {currentItem.purchasing_group || '103'}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="text-[#556b82] text-[11px] block">Storage Location</span>
-                                            <span className="font-mono text-[#1c2d42]">{currentItem.storage_location || '—'}</span>
-                                        </div>
-                                    </div>
+                                    )}
 
-                                    {/* Column 3: Texts & Attachments */}
-                                    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-                                        <h4 className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-500 border-b border-slate-100 pb-1.5">
-                                            Item Texts & Attached Documents
-                                        </h4>
-                                        {currentItem.item_text && (
-                                            <div>
-                                                <span className="text-[#556b82] text-[11px] block">Item Text</span>
-                                                <p className="text-slate-700 italic">{currentItem.item_text}</p>
+                                    {/* SECTION 1: General Information */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'general') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <Package className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        General Information
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Material, Item Category, Batch & Storage Specs
+                                                </span>
                                             </div>
-                                        )}
-                                        {currentItem.item_note && (
-                                            <div>
-                                                <span className="text-[#556b82] text-[11px] block">Item Note</span>
-                                                <p className="text-slate-700 italic">{currentItem.item_note}</p>
-                                            </div>
-                                        )}
-                                        {currentItem.delivery_text && (
-                                            <div>
-                                                <span className="text-[#556b82] text-[11px] block">Delivery Instructions</span>
-                                                <p className="text-slate-700 italic">{currentItem.delivery_text}</p>
-                                            </div>
-                                        )}
-                                        {currentItem.attachment_name && (
-                                            <div>
-                                                <span className="text-[#556b82] text-[11px] block mb-1">Attached Document</span>
-                                                <div className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs text-[#0070f2]">
-                                                    <Paperclip className="h-3.5 w-3.5" />
-                                                    <span className="font-medium truncate max-w-[180px]">{currentItem.attachment_name}</span>
-                                                    <span className="text-[10px] text-slate-400">({currentItem.attachment_doc_type || 'SL1'})</span>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Product Type Group</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.item_type === 'service' ? 'Service (2)' : 'Material (1)'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Material Number / Code</span>
+                                                    <span className="font-mono font-bold text-[#0070f2] mt-0.5 block">
+                                                        {currentItem.material_code || '— (Direct description item)'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Item Category</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.item_category ? (
+                                                            currentItem.item_category === 'E' ? 'E (Enhanced Limits)' : currentItem.item_category
+                                                        ) : (
+                                                            'Standard'
+                                                        )}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Account Assignment Cat (AAC)</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.account_assignment_category
+                                                            ? `${currentItem.account_assignment_category} (Cost Center)`
+                                                            : 'Standard Stock / Inventory'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Material Group</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.material_group || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Plant (Valuation Area)</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.plant || pr.plant}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Storage Location</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.storage_location || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Purchasing Group</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.purchasing_group || '103'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Supplier Material Number</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.supplier_material_number || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Manufacturer Part Number (MPN)</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.manufacturer_part_number || currentItem.supplier_material_number || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Batch Number</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.batch || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Revision Level</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.revision_level || '—'}
+                                                    </span>
                                                 </div>
                                             </div>
-                                        )}
-                                        {!currentItem.item_text && !currentItem.item_note && !currentItem.delivery_text && !currentItem.attachment_name && (
-                                            <p className="text-slate-400 italic text-xs">No extra item texts or documents attached.</p>
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 2: Enhanced Limits */}
+                                    {isCurrentItemEnhancedLimits && (itemDetailViewMode === 'all' || activeItemDetailTab === 'enhanced-limits') && (
+                                        <div className="rounded-xl border border-amber-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-amber-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-100 text-amber-800">
+                                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                                                        Enhanced Limits (Item Category E)
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-amber-800 font-semibold bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                                                    SAP Limit Order Procurement
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Expected Value</span>
+                                                    <div className="mt-1 text-base font-bold font-mono text-[#0070f2]">
+                                                        {currentItem.expected_value !== undefined && currentItem.expected_value !== null && Number(currentItem.expected_value) > 0
+                                                            ? formatCurrency(Number(currentItem.expected_value), currentItem.currency || pr.currency)
+                                                            : '—'}
+                                                    </div>
+                                                    <span className="text-[10px] text-[#556b82] mt-1 block">Expected overall expenditure</span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Overall Limit</span>
+                                                    <div className="mt-1 text-base font-bold font-mono text-amber-900">
+                                                        {currentItem.overall_limit !== undefined && currentItem.overall_limit !== null && Number(currentItem.overall_limit) > 0
+                                                            ? formatCurrency(Number(currentItem.overall_limit), currentItem.currency || pr.currency)
+                                                            : '—'}
+                                                    </div>
+                                                    <span className="text-[10px] text-[#556b82] mt-1 block">Maximum allowable upper ceiling</span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Validity Start Date</span>
+                                                    <div className="mt-1 font-semibold text-[#1c2d42]">
+                                                        {formatDate(currentItem.start_date)}
+                                                    </div>
+                                                    <span className="text-[10px] text-[#556b82] mt-1 block">Limit validity commencement</span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-amber-100 bg-amber-50/40 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Validity End Date</span>
+                                                    <div className="mt-1 font-semibold text-[#1c2d42]">
+                                                        {formatDate(currentItem.end_date)}
+                                                    </div>
+                                                    <span className="text-[10px] text-[#556b82] mt-1 block">Limit expiration cutoff</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 3: Quantity and Date */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'quantity-date') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <Calendar className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        Quantity and Date
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Requisition, Delivery, Lead Time & Processing Days
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Quantity & UoM</span>
+                                                    <span className="font-mono font-bold text-sm text-[#0070f2] mt-0.5 block">
+                                                        {Number(currentItem.quantity).toLocaleString()} {currentItem.unit_of_measure}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Delivery Date</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {formatDate(currentItem.delivery_date)}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Requisition Date</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {formatDate(currentItem.requisition_date)}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Release Date</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {formatDate(currentItem.release_date)}
+                                                    </span>
+                                                </div>
+
+                                                {!isCurrentItemMaterial && (
+                                                    <>
+                                                        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                            <span className="text-[#556b82] text-[11px] block font-medium">Validity Start Date</span>
+                                                            <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                                {formatDate(currentItem.start_date)}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                            <span className="text-[#556b82] text-[11px] block font-medium">Validity End Date</span>
+                                                            <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                                {formatDate(currentItem.end_date)}
+                                                            </span>
+                                                        </div>
+                                                    </>
+                                                )}
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Planned Delivery Time</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.planned_delivery_time !== undefined && currentItem.planned_delivery_time !== null
+                                                            ? `${currentItem.planned_delivery_time} Days`
+                                                            : '0 Days'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">GR Processing Time</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.gr_processing_time !== undefined && currentItem.gr_processing_time !== null
+                                                            ? `${currentItem.gr_processing_time} Days`
+                                                            : '0 Days'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 4: Valuation */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'valuation') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <DollarSign className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        Valuation & Pricing
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Unit Price, Currency, Tax Code, Price Control & Net Value
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Valuation Price</span>
+                                                    <span className="font-mono font-bold text-sm text-[#1c2d42] mt-0.5 block">
+                                                        {formatCurrency(Number(currentItem.unit_price), currentItem.currency || pr.currency)}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Price Unit</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        per {currentItem.price_unit || 1} {currentItem.unit_of_measure}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Currency</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.currency || pr.currency}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Calculated Total Price</span>
+                                                    <span className="font-mono font-bold text-sm text-[#0070f2] mt-0.5 block">
+                                                        {formatCurrency(Number(currentItem.total_price), currentItem.currency || pr.currency)}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Tax Code</span>
+                                                    <span className="font-mono font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.tax_code ? `${currentItem.tax_code} (Applied)` : '— (No Tax Code)'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">PO Price Type</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.po_price_type || 'Do not adopt'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Price Control Procedure</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.inventory_valuation_procedure
+                                                            ? currentItem.inventory_valuation_procedure === 'V'
+                                                                ? 'V (Moving Average Price)'
+                                                                : 'S (Standard Price)'
+                                                            : (currentItem.item_type === 'service' ? 'Service Rate' : 'Standard Inventory')}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Valuation Basis Formula</span>
+                                                    <span className="font-mono text-[11px] text-[#556b82] mt-0.5 block">
+                                                        ({currentItem.quantity} / {currentItem.price_unit || 1}) × {currentItem.unit_price}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 5: Account Assignment */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'account-assignment') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <Layers className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        Account Assignment
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Cost Center, G/L Account & Tracking Identifier
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Account Assignment Cat (AAC)</span>
+                                                    <span className="font-mono font-bold text-[#0070f2] mt-0.5 block">
+                                                        {currentItem.account_assignment_category
+                                                            ? `${currentItem.account_assignment_category} (Cost Center Expense)`
+                                                            : 'Blank (Standard Inventory)'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Cost Center</span>
+                                                    <span className="font-mono font-bold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.cost_center || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">G/L Account</span>
+                                                    <span className="font-mono font-bold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.gl_account || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Requirement Tracking Number</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.requirement_tracking_number || '—'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 6: Source of Supply */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'source-of-supply') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <Building2 className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        Source of Supply
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Vendor, Supplying Plant, Outline Agreement & PIR
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Desired Vendor</span>
+                                                    <span className="font-mono font-bold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.desired_supplier || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Fixed Vendor</span>
+                                                    <span className="font-mono font-bold text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.fixed_vendor || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Supplying Plant</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.supplying_plant || '— (Direct Vendor)'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Purchase Organisation</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.purchasing_organization || '1100'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Outline Agreement</span>
+                                                    <span className="font-mono font-semibold text-[#0070f2] mt-0.5 block">
+                                                        {currentItem.agreement_number || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Agreement Item</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.agreement_item || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Purchasing Info Record (PIR)</span>
+                                                    <span className="font-mono font-semibold text-purple-700 mt-0.5 block">
+                                                        {currentItem.info_record || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Manufacturer Part Number</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.manufacturer_part_number || currentItem.supplier_material_number || '—'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 7: Contact Information */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'contact-info') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <UserIcon className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        Contact Information
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Requisitioner, Department, Designation & Buyer Groups
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Requisitioner</span>
+                                                    <span className="font-bold text-[#1c2d42] text-sm mt-0.5 block">
+                                                        {cr?.requisitioner_name || pr.requisitioner || pr.user?.name || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Requesting Department</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {cr?.req_department || pr.user?.department?.name || 'Assam Petro-Chemicals Ltd.'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Requesting Designation</span>
+                                                    <span className="font-semibold text-[#1c2d42] mt-0.5 block">
+                                                        {cr?.req_designation || pr.user?.designation || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Requirement Tracking Number</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.requirement_tracking_number || '—'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Purchasing Organization</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.purchasing_organization || '1100'}
+                                                    </span>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3.5">
+                                                    <span className="text-[#556b82] text-[11px] block font-medium">Purchasing Group</span>
+                                                    <span className="font-mono text-[#1c2d42] mt-0.5 block">
+                                                        {currentItem.purchasing_group || '103'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* SECTION 8: Notes & Attachments */}
+                                    {(itemDetailViewMode === 'all' || activeItemDetailTab === 'notes') && (
+                                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-2xs space-y-4">
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-100 text-[#0070f2]">
+                                                        <Paperclip className="h-3.5 w-3.5" />
+                                                    </div>
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#1c2d42]">
+                                                        Notes & Attachments
+                                                    </h4>
+                                                </div>
+                                                <span className="text-[11px] text-[#556b82]">
+                                                    Item Texts, PO Notes, Delivery Instructions & Documents
+                                                </span>
+                                            </div>
+
+                                            {/* Notes Grid */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                                                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-1.5">
+                                                    <span className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-600 block">
+                                                        Item Text
+                                                    </span>
+                                                    <p className="text-slate-700 italic whitespace-pre-wrap min-h-[40px]">
+                                                        {currentItem.item_text || <span className="text-slate-400 font-normal">No item text maintained.</span>}
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-1.5">
+                                                    <span className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-600 block">
+                                                        Item Note
+                                                    </span>
+                                                    <p className="text-slate-700 italic whitespace-pre-wrap min-h-[40px]">
+                                                        {currentItem.item_note || <span className="text-slate-400 font-normal">No item note maintained.</span>}
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-1.5">
+                                                    <span className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-600 block">
+                                                        Delivery Instructions
+                                                    </span>
+                                                    <p className="text-slate-700 italic whitespace-pre-wrap min-h-[40px]">
+                                                        {currentItem.delivery_text || <span className="text-slate-400 font-normal">No delivery instructions maintained.</span>}
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-1.5">
+                                                    <span className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-600 block">
+                                                        Material PO Text
+                                                    </span>
+                                                    <p className="text-slate-700 italic whitespace-pre-wrap min-h-[40px]">
+                                                        {currentItem.material_po_text || <span className="text-slate-400 font-normal">No PO text maintained.</span>}
+                                                    </p>
+                                                </div>
+
+                                                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3.5 space-y-1.5 md:col-span-2">
+                                                    <span className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-600 block">
+                                                        Closure Comment
+                                                    </span>
+                                                    <p className="text-slate-700 italic whitespace-pre-wrap min-h-[40px]">
+                                                        {currentItem.closure_comment || <span className="text-slate-400 font-normal">No closure comment maintained.</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Item Attached Document */}
+                                            <div className="border-t border-slate-100 pt-3">
+                                                <span className="font-bold text-[#1c2d42] uppercase text-[10px] tracking-wider text-slate-600 block mb-2">
+                                                    Line Item Attached Documents
+                                                </span>
+
+                                                {currentItemAttachments.length > 0 ? (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                                        {currentItemAttachments.map((att) => (
+                                                            <div
+                                                                key={att.id}
+                                                                className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/60 p-2.5 text-xs text-blue-900"
+                                                            >
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <Paperclip className="h-3.5 w-3.5 text-[#0070f2] shrink-0" />
+                                                                    <div className="min-w-0">
+                                                                        <p className="font-semibold truncate max-w-[170px]" title={att.file_name}>
+                                                                            {att.file_name}
+                                                                        </p>
+                                                                        <span className="text-[10px] text-blue-600">
+                                                                            Type: {att.attachment_doc_type || 'SL1'}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <a
+                                                                    href={`/attachments/${att.id}/download`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="shrink-0 ml-2 rounded p-1 text-[#0070f2] hover:bg-white transition-colors"
+                                                                    title="Download Attachment"
+                                                                >
+                                                                    <Download className="h-3.5 w-3.5" />
+                                                                </a>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : currentItem.attachment_name ? (
+                                                    <div className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2 text-xs text-[#0070f2]">
+                                                        <Paperclip className="h-3.5 w-3.5" />
+                                                        <span className="font-semibold">{currentItem.attachment_name}</span>
+                                                        <span className="text-[10px] text-slate-500">
+                                                            ({currentItem.attachment_doc_type || 'SL1'})
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-slate-400 italic text-xs">
+                                                        No documents attached directly to Item #{currentItem.item_number}.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -899,6 +1637,7 @@ export default function ShowPurchaseRequisitionPage({
                                                 </p>
                                                 <span className="text-[10px] text-slate-400">
                                                     Doc Type: {att.attachment_doc_type} • SAP: {att.sap_sync_status}
+                                                    {att.item_number && ` • Item: ${att.item_number}`}
                                                 </span>
                                             </div>
                                         </div>

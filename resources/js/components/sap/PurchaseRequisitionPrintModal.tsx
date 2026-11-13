@@ -161,6 +161,17 @@ export default function PurchaseRequisitionPrintModal({
         (sum, item) => sum + (Number(item.quantity) || 0),
         0
     );
+    const totalCalculatedCost =
+        items.reduce((sum, item) => {
+            const itemCost =
+                item.total_price ||
+                (Number(item.unit_price) && Number(item.quantity)
+                    ? Number(item.unit_price) * Number(item.quantity)
+                    : item.unit_price) ||
+                0;
+            return sum + (Number(itemCost) || 0);
+        }, 0) || Number(pr.total_amount) || 0;
+    const spacerHeight = Math.max(35, 130 - Math.min(items.length, 4) * 22);
 
     /**
      * Isolated printing via hidden iframe using the exact same inline CSS styles
@@ -629,49 +640,65 @@ export default function PurchaseRequisitionPrintModal({
                             </table>
                         </div>
 
-                        {/* 4. LINE ITEMS TABLE (10 COLUMNS WITH NUMBERED HEADER 1 TO 10) */}
-                        <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000000', marginTop: '8px', fontSize: '10.5px', tableLayout: 'fixed' }}>
+                        {/* 4. LINE ITEMS TABLE (9 COLUMNS WITH NUMBERED HEADER 1 TO 9) */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000000', marginTop: '8px', fontSize: '10px', tableLayout: 'fixed' }}>
                             <colgroup>
                                 <col style={{ width: '5%' }} />
-                                <col style={{ width: '9%' }} />
-                                <col style={{ width: '34%' }} />
+                                <col style={{ width: '10%' }} />
+                                <col style={{ width: '35%' }} />
                                 <col style={{ width: '6%' }} />
+                                <col style={{ width: '8%' }} />
+                                <col style={{ width: '12.5%' }} />
+                                <col style={{ width: '9.5%' }} />
                                 <col style={{ width: '7%' }} />
-                                <col style={{ width: '11%' }} />
-                                <col style={{ width: '8%' }} />
-                                <col style={{ width: '8%' }} />
-                                <col style={{ width: '6%' }} />
-                                <col style={{ width: '6%' }} />
+                                <col style={{ width: '7%' }} />
                             </colgroup>
                             <thead>
+                                {/* Primary Category Row with proper rowSpan & colSpan */}
                                 <tr style={{ borderBottom: '1px solid #000000', textAlign: 'center', fontWeight: 'bold' }}>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Sl.<br />No.</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Code No.</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 4px', verticalAlign: 'top', textAlign: 'left' }}>Description of Material</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Unit</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Qty.<br />Required</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>App.<br />Cost.(Rs.)</th>
-                                    {/* <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Previous<br />P.O.</th> */}
-                                    <th style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'top' }}>Average<br />Monthly<br />Consumption</th>
-                                    <th colSpan={2} style={{ padding: '0', verticalAlign: 'top' }}>
-                                        <div style={{ padding: '3px 0' }}>Present stock</div>
-                                        <div style={{ display: 'flex', borderTop: '1px solid #000000', fontWeight: 'normal', fontSize: '9.5px' }}>
-                                            <div style={{ flex: 1, borderRight: '1px solid #000000', padding: '2px 0' }}>Indentor</div>
-                                            <div style={{ flex: 1, padding: '2px 0' }}>Stores</div>
-                                        </div>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'middle' }}>
+                                        Sl.<br />No.
+                                    </th>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'middle' }}>
+                                        Code No.
+                                    </th>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 6px', verticalAlign: 'middle', textAlign: 'left' }}>
+                                        Description of Material
+                                    </th>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'middle' }}>
+                                        Unit
+                                    </th>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'middle' }}>
+                                        Qty.<br />Required
+                                    </th>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'middle' }}>
+                                        App.<br />Cost (Rs.)
+                                    </th>
+                                    <th rowSpan={2} style={{ borderRight: '1px solid #000000', padding: '4px 2px', verticalAlign: 'middle' }}>
+                                        Average<br />Monthly<br />Consumption
+                                    </th>
+                                    <th colSpan={2} style={{ borderBottom: '1px solid #000000', padding: '3px 2px', verticalAlign: 'middle' }}>
+                                        Present stock
                                     </th>
                                 </tr>
-                                <tr style={{ borderBottom: '1px solid #000000', textAlign: 'center', fontSize: '9.5px', fontWeight: 'bold', backgroundColor: '#fafafa' }}>
+
+                                {/* Sub-header row for Present Stock (Indentor vs Stores) */}
+                                <tr style={{ borderBottom: '1px solid #000000', textAlign: 'center', fontSize: '9.5px', fontWeight: 'bold' }}>
+                                    <th style={{ borderRight: '1px solid #000000', padding: '2px 2px' }}>Indentor</th>
+                                    <th style={{ padding: '2px 2px' }}>Stores</th>
+                                </tr>
+
+                                {/* Numbered Reference Row (Columns 1 to 9) */}
+                                <tr style={{ borderBottom: '1px solid #000000', textAlign: 'center', fontSize: '9px', fontWeight: 'bold', backgroundColor: '#f9fafb' }}>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>1</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>2</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>3</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>4</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>5</th>
-                                    {/* <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>6</th> */}
+                                    <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>6</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>7</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>8</th>
-                                    <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>9</th>
-                                    <th style={{ padding: '1px 0' }}>10</th>
+                                    <th style={{ padding: '1px 0' }}>9</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -683,46 +710,72 @@ export default function PurchaseRequisitionPrintModal({
                                                 ? Number(item.unit_price) * Number(item.quantity)
                                                 : item.unit_price) ||
                                             0;
+                                        const hasUnitPrice = Number(item.unit_price) > 0;
+                                        const hasMultipleQty = Number(item.quantity) > 1;
+
                                         return (
                                             <tr key={item.id || index} style={{ borderBottom: '1px solid #000000', verticalAlign: 'top' }}>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
+                                                {/* 1. Sl. No. */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
                                                     {index + 1}.
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center', fontFamily: 'monospace' }}>
-                                                    {item.material_code || '0'}
+
+                                                {/* 2. Code No. */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 3px', textAlign: 'center', fontFamily: 'monospace', fontSize: '10px' }}>
+                                                    {item.material_code && item.material_code !== '0' ? item.material_code : '—'}
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px' }}>
-                                                    <div style={{ fontWeight: 'bold' }}>{item.description}</div>
+
+                                                {/* 3. Description of Material */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 6px' }}>
+                                                    <div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25 }}>
+                                                        {item.description}
+                                                    </div>
                                                     {item.item_note && (
                                                         <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#333333', marginTop: '2px' }}>
                                                             Note: {item.item_note}
                                                         </div>
                                                     )}
-                                                    {item.cost_center && (
-                                                        <div style={{ fontSize: '9px', color: '#444444', marginTop: '2px' }}>
-                                                            CC: {item.cost_center} {item.gl_account ? `| GL: ${item.gl_account}` : ''}
+                                                    {(item.cost_center || item.gl_account || item.material_group) && (
+                                                        <div style={{ fontSize: '9px', color: '#444444', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                            {item.cost_center && <span>CC: {item.cost_center}</span>}
+                                                            {item.gl_account && <span>GL: {item.gl_account}</span>}
+                                                            {item.material_group && <span>Grp: {item.material_group}</span>}
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
+
+                                                {/* 4. Unit */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
                                                     {item.unit_of_measure || 'No.'}
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center', fontWeight: 'bold' }}>
+
+                                                {/* 5. Qty. Required */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
                                                     {item.quantity}
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'right' }}>
-                                                    {formatCurrencyAmount(itemCost)}
+
+                                                {/* 6. App. Cost (Rs.) */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                                    <div style={{ fontWeight: 'bold' }}>{formatCurrencyAmount(itemCost)}</div>
+                                                    {hasUnitPrice && hasMultipleQty && (
+                                                        <div style={{ fontSize: '8.5px', color: '#555555', marginTop: '1px' }}>
+                                                            @ {formatCurrencyAmount(item.unit_price)}
+                                                        </div>
+                                                    )}
                                                 </td>
-                                                {/* <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
-                                                    {item.previous_po || '—'}
-                                                </td> */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
+
+                                                {/* 7. Average Monthly Consumption */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
                                                     {item.avg_monthly_consumption || 'NA'}
                                                 </td>
-                                                <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>
+
+                                                {/* 8. Present Stock: Indentor */}
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
                                                     {item.indentor_stock || 'Nil'}
                                                 </td>
-                                                <td style={{ padding: '4px', textAlign: 'center' }}>
+
+                                                {/* 9. Present Stock: Stores */}
+                                                <td style={{ padding: '5px 2px', textAlign: 'center' }}>
                                                     {item.stores_stock || 'Nil'}
                                                 </td>
                                             </tr>
@@ -730,33 +783,47 @@ export default function PurchaseRequisitionPrintModal({
                                     })
                                 ) : (
                                     <tr style={{ borderBottom: '1px solid #000000', verticalAlign: 'top' }}>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>1.</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>0</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', fontStyle: 'italic' }}>{pr.description}</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>No.</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>1</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'right' }}>00.00</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>—</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>NA</td>
-                                        <td style={{ borderRight: '1px solid #000000', padding: '4px', textAlign: 'center' }}>Nil</td>
-                                        <td style={{ padding: '4px', textAlign: 'center' }}>Nil</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>1.</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>—</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 6px', fontStyle: 'italic' }}>{pr.description}</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>No.</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>1</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right' }}>{formatCurrencyAmount(pr.total_amount || 0)}</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>NA</td>
+                                        <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>Nil</td>
+                                        <td style={{ padding: '5px 2px', textAlign: 'center' }}>Nil</td>
                                     </tr>
                                 )}
 
                                 {/* Spacer row with continuous vertical lines and '(Item one only)' centered in Column 3 */}
-                                <tr style={{ height: '140px', verticalAlign: 'top' }}>
+                                <tr style={{ height: `${spacerHeight}px`, verticalAlign: 'middle' }}>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
-                                    {/* <td style={{ borderRight: '1px solid #000000', padding: '24px 8px', textAlign: 'center', verticalAlign: 'middle', fontStyle: 'italic', fontWeight: 500, fontSize: '11.5px' }}>
-                                        ({numberToWordCount(items.length || 1)})
-                                    </td> */}
-                                    <td style={{ borderRight: '1px solid #000000' }}></td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '12px 8px', textAlign: 'center', fontStyle: 'italic', fontWeight: 600, fontSize: '11px', color: '#333333', letterSpacing: '0.3px' }}>
+                                        *** ({numberToWordCount(items.length || 1)}) ***
+                                    </td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td></td>
+                                </tr>
+
+                                {/* Total Summary Row */}
+                                <tr style={{ borderTop: '1px solid #000000', borderBottom: '1px solid #000000', fontWeight: 'bold', backgroundColor: '#fafafa', fontSize: '10px' }}>
+                                    <td colSpan={4} style={{ borderRight: '1px solid #000000', padding: '5px 8px', textAlign: 'right', letterSpacing: '0.3px' }}>
+                                        TOTAL:
+                                    </td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
+                                        {totalItemQty > 0 ? totalItemQty : '—'}
+                                    </td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right', fontWeight: 'bold' }}>
+                                        {formatCurrencyAmount(totalCalculatedCost)}
+                                    </td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#888888' }}>—</td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#888888' }}>—</td>
+                                    <td style={{ padding: '5px 2px', textAlign: 'center', color: '#888888' }}>—</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -775,7 +842,7 @@ export default function PurchaseRequisitionPrintModal({
                                 <tr>
                                     {/* Column 1: Inventory Control verification */}
                                     <td style={{ width: '31%', verticalAlign: 'top', borderRight: '1px solid #000000', padding: '6px 8px' }}>
-                                        <div>Quantities shown in Col. 10 are in stock</div>
+                                        <div>Quantities shown in Col. 9 are in stock</div>
                                         <div style={{ marginTop: '3px' }}>Quantities shown on Col. 5 may be procured to replenish the Stock direct consumption</div>
                                         <div style={{ marginTop: '48px', borderBottom: '1px dotted #000000', width: '150px' }}></div>
                                         <div style={{ fontWeight: 'bold', marginTop: '2px' }}>Inventory Control cell</div>
@@ -794,7 +861,7 @@ export default function PurchaseRequisitionPrintModal({
 
                                     {/* Column 3: Indenting Officer declaration & signature block */}
                                     <td style={{ width: '31%', verticalAlign: 'top', padding: '6px 8px' }}>
-                                        <div>Quantity shown in Column 9 are available with us and will be sufficient for ............. Days/month consumption only.</div>
+                                        <div>Quantity shown in Column 8 are available with us and will be sufficient for ............. Days/month consumption only.</div>
                                         <div style={{ fontWeight: 'bold', marginTop: '3px' }}>Signature of the Indenting Officer</div>
                                         <div style={{ marginTop: '36px' }}>
                                             <div><strong>Indenting Officer: ( <span style={{ textDecoration: 'underline' }}>{indentorName}</span> )</strong></div>

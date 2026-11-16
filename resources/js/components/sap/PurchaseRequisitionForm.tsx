@@ -476,15 +476,51 @@ export default function PurchaseRequisitionForm({
 
     /**
      * Determines whether a line item is a child hierarchy item (e.g. 1.1, 1.2, 1.1.1).
-     * Top-level outline items (e.g. 1, 2, 3) only allow entering the Material/Service description;
-     * all other input fields in the line item are disabled.
-     * Full procurement fields can only be filled on child hierarchy line items.
      */
-    const isHierarchyLineItem = (item?: PrItemData | null): boolean => {
+    const isChildHierarchyItem = (item?: PrItemData | null): boolean => {
         if (!item) return false;
         const h = (item.hierarchy_number || '').trim();
         return Boolean(item.parent_hierarchy_number || h.includes('.'));
     };
+
+    /**
+     * Determines whether a line item has child hierarchy items configured against it.
+     * If true, this item has a hierarchy against it:
+     * - That line item's input fields are disabled except the Material/Service description.
+     * - The hierarchy line item fields are fillable.
+     */
+    const hasHierarchyAgainstItem = (item?: PrItemData | null, allItems: PrItemData[] = items): boolean => {
+        if (!item) return false;
+        const hNum = (item.hierarchy_number || '').trim();
+        if (!hNum) return false;
+        return allItems.some((other) => {
+            if (other.id === item.id) return false;
+            if (other.parent_hierarchy_number && other.parent_hierarchy_number === hNum) {
+                return true;
+            }
+            if (item.item_number && other.parent_item_number && other.parent_item_number === item.item_number) {
+                return true;
+            }
+            if (other.hierarchy_number && other.hierarchy_number.startsWith(`${hNum}.`)) {
+                return true;
+            }
+            return false;
+        });
+    };
+
+    /**
+     * Determines whether all input fields of a line item are fillable.
+     * - In normal line items (no hierarchy against it): all fields are fillable.
+     * - In hierarchy line items (child items): all fields are fillable.
+     * - If a hierarchy is against a line item: its input fields are disabled EXCEPT the material/service description.
+     */
+    const isItemFieldsFillable = (item?: PrItemData | null, allItems: PrItemData[] = items): boolean => {
+        if (!item) return false;
+        return !hasHierarchyAgainstItem(item, allItems);
+    };
+
+    // Alias for backwards compatibility
+    const isHierarchyLineItem = isChildHierarchyItem;
 
     // Factory function to create an empty PR item line
     const createEmptyPrItem = (
@@ -493,8 +529,8 @@ export default function PurchaseRequisitionForm({
         hierarchyNumberStr: string = '1',
         parentItemNum: string = '',
         parentHierarchyNum: string = '',
-        hierarchyType: 'item_set' | 'functional_item' = 'item_set',
-        isOutline: boolean = true
+        hierarchyType: 'item_set' | 'functional_item' = 'functional_item',
+        isOutline: boolean = false
     ): PrItemData => ({
         id: 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
         item_number: itemNumberStr,
@@ -572,6 +608,15 @@ export default function PurchaseRequisitionForm({
                 const rawRelDate = it.release_date ? String(it.release_date).substring(0, 10) : getTodayString(0);
                 const hNum = it.hierarchy_number ? String(it.hierarchy_number) : String(index + 1);
 
+                const hasChildren = (data.items || []).some((other: any) =>
+                    other !== it && (
+                        (hNum && String(other.parent_hierarchy_number || '').trim() === hNum) ||
+                        (it.item_number && String(other.parent_item_number || '').trim() === String(it.item_number).trim()) ||
+                        (hNum && String(other.hierarchy_number || '').trim().startsWith(`${hNum}.`))
+                    )
+                );
+                const isOutline = Boolean(hasChildren || (it.parent_hierarchy_number ? false : it.is_outline));
+
                 return {
                     id: it.id ? `item-db-${it.id}` : `item-${index}`,
                     item_id: it.id || undefined,
@@ -579,8 +624,8 @@ export default function PurchaseRequisitionForm({
                     hierarchy_number: hNum,
                     parent_item_number: it.parent_item_number || '',
                     parent_hierarchy_number: it.parent_hierarchy_number || '',
-                    is_outline: Boolean(it.is_outline || it.item_hierarchy_type === 'item_set'),
-                    item_hierarchy_type: (it.item_hierarchy_type || (it.is_outline ? 'item_set' : 'functional_item')) as any,
+                    is_outline: isOutline,
+                    item_hierarchy_type: (it.item_hierarchy_type || (isOutline ? 'item_set' : 'functional_item')) as any,
                     external_sort_number: it.external_sort_number || '',
                     item_type: (it.item_type || (it.material_code ? 'material' : (it.account_assignment_category === 'K' ? 'service' : ''))) as any,
                     material_type: it.material_type || '',
@@ -646,7 +691,7 @@ export default function PurchaseRequisitionForm({
                 };
             });
         }
-        return [createEmptyPrItem('00010', '', '1', '', '', 'item_set', true)];
+        return [createEmptyPrItem('00010', '', '1', '', '', 'functional_item', false)];
     };
 
     // Items List - Initialized with line items from initialData or empty item
@@ -1117,7 +1162,9 @@ export default function PurchaseRequisitionForm({
     };
 
     const currentItem = items[activeItemIndex] || items[0];
-    const isCurrentHierarchyItem = isHierarchyLineItem(currentItem);
+    const isCurrentItemFillable = isItemFieldsFillable(currentItem, items);
+    const hasCurrentHierarchy = hasHierarchyAgainstItem(currentItem, items);
+    const isCurrentHierarchyItem = isChildHierarchyItem(currentItem);
     const isCurrentItemMaterial = currentItem?.item_type === 'material';
     const isEnhancedLimits = !isCurrentItemMaterial && String(currentItem?.item_category || '').trim().toUpperCase() === 'E';
 
@@ -2703,8 +2750,8 @@ export default function PurchaseRequisitionForm({
             String(nextTopLevel),
             '',
             '',
-            'item_set',
-            true
+            'functional_item',
+            false
         );
 
         setItems((prev) => [...prev, newItem]);
@@ -2718,6 +2765,7 @@ export default function PurchaseRequisitionForm({
      * - Under item "1" -> "1.1", "1.2", "1.3"...
      * - Under item "1.1" -> "1.1.1", "1.1.2", "1.1.3"...
      * - Parent item is automatically designated as an Item Set (outline header).
+     *   Its procurement fields are disabled (except description), and child hierarchy line items are fillable.
      */
     const handleCreateHierarchyItem = (targetIndex?: number) => {
         const resolvedIndex = targetIndex !== undefined ? targetIndex : activeItemIndex;
@@ -2730,12 +2778,14 @@ export default function PurchaseRequisitionForm({
             parentHNum = String(resolvedIndex + 1);
         }
 
-        // 2. Mark parent as Item Set (outline node)
+        // 2. Mark parent as Item Set (outline node with a hierarchy against it)
         const updatedParent: PrItemData = {
             ...parent,
             hierarchy_number: parentHNum,
             is_outline: true,
             item_hierarchy_type: 'item_set',
+            quantity: 0,
+            unit_price: 0,
         };
 
         // 3. Compute child hierarchy number:
@@ -2768,7 +2818,7 @@ export default function PurchaseRequisitionForm({
             }
         }
 
-        // 5. Build child line item (Functional Item by default, inheriting parent context)
+        // 5. Build child line item (Functional Item by default, inheriting parent context, fully fillable)
         const childItem: PrItemData = {
             ...createEmptyPrItem(
                 '00000',
@@ -2947,10 +2997,10 @@ export default function PurchaseRequisitionForm({
                 <GitFork className="h-6 w-6" />
             </div>
             <h4 className="text-sm font-bold text-slate-800">
-                {tabName} Fields Available on Hierarchy Line Items Only
+                {tabName} Fields Maintained on Child Hierarchy Line Items
             </h4>
             <p className="mt-1.5 text-xs text-slate-600 max-w-lg mx-auto leading-relaxed">
-                Line item <strong className="font-mono text-indigo-700 font-bold">{currentItem?.hierarchy_number || activeItemIndex + 1}</strong> is a top-level outline item (Item Set). Per PR item hierarchy rules, only the <strong>Material/Service description</strong> is maintained on this item. All procurement fields in this tab can only be filled on child hierarchy items (e.g. <strong className="font-mono text-indigo-700 font-bold">{currentItem?.hierarchy_number || activeItemIndex + 1}.1</strong>).
+                Line item <strong className="font-mono text-indigo-700 font-bold">{currentItem?.hierarchy_number || activeItemIndex + 1}</strong> has a hierarchy configured against it. Per PR item hierarchy rules, only the <strong>Material/Service description</strong> is maintained on this item. All procurement fields in this tab are filled on its child hierarchy line items (e.g. <strong className="font-mono text-indigo-700 font-bold">{currentItem?.hierarchy_number || activeItemIndex + 1}.1</strong>).
             </p>
             <div className="mt-4 flex items-center justify-center gap-3">
                 <button
@@ -3033,7 +3083,7 @@ export default function PurchaseRequisitionForm({
         if (hasChildren) {
             updated = items.filter((it, idx) => idx !== index && !(it.parent_hierarchy_number === hNum || it.hierarchy_number?.startsWith(`${hNum}.`)));
             if (updated.length === 0) {
-                updated = [createEmptyPrItem('00010', '', '1')];
+                updated = [createEmptyPrItem('00010', '', '1', '', '', 'functional_item', false)];
             }
         } else {
             updated = items.filter((_, idx) => idx !== index);
@@ -3051,6 +3101,21 @@ export default function PurchaseRequisitionForm({
             }
         });
 
+        // Revert parent outline status if it no longer has children against it
+        updated.forEach((it) => {
+            const hasRemainingChildren = updated.some((other) =>
+                other.id !== it.id && (
+                    (it.hierarchy_number && other.parent_hierarchy_number === it.hierarchy_number) ||
+                    (it.item_number && other.parent_item_number === it.item_number) ||
+                    (it.hierarchy_number && other.hierarchy_number?.startsWith(`${it.hierarchy_number}.`))
+                )
+            );
+            if (!hasRemainingChildren && it.is_outline && !it.parent_hierarchy_number && !it.hierarchy_number?.includes('.')) {
+                it.is_outline = false;
+                it.item_hierarchy_type = 'functional_item';
+            }
+        });
+
         setItems(updated);
         setActiveItemIndex(Math.max(0, Math.min(index, updated.length - 1)));
     };
@@ -3058,7 +3123,8 @@ export default function PurchaseRequisitionForm({
     // Calculate Total Value
     const calculateTotal = React.useCallback(() => {
         return items.reduce((sum, item) => {
-            if (!isHierarchyLineItem(item)) {
+            // If a hierarchy is against this line item, its value is represented by its child hierarchy items
+            if (hasHierarchyAgainstItem(item, items)) {
                 return sum;
             }
             const pu = Number(item.price_unit) > 0 ? Number(item.price_unit) : 1;
@@ -3231,23 +3297,16 @@ export default function PurchaseRequisitionForm({
 
         items.forEach((it, idx) => {
             const prefix = `item_${idx}_`;
-            const isHierarchy = isHierarchyLineItem(it);
+            const hasHierarchy = hasHierarchyAgainstItem(it, items);
 
             // Description is always mandatory
             if (!it.description || !String(it.description).trim()) {
                 errs[prefix + 'description'] = 'Item Description is mandatory.';
             }
 
-            // Top-level outline items (Item Sets) have all other fields disabled.
-            // Only hierarchy line items have full procurement fields filled and validated.
-            if (!isHierarchy) {
-                const hasChildren = items.some((child) =>
-                    child.parent_hierarchy_number === it.hierarchy_number ||
-                    (it.hierarchy_number && child.hierarchy_number?.startsWith(it.hierarchy_number + '.'))
-                );
-                if (!hasChildren && !isDraft) {
-                    errs[prefix + 'description'] = `Top-level item ${it.hierarchy_number || idx + 1} requires child hierarchy items. Click "Create hierarchy item" to enter procurement items under it.`;
-                }
+            // If a hierarchy is against this line item, its input fields are disabled
+            // except Material/Service description. Full procurement details are validated on child hierarchy items.
+            if (hasHierarchy) {
                 return;
             }
 
@@ -3524,6 +3583,7 @@ export default function PurchaseRequisitionForm({
 
         // Items
         items.forEach((it, index) => {
+            const hasHierarchy = hasHierarchyAgainstItem(it, items);
             if ((it as any).item_id) {
                 formData.append(`items[${index}][id]`, String((it as any).item_id));
             }
@@ -3531,8 +3591,8 @@ export default function PurchaseRequisitionForm({
             if (it.hierarchy_number) formData.append(`items[${index}][hierarchy_number]`, it.hierarchy_number);
             if (it.parent_item_number) formData.append(`items[${index}][parent_item_number]`, it.parent_item_number);
             if (it.parent_hierarchy_number) formData.append(`items[${index}][parent_hierarchy_number]`, it.parent_hierarchy_number);
-            formData.append(`items[${index}][is_outline]`, it.is_outline || it.item_hierarchy_type === 'item_set' ? '1' : '0');
-            formData.append(`items[${index}][item_hierarchy_type]`, it.item_hierarchy_type || (it.is_outline ? 'item_set' : 'functional_item'));
+            formData.append(`items[${index}][is_outline]`, hasHierarchy ? '1' : '0');
+            formData.append(`items[${index}][item_hierarchy_type]`, hasHierarchy ? 'item_set' : 'functional_item');
             if (it.external_sort_number) formData.append(`items[${index}][external_sort_number]`, it.external_sort_number);
             formData.append(`items[${index}][item_type]`, it.item_type || 'material');
             if (it.material_type) formData.append(`items[${index}][material_type]`, it.material_type);
@@ -3554,13 +3614,14 @@ export default function PurchaseRequisitionForm({
             if (it.agreement_number) formData.append(`items[${index}][agreement_number]`, it.agreement_number);
             if (it.agreement_item) formData.append(`items[${index}][agreement_item]`, it.agreement_item);
             if (it.info_record) formData.append(`items[${index}][info_record]`, it.info_record);
-            const isOutlineItem = Boolean(it.is_outline || it.item_hierarchy_type === 'item_set');
-            const qtyVal = it.quantity !== null && it.quantity !== undefined && it.quantity !== ''
-                ? Number(it.quantity)
-                : (isOutlineItem ? 0 : 1);
+            const qtyVal = hasHierarchy
+                ? 0
+                : (it.quantity !== null && it.quantity !== undefined && it.quantity !== ''
+                    ? Number(it.quantity)
+                    : 1);
             formData.append(`items[${index}][quantity]`, String(qtyVal));
             formData.append(`items[${index}][unit_of_measure]`, it.unit_of_measure || 'PC');
-            formData.append(`items[${index}][unit_price]`, String(Number(it.unit_price) >= 0 ? it.unit_price : 0));
+            formData.append(`items[${index}][unit_price]`, String(hasHierarchy ? 0 : (Number(it.unit_price) >= 0 ? it.unit_price : 0)));
             formData.append(`items[${index}][price_unit]`, String(it.price_unit || 1));
             if (it.expected_value !== undefined && it.expected_value !== '') formData.append(`items[${index}][expected_value]`, String(it.expected_value));
             if (it.overall_limit !== undefined && it.overall_limit !== '') formData.append(`items[${index}][overall_limit]`, String(it.overall_limit));
@@ -3691,7 +3752,7 @@ export default function PurchaseRequisitionForm({
         setHeaderNote('');
         setPrType(defaultDocType);
         setHeaderOptionId('');
-        const initialItem = createEmptyPrItem('00010', '', '1', '', '', 'item_set', true);
+        const initialItem = createEmptyPrItem('00010', '', '1', '', '', 'functional_item', false);
         setItems([initialItem]);
         setActiveItemIndex(0);
         setActiveItemTab('general');
@@ -4674,7 +4735,9 @@ export default function PurchaseRequisitionForm({
                                 const isSelected = idx === activeItemIndex;
                                 const pu = it.price_unit > 0 ? it.price_unit : 1;
                                 const lineTotal = ((Number(it.quantity) || 0) / pu) * (Number(it.unit_price) || 0);
-                                const isHItem = isHierarchyLineItem(it);
+                                const isFillable = isItemFieldsFillable(it, items);
+                                const hasHierarchy = hasHierarchyAgainstItem(it, items);
+                                const isChild = isChildHierarchyItem(it);
 
                                 return (
                                     <tr
@@ -4690,7 +4753,6 @@ export default function PurchaseRequisitionForm({
                                             {(() => {
                                                 const hNum = (it.hierarchy_number || String(idx + 1)).trim();
                                                 const depth = Math.max(0, hNum.split('.').length - 1);
-                                                const isItemSet = Boolean(it.is_outline || it.item_hierarchy_type === 'item_set' || !isHItem);
 
                                                 return (
                                                     <div
@@ -4706,9 +4768,9 @@ export default function PurchaseRequisitionForm({
                                                         {/* Hierarchy Number Badge */}
                                                         <span
                                                             className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-bold shrink-0 shadow-2xs ${
-                                                                isItemSet
+                                                                hasHierarchy
                                                                     ? 'bg-purple-100 text-purple-800 border border-purple-300 ring-1 ring-purple-300'
-                                                                    : depth > 0
+                                                                    : isChild
                                                                     ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                                                                     : 'bg-blue-50 text-[#0070f2] border border-blue-200'
                                                             }`}
@@ -4723,7 +4785,7 @@ export default function PurchaseRequisitionForm({
                                                         </span>
 
                                                         {/* Hierarchy Type Badge */}
-                                                        {isItemSet ? (
+                                                        {hasHierarchy ? (
                                                             <span
                                                                 className="inline-flex items-center gap-0.5 text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1 py-0.2 rounded shrink-0"
                                                                 title="Item Set (Outline Node - Groups functional items)"
@@ -4731,12 +4793,20 @@ export default function PurchaseRequisitionForm({
                                                                 <Layers className="h-2.5 w-2.5" />
                                                                 <span>Set</span>
                                                             </span>
+                                                        ) : isChild ? (
+                                                            <span
+                                                                className="inline-flex items-center gap-0.5 text-[9px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0.2 rounded shrink-0"
+                                                                title="Hierarchy Line Item"
+                                                            >
+                                                                <GitFork className="h-2.5 w-2.5" />
+                                                                <span>Hier</span>
+                                                            </span>
                                                         ) : (
                                                             <span
                                                                 className="text-[9px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded shrink-0"
-                                                                title="Functional Item"
+                                                                title="Normal Line Item (All fields fillable)"
                                                             >
-                                                                Func
+                                                                Normal
                                                             </span>
                                                         )}
 
@@ -4760,12 +4830,12 @@ export default function PurchaseRequisitionForm({
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={!isHItem ? '' : (it.item_category || '')}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : (it.item_category || '')}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => updateItemById(it.id, { item_category: e.target.value })}
                                                         onKeyDown={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
                                                                 openSearchHelp(
@@ -4777,10 +4847,10 @@ export default function PurchaseRequisitionForm({
                                                                 );
                                                             }
                                                         }}
-                                                        placeholder={!isHItem ? '—' : 'Standard'}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : 'Item Category'}
+                                                        placeholder={!isFillable ? '—' : 'Standard'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Fields are maintained on child items.' : 'Item Category'}
                                                         className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_item_category`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -4789,10 +4859,10 @@ export default function PurchaseRequisitionForm({
                                                     />
                                                     <button
                                                         type="button"
-                                                        disabled={!isHItem}
+                                                        disabled={!isFillable}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             setActiveItemIndex(idx);
                                                             openSearchHelp(
                                                                 'item_category',
@@ -4803,16 +4873,16 @@ export default function PurchaseRequisitionForm({
                                                             );
                                                         }}
                                                         className={`absolute right-1 p-0.5 rounded transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'text-slate-300 cursor-not-allowed pointer-events-none'
                                                                 : 'text-[#0070f2] hover:bg-blue-100'
                                                         }`}
-                                                        title={!isHItem ? 'Disabled on top-level item' : 'Item Category Search Help (F4)'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item' : 'Item Category Search Help (F4)'}
                                                     >
                                                         <Search className="h-3 w-3" />
                                                     </button>
                                                 </div>
-                                                {isHItem && fieldErrors[`item_${idx}_item_category`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_item_category`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_item_category`]}</span>
@@ -4826,22 +4896,22 @@ export default function PurchaseRequisitionForm({
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={!isHItem ? '' : (it.account_assignment_category || '')}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : (it.account_assignment_category || '')}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
-                                                        onClick={() => isHItem && handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category)}
+                                                        onClick={() => isFillable && handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category)}
                                                         onChange={(e) => updateItemById(it.id, { account_assignment_category: e.target.value })}
                                                         onKeyDown={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
                                                                 handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                             }
                                                         }}
-                                                        placeholder={!isHItem ? '—' : (it.item_type === 'service' ? 'K' : 'Blank')}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : (it.item_type === 'service' ? "Account Assignment: 'K' (Cost Center) typically required for Service line items" : "Account Assignment: Blank for Stock/Inventory materials, K for Cost Center")}
+                                                        placeholder={!isFillable ? '—' : (it.item_type === 'service' ? 'K' : 'Blank')}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Fields are maintained on child items.' : (it.item_type === 'service' ? "Account Assignment: 'K' (Cost Center) typically required for Service line items" : "Account Assignment: Blank for Stock/Inventory materials, K for Cost Center")}
                                                         className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono text-center placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_account_assignment_category`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -4850,24 +4920,24 @@ export default function PurchaseRequisitionForm({
                                                     />
                                                     <button
                                                         type="button"
-                                                        disabled={!isHItem}
+                                                        disabled={!isFillable}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             setActiveItemIndex(idx);
                                                             handleOpenAccountAssignmentCategorySearchHelp(idx, it.account_assignment_category);
                                                         }}
                                                         className={`absolute right-1 p-0.5 rounded transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'text-slate-300 cursor-not-allowed pointer-events-none'
                                                                 : 'text-[#0070f2] hover:bg-blue-100'
                                                         }`}
-                                                        title={!isHItem ? 'Disabled on top-level item' : 'Account Assignment Search Help (F4) - Hits SAP CDS View YY1_AccountAssignmentCat'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item' : 'Account Assignment Search Help (F4) - Hits SAP CDS View YY1_AccountAssignmentCat'}
                                                     >
                                                         <Search className="h-3 w-3" />
                                                     </button>
                                                 </div>
-                                                {isHItem && fieldErrors[`item_${idx}_account_assignment_category`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_account_assignment_category`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_account_assignment_category`]}</span>
@@ -4881,11 +4951,11 @@ export default function PurchaseRequisitionForm({
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={!isHItem ? '' : (it.material_code || '')}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : (it.material_code || '')}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             const val = e.target.value;
                                                             updateItemById(it.id, {
                                                                 material_code: val,
@@ -4893,12 +4963,12 @@ export default function PurchaseRequisitionForm({
                                                             handleMaterialCodeInputChange(idx, val, it.plant);
                                                         }}
                                                         onBlur={(e) => {
-                                                            if (isHItem && e.target.value.trim()) {
+                                                            if (isFillable && e.target.value.trim()) {
                                                                 triggerMaterialValuationLookup(idx, e.target.value, it.plant);
                                                             }
                                                         }}
                                                         onKeyDown={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
                                                                 handleOpenMaterialSearchHelp(idx, it.material_code, it.plant);
@@ -4909,17 +4979,17 @@ export default function PurchaseRequisitionForm({
                                                                 }
                                                             }
                                                         }}
-                                                        placeholder={!isHItem ? '—' : 'Material No. (F4)'}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : 'Material Search Help (F4) - Press F4 to search SAP Materials'}
+                                                        placeholder={!isFillable ? '—' : 'Material No. (F4)'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Fields are maintained on child items.' : 'Material Search Help (F4) - Press F4 to search SAP Materials'}
                                                         className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_material_code`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                                                                 : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                                         }`}
                                                     />
-                                                    {!isHItem ? null : fetchingValuation[it.id] ? (
+                                                    {!isFillable ? null : fetchingValuation[it.id] ? (
                                                         <div className="absolute right-1.5 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
                                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                                         </div>
@@ -4938,7 +5008,7 @@ export default function PurchaseRequisitionForm({
                                                         </button>
                                                     )}
                                                 </div>
-                                                {isHItem && fieldErrors[`item_${idx}_material_code`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_material_code`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_material_code`]}</span>
@@ -4955,13 +5025,13 @@ export default function PurchaseRequisitionForm({
                                                     onFocus={() => setActiveItemIndex(idx)}
                                                     onChange={(e) => updateItemById(it.id, { description: e.target.value })}
                                                     placeholder={
-                                                        !isHItem
-                                                            ? 'Material / Service Description (Outline Item)'
+                                                        hasHierarchy
+                                                            ? 'Material / Service Description (Outline Node)'
                                                             : it.item_type === 'material'
                                                             ? 'Material Description (Auto-collected)'
                                                             : 'Item Description (Required)'
                                                     }
-                                                    title={!isHItem ? 'Material / Service Description (Only editable field on top-level item)' : 'Item Description'}
+                                                    title={hasHierarchy ? 'Material / Service Description (Only editable field on outline node)' : 'Item Description'}
                                                     className={`h-8 w-full rounded border px-2 text-xs placeholder-[#8c9ba5] focus:outline-none transition-colors ${
                                                         fieldErrors[`item_${idx}_description`]
                                                             ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -4982,18 +5052,18 @@ export default function PurchaseRequisitionForm({
                                                 <div className="flex items-center gap-1 justify-end">
                                                     <input
                                                         type="number"
-                                                        value={!isHItem ? '' : it.quantity}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : it.quantity}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => updateItemById(it.id, { quantity: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
                                                         onWheel={(e) => e.currentTarget.blur()}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
                                                         }}
-                                                        placeholder={!isHItem ? '—' : 'Qty'}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : 'Quantity'}
+                                                        placeholder={!isFillable ? '—' : 'Qty'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Maintained on child items.' : 'Quantity'}
                                                         className={`h-8 w-14 rounded border px-1.5 text-xs text-right font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_quantity`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -5003,13 +5073,13 @@ export default function PurchaseRequisitionForm({
                                                     <div className="relative flex items-center">
                                                         <input
                                                             type="text"
-                                                            value={!isHItem ? '' : (it.unit_of_measure || '')}
-                                                            readOnly={!isHItem || Boolean(it.item_type === 'material' && it.material_code)}
-                                                            disabled={!isHItem}
+                                                            value={!isFillable ? '' : (it.unit_of_measure || '')}
+                                                            readOnly={!isFillable || Boolean(it.item_type === 'material' && it.material_code)}
+                                                            disabled={!isFillable}
                                                             onFocus={() => setActiveItemIndex(idx)}
                                                             onChange={(e) => updateItemById(it.id, { unit_of_measure: e.target.value })}
                                                             onKeyDown={(e) => {
-                                                                if (!isHItem) return;
+                                                                if (!isFillable) return;
                                                                 if (e.key === 'F4') {
                                                                     e.preventDefault();
                                                                     if (!(it.item_type === 'material' && it.material_code)) {
@@ -5017,10 +5087,10 @@ export default function PurchaseRequisitionForm({
                                                                     }
                                                                 }
                                                             }}
-                                                            placeholder={!isHItem ? '—' : 'UoM'}
-                                                            title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : (it.item_type === 'material' && it.material_code ? "Auto-filled from Material Master" : "Unit of Measure (F4) - SAP CDS View YY1_UNITOFMEASUREMENT_CDS")}
+                                                            placeholder={!isFillable ? '—' : 'UoM'}
+                                                            title={!isFillable ? 'Disabled because hierarchy is active against this item.' : (it.item_type === 'material' && it.material_code ? "Auto-filled from Material Master" : "Unit of Measure (F4) - SAP CDS View YY1_UNITOFMEASUREMENT_CDS")}
                                                             className={`h-8 w-16 rounded border text-xs font-mono uppercase focus:outline-none transition-colors ${
-                                                                !isHItem
+                                                                !isFillable
                                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none px-1.5 text-center'
                                                                     : it.item_type === 'material' && it.material_code
                                                                     ? 'bg-slate-100/80 text-slate-700 border-[#d9e2ec] cursor-not-allowed px-1.5 font-bold'
@@ -5029,7 +5099,7 @@ export default function PurchaseRequisitionForm({
                                                                         : 'border-[#d9e2ec] bg-white text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]')
                                                             }`}
                                                         />
-                                                        {isHItem && !(it.item_type === 'material' && it.material_code) && (
+                                                        {isFillable && !(it.item_type === 'material' && it.material_code) && (
                                                             <button
                                                                 type="button"
                                                                 onClick={(e) => {
@@ -5046,7 +5116,7 @@ export default function PurchaseRequisitionForm({
                                                     </div>
 
                                                 </div>
-                                                {isHItem && (fieldErrors[`item_${idx}_quantity`] || fieldErrors[`item_${idx}_unit_of_measure`]) && (
+                                                {isFillable && (fieldErrors[`item_${idx}_quantity`] || fieldErrors[`item_${idx}_unit_of_measure`]) && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5 justify-end">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_quantity`] || fieldErrors[`item_${idx}_unit_of_measure`]}</span>
@@ -5060,11 +5130,11 @@ export default function PurchaseRequisitionForm({
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={!isHItem ? '' : (it.plant || '')}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : (it.plant || '')}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             const val = e.target.value;
                                                             updateItemById(it.id, { plant: val });
                                                             if (it.material_code) {
@@ -5072,21 +5142,21 @@ export default function PurchaseRequisitionForm({
                                                             }
                                                         }}
                                                         onBlur={(e) => {
-                                                            if (isHItem && it.material_code) {
+                                                            if (isFillable && it.material_code) {
                                                                 triggerMaterialValuationLookup(idx, it.material_code, e.target.value);
                                                             }
                                                         }}
                                                         onKeyDown={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
                                                                 handleOpenPlantSearchHelp(idx, it.plant);
                                                             }
                                                         }}
-                                                        placeholder={!isHItem ? '—' : 'Plant'}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : 'Plant (F4)'}
+                                                        placeholder={!isFillable ? '—' : 'Plant'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Maintained on child items.' : 'Plant (F4)'}
                                                         className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_plant`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -5095,24 +5165,24 @@ export default function PurchaseRequisitionForm({
                                                     />
                                                     <button
                                                         type="button"
-                                                        disabled={!isHItem}
+                                                        disabled={!isFillable}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             setActiveItemIndex(idx);
                                                             handleOpenPlantSearchHelp(idx, it.plant);
                                                         }}
                                                         className={`absolute right-1 p-0.5 rounded transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'text-slate-300 cursor-not-allowed pointer-events-none'
                                                                 : 'text-[#0070f2] hover:bg-blue-100'
                                                         }`}
-                                                        title={!isHItem ? 'Disabled on top-level item' : 'Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item' : 'Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH'}
                                                     >
                                                         <Search className="h-3 w-3" />
                                                     </button>
                                                 </div>
-                                                {isHItem && fieldErrors[`item_${idx}_plant`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_plant`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_plant`]}</span>
@@ -5127,21 +5197,21 @@ export default function PurchaseRequisitionForm({
                                                 <div className="relative flex items-center">
                                                     <input
                                                         type="text"
-                                                        value={!isHItem ? '' : (it.purchasing_group || '')}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : (it.purchasing_group || '')}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => updateItemById(it.id, { purchasing_group: e.target.value })}
                                                         onKeyDown={(e) => {
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             if (e.key === 'F4') {
                                                                 e.preventDefault();
                                                                 handleOpenPurchasingGroupSearchHelp(idx, it.purchasing_group);
                                                             }
                                                         }}
-                                                        placeholder={!isHItem ? '—' : (defaultPurchasingGroup || '103')}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : 'Purchasing Group (Press F4 for Help)'}
+                                                        placeholder={!isFillable ? '—' : (defaultPurchasingGroup || '103')}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Maintained on child items.' : 'Purchasing Group (Press F4 for Help)'}
                                                         className={`h-8 w-full rounded border pr-7 pl-2 text-xs font-mono placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_purchasing_group`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -5150,24 +5220,24 @@ export default function PurchaseRequisitionForm({
                                                     />
                                                     <button
                                                         type="button"
-                                                        disabled={!isHItem}
+                                                        disabled={!isFillable}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            if (!isHItem) return;
+                                                            if (!isFillable) return;
                                                             setActiveItemIndex(idx);
                                                             handleOpenPurchasingGroupSearchHelp(idx, it.purchasing_group);
                                                         }}
                                                         className={`absolute right-1 p-0.5 rounded transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'text-slate-300 cursor-not-allowed pointer-events-none'
                                                                 : 'text-[#0070f2] hover:bg-blue-100'
                                                         }`}
-                                                        title={!isHItem ? 'Disabled on top-level item' : 'Purchasing Group Search Help (F4)'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item' : 'Purchasing Group Search Help (F4)'}
                                                     >
                                                         <Search className="h-3 w-3" />
                                                     </button>
                                                 </div>
-                                                {isHItem && fieldErrors[`item_${idx}_purchasing_group`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_purchasing_group`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_purchasing_group`]}</span>
@@ -5178,13 +5248,13 @@ export default function PurchaseRequisitionForm({
                                         {/* Material Group */}
                                         <td className="py-2 px-2.5">
                                             <div className="relative flex flex-col">
-                                                {!isHItem ? (
+                                                {!isFillable ? (
                                                     <input
                                                         type="text"
                                                         value=""
                                                         disabled
                                                         placeholder="—"
-                                                        title="Disabled on top-level item. Can only be filled on hierarchy line items."
+                                                        title="Disabled because hierarchy is active against this item. Maintained on child items."
                                                         className="h-8 w-full rounded border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none text-xs font-mono px-2"
                                                     />
                                                 ) : it.item_type === 'material' ? (
@@ -5242,7 +5312,7 @@ export default function PurchaseRequisitionForm({
                                                         </button>
                                                     </div>
                                                 )}
-                                                {isHItem && fieldErrors[`item_${idx}_material_group`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_material_group`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_material_group`]}</span>
@@ -5258,18 +5328,18 @@ export default function PurchaseRequisitionForm({
                                                     <input
                                                         type="number"
                                                         step="any"
-                                                        value={!isHItem ? '' : it.unit_price}
-                                                        disabled={!isHItem}
+                                                        value={!isFillable ? '' : it.unit_price}
+                                                        disabled={!isFillable}
                                                         onFocus={() => setActiveItemIndex(idx)}
                                                         onChange={(e) => updateItemById(it.id, { unit_price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
                                                         onWheel={(e) => e.currentTarget.blur()}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
                                                         }}
-                                                        placeholder={!isHItem ? '—' : '0.00'}
-                                                        title={!isHItem ? 'Disabled on top-level item. Can only be filled on hierarchy line items.' : (it.item_type === 'material' ? 'Auto-collected valuation price from SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS' : 'Service Valuation / Rate')}
+                                                        placeholder={!isFillable ? '—' : '0.00'}
+                                                        title={!isFillable ? 'Disabled because hierarchy is active against this item. Maintained on child items.' : (it.item_type === 'material' ? 'Auto-collected valuation price from SAP CDS View YY1_PRODUCTPLANTVALUATION_CDS' : 'Service Valuation / Rate')}
                                                         className={`h-8 w-20 rounded border px-1.5 text-xs text-right font-mono font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:outline-none transition-colors ${
-                                                            !isHItem
+                                                            !isFillable
                                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                                 : fieldErrors[`item_${idx}_unit_price`]
                                                                 ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -5280,23 +5350,23 @@ export default function PurchaseRequisitionForm({
                                                     />
                                                     <span className="text-[10px] font-semibold text-[#556b82]">{it.currency || currency}</span>
                                                 </div>
-                                                {isHItem && fieldErrors[`item_${idx}_unit_price`] && (
+                                                {isFillable && fieldErrors[`item_${idx}_unit_price`] && (
                                                     <p className="mt-1 text-[10px] text-rose-600 font-semibold leading-tight flex items-start gap-0.5 justify-end">
                                                         <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
                                                         <span>{fieldErrors[`item_${idx}_unit_price`]}</span>
                                                     </p>
                                                 )}
-                                                {isHItem && it.item_type === 'material' && it.inventory_valuation_procedure === 'V' && (
+                                                {isFillable && it.item_type === 'material' && it.inventory_valuation_procedure === 'V' && (
                                                     <span className="text-[9px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200" title={`Price Control V: Moving Average Price = ${it.moving_average_price || it.unit_price} ${it.currency || currency}`}>
                                                         V (MAP)
                                                     </span>
                                                 )}
-                                                {isHItem && it.item_type === 'material' && it.inventory_valuation_procedure === 'S' && (
+                                                {isFillable && it.item_type === 'material' && it.inventory_valuation_procedure === 'S' && (
                                                     <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200" title={`Price Control S: Standard Price = ${it.standard_price || it.unit_price} ${it.currency || currency}`}>
                                                         S (Std)
                                                     </span>
                                                 )}
-                                                {isHItem && it.item_type === 'service' && (
+                                                {isFillable && it.item_type === 'service' && (
                                                     <span className="text-[9px] font-medium text-purple-700 bg-purple-50 px-1 py-0.2 rounded border border-purple-200">
                                                         Service Rate
                                                     </span>
@@ -5306,7 +5376,7 @@ export default function PurchaseRequisitionForm({
                                         {/* Total Value */}
                                         <td className="py-2 px-2.5 text-right font-bold font-mono text-[#1c2d42]">
                                             {(() => {
-                                                if (!isHItem) {
+                                                if (hasHierarchy) {
                                                     const hNum = (it.hierarchy_number || String(idx + 1)).trim();
                                                     const childTotal = items
                                                         .filter((child) => child.parent_hierarchy_number === hNum || (child.hierarchy_number && child.hierarchy_number.startsWith(hNum + '.')))
@@ -5495,8 +5565,8 @@ export default function PurchaseRequisitionForm({
                 </div>
 
                 <div className="p-6">
-                    {/* Top-Level Item Notice Banner */}
-                    {!isHierarchyLineItem(currentItem) && (
+                    {/* Outline Node Notice Banner (Shown when hierarchy is active against item) */}
+                    {hasCurrentHierarchy && (
                         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200 text-amber-900 shadow-2xs">
                             <div className="flex items-start sm:items-center gap-3">
                                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500 text-white shadow-2xs shrink-0 mt-0.5 sm:mt-0">
@@ -5504,11 +5574,11 @@ export default function PurchaseRequisitionForm({
                                 </div>
                                 <div>
                                     <p className="text-xs font-bold flex items-center gap-2 text-amber-950">
-                                        <span>Top-Level Item ({currentItem?.hierarchy_number || activeItemIndex + 1})</span>
-                                        <span className="rounded bg-purple-100 text-purple-800 border border-purple-200 px-1.5 py-0.2 text-[10px] font-bold">Item Set (Outline Node)</span>
+                                        <span>Outline Item ({currentItem?.hierarchy_number || activeItemIndex + 1})</span>
+                                        <span className="rounded bg-purple-100 text-purple-800 border border-purple-200 px-1.5 py-0.2 text-[10px] font-bold">Item Set (Hierarchy Active)</span>
                                     </p>
                                     <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                                        Except <strong>Material/Service description</strong>, all input fields are disabled on this line item. Enter the outline description below, then click <strong>Create hierarchy item</strong> to add hierarchy line items (e.g. {currentItem?.hierarchy_number || activeItemIndex + 1}.1) where all procurement fields can be filled.
+                                        Hierarchy line items exist against this item. Except <strong>Material/Service description</strong>, all input fields on this outline node are disabled. Procurement details (Quantity, Plant, Valuation, Account Assignment) are maintained on its hierarchy line items.
                                     </p>
                                 </div>
                             </div>
@@ -5518,13 +5588,13 @@ export default function PurchaseRequisitionForm({
                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs shrink-0 self-start sm:self-auto transition-colors"
                             >
                                 <GitFork className="h-3.5 w-3.5" />
-                                <span>Create hierarchy item</span>
+                                <span>Add hierarchy child item</span>
                             </button>
                         </div>
                     )}
                     {/* TAB 0: Enhanced Limits (Item Category E) */}
                     {activeItemTab === 'enhanced-limits' && isEnhancedLimits && (
-                        !isCurrentHierarchyItem ? (
+                        hasCurrentHierarchy ? (
                             renderOutlineTabPlaceholder('Enhanced Limits')
                         ) : (
                         <div
@@ -5698,27 +5768,36 @@ export default function PurchaseRequisitionForm({
                                                     </span>
                                                 )}
                                                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                    currentItem?.is_outline || currentItem?.item_hierarchy_type === 'item_set'
+                                                    hasCurrentHierarchy
                                                         ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                                                        : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                                        : isChildHierarchyItem(currentItem)
+                                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                                        : 'bg-blue-50 text-[#0070f2] border border-blue-200'
                                                 }`}>
-                                                    {currentItem?.is_outline || currentItem?.item_hierarchy_type === 'item_set' ? (
+                                                    {hasCurrentHierarchy ? (
                                                         <>
                                                             <Layers className="h-3 w-3 text-purple-600" />
-                                                            <span>Item Set (Outline Node)</span>
+                                                            <span>Item Set (Hierarchy Active)</span>
+                                                        </>
+                                                    ) : isChildHierarchyItem(currentItem) ? (
+                                                        <>
+                                                            <GitFork className="h-3 w-3 text-indigo-600" />
+                                                            <span>Hierarchy Line Item</span>
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <Package className="h-3 w-3 text-slate-600" />
-                                                            <span>Functional Item</span>
+                                                            <Package className="h-3 w-3 text-[#0070f2]" />
+                                                            <span>Normal Line Item</span>
                                                         </>
                                                     )}
                                                 </span>
                                             </div>
                                             <p className="text-[11px] text-slate-600 mt-0.5">
-                                                {currentItem?.is_outline || currentItem?.item_hierarchy_type === 'item_set'
-                                                    ? 'This line item is an Item Set (Outline Node). You can bundle and nest functional items under it.'
-                                                    : 'This line item is a Functional Item for procurement. You can nest it under an Item Set or add sub-items under it.'}
+                                                {hasCurrentHierarchy
+                                                    ? 'Hierarchy is active against this line item. Input fields are disabled except description. Procurement details are maintained on child items.'
+                                                    : isChildHierarchyItem(currentItem)
+                                                    ? 'This line item is a hierarchy line item nested under an outline item. All fields are fillable.'
+                                                    : 'This is a normal line item. All fields are fillable. Click "Add Child Item" to create hierarchy line items under it.'}
                                             </p>
                                         </div>
                                     </div>
@@ -5778,10 +5857,10 @@ export default function PurchaseRequisitionForm({
                                     <div className="grid grid-cols-2 gap-2 h-9">
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() => setItemType(activeItemIndex, 'material')}
                                             className={`flex items-center justify-center gap-1.5 rounded-md border text-xs font-bold transition-all ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                     : currentItem?.item_type === 'material'
                                                     ? 'border-[#0070f2] bg-blue-50 text-[#0070f2] shadow-xs ring-1 ring-[#0070f2]'
@@ -5793,10 +5872,10 @@ export default function PurchaseRequisitionForm({
                                         </button>
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() => setItemType(activeItemIndex, 'service')}
                                             className={`flex items-center justify-center gap-1.5 rounded-md border text-xs font-bold transition-all ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none'
                                                     : currentItem?.item_type === 'service'
                                                     ? 'border-purple-600 bg-purple-50 text-purple-700 shadow-xs ring-1 ring-purple-600'
@@ -5817,13 +5896,13 @@ export default function PurchaseRequisitionForm({
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Material Number (F4)
-                                            {isCurrentHierarchyItem && currentItem?.item_type === 'material' && (
+                                            {isCurrentItemFillable && currentItem?.item_type === 'material' && (
                                                 <span className="text-rose-500 ml-1">*</span>
                                             )}
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem
-                                                ? 'Disabled for top-level item'
+                                            {!isCurrentItemFillable
+                                                ? 'Disabled (Hierarchy Active)'
                                                 : currentItem?.item_type === 'material'
                                                 ? 'Mandatory for Material items'
                                                 : 'Optional (F4 Search available)'}
@@ -5832,10 +5911,10 @@ export default function PurchaseRequisitionForm({
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.material_code || '')}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.material_code || '')}
                                             onChange={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 const val = e.target.value;
                                                 updateCurrentItem({
                                                     material_code: val,
@@ -5843,13 +5922,13 @@ export default function PurchaseRequisitionForm({
                                                 handleMaterialCodeInputChange(activeItemIndex, val, currentItem?.plant);
                                             }}
                                             onBlur={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.target.value.trim()) {
                                                     triggerMaterialValuationLookup(activeItemIndex, e.target.value, currentItem?.plant);
                                                 }
                                             }}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant);
@@ -5861,88 +5940,90 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             placeholder={
-                                                !isCurrentHierarchyItem
-                                                    ? '— (Disabled for top-level item)'
+                                                !isCurrentItemFillable
+                                                    ? '— (Disabled: hierarchy active)'
                                                     : currentItem?.item_type === 'material'
                                                     ? 'Material # (Mandatory) (F4)'
                                                     : 'Optional: Material # or leave blank (F4)'
                                             }
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : fieldErrors[`item_${activeItemIndex}_material_code`]
                                                     ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
                                                     : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                             }`}
                                         />
-                                        {fetchingValuation[currentItem?.id || ''] ? (
+                                        {!isCurrentItemFillable ? null : fetchingValuation[currentItem?.id || ''] ? (
                                             <div className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-[#0070f2]" title="Fetching Valuation Price from SAP...">
                                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                             </div>
                                         ) : (
                                             <button
                                                 type="button"
-                                                disabled={!isCurrentHierarchyItem}
-                                                onClick={() => isCurrentHierarchyItem && handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant)}
+                                                disabled={!isCurrentItemFillable}
+                                                onClick={() => isCurrentItemFillable && handleOpenMaterialSearchHelp(activeItemIndex, currentItem?.material_code, currentItem?.plant)}
                                                 className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                    !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                    !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                                 }`}
-                                                title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Select Material (Optional) - F4 Search Help'}
+                                                title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Select Material (Optional) - F4 Search Help'}
                                             >
                                                 <Search className="h-3.5 w-3.5" />
                                             </button>
                                         )}
                                     </div>
-                                    {fieldErrors[`item_${activeItemIndex}_material_code`] && (
+                                    {isCurrentItemFillable && fieldErrors[`item_${activeItemIndex}_material_code`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
                                             <span>{fieldErrors[`item_${activeItemIndex}_material_code`]}</span>
                                         </p>
                                     )}
-                                    <div className="mt-1 flex items-center justify-between text-[10px]">
-                                        <span className="text-[#556b82]">
-                                            Plant / Valuation Area: <span className="font-semibold text-slate-700">{currentItem?.plant || 'Not selected'}</span>
-                                        </span>
-                                        {currentItem?.inventory_valuation_procedure === 'V' && (
-                                            <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title={`Moving Average Price: ${currentItem?.moving_average_price || currentItem?.unit_price}`}>
-                                                Price Control: V (Moving Avg: {currentItem?.currency || currency} {Number(currentItem?.moving_average_price || currentItem?.unit_price).toFixed(2)})
+                                    {isCurrentItemFillable && (
+                                        <div className="mt-1 flex items-center justify-between text-[10px]">
+                                            <span className="text-[#556b82]">
+                                                Plant / Valuation Area: <span className="font-semibold text-slate-700">{currentItem?.plant || 'Not selected'}</span>
                                             </span>
-                                        )}
-                                        {currentItem?.inventory_valuation_procedure === 'S' && (
-                                            <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" title={`Standard Price: ${currentItem?.standard_price || currentItem?.unit_price}`}>
-                                                Price Control: S (Standard Price: {currentItem?.currency || currency} {Number(currentItem?.standard_price || currentItem?.unit_price).toFixed(2)})
-                                            </span>
-                                        )}
-                                    </div>
+                                            {currentItem?.inventory_valuation_procedure === 'V' && (
+                                                <span className="font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title={`Moving Average Price: ${currentItem?.moving_average_price || currentItem?.unit_price}`}>
+                                                    Price Control: V (Moving Avg: {currentItem?.currency || currency} {Number(currentItem?.moving_average_price || currentItem?.unit_price).toFixed(2)})
+                                                </span>
+                                            )}
+                                            {currentItem?.inventory_valuation_procedure === 'S' && (
+                                                <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" title={`Standard Price: ${currentItem?.standard_price || currentItem?.unit_price}`}>
+                                                    Price Control: S (Standard Price: {currentItem?.currency || currency} {Number(currentItem?.standard_price || currentItem?.unit_price).toFixed(2)})
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Purchasing Group */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Purchasing Group {isCurrentHierarchyItem && <span className="text-rose-500">*</span>} (F4)
+                                            Purchasing Group {isCurrentItemFillable && <span className="text-rose-500">*</span>} (F4)
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Buyer / Org Code'}
+                                            {!isCurrentItemFillable ? 'Disabled (Hierarchy Active)' : 'Buyer / Org Code'}
                                         </span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.purchasing_group || '')}
-                                            onChange={(e) => isCurrentHierarchyItem && updateCurrentItem({ purchasing_group: e.target.value })}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.purchasing_group || '')}
+                                            onChange={(e) => isCurrentItemFillable && updateCurrentItem({ purchasing_group: e.target.value })}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     handleOpenPurchasingGroupSearchHelp(activeItemIndex, currentItem?.purchasing_group);
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : `e.g. ${defaultPurchasingGroup || '103'}`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Purchasing Group (Press F4 for Help)'}
+                                            placeholder={!isCurrentItemFillable ? '—' : `e.g. ${defaultPurchasingGroup || '103'}`}
+                                            title={!isCurrentItemFillable ? 'Disabled because hierarchy is active against item' : 'Purchasing Group (Press F4 for Help)'}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : fieldErrors[`item_${activeItemIndex}_purchasing_group`]
                                                     ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -5951,23 +6032,23 @@ export default function PurchaseRequisitionForm({
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
-                                            onClick={() => isCurrentHierarchyItem && handleOpenPurchasingGroupSearchHelp(activeItemIndex, currentItem?.purchasing_group)}
+                                            disabled={!isCurrentItemFillable}
+                                            onClick={() => isCurrentItemFillable && handleOpenPurchasingGroupSearchHelp(activeItemIndex, currentItem?.purchasing_group)}
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Select Purchasing Group (F4 Help)'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Select Purchasing Group (F4 Help)'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
-                                    {isCurrentHierarchyItem && fieldErrors[`item_${activeItemIndex}_purchasing_group`] && (
+                                    {isCurrentItemFillable && fieldErrors[`item_${activeItemIndex}_purchasing_group`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
                                             <span>{fieldErrors[`item_${activeItemIndex}_purchasing_group`]}</span>
                                         </p>
                                     )}
-                                    {isCurrentHierarchyItem && (getPurchasingGroupLabel(currentItem?.purchasing_group) ? (
+                                    {isCurrentItemFillable && (getPurchasingGroupLabel(currentItem?.purchasing_group) ? (
                                         <span className="mt-1 block text-[11px] font-medium text-teal-700">
                                             {getPurchasingGroupLabel(currentItem?.purchasing_group)}
                                         </span>
@@ -5982,19 +6063,19 @@ export default function PurchaseRequisitionForm({
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Plant {isCurrentHierarchyItem && <span className="text-rose-500">*</span>} (F4)
+                                            Plant {isCurrentItemFillable && <span className="text-rose-500">*</span>} (F4)
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem ? 'Disabled for top-level item' : ''}
+                                            {!isCurrentItemFillable ? 'Disabled (Hierarchy Active)' : ''}
                                         </span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.plant || '')}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.plant || '')}
                                             onChange={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 const val = e.target.value;
                                                 updateCurrentItem({ plant: val });
                                                 if (currentItem?.material_code) {
@@ -6002,22 +6083,22 @@ export default function PurchaseRequisitionForm({
                                                 }
                                             }}
                                             onBlur={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (currentItem?.material_code) {
                                                     triggerMaterialValuationLookup(activeItemIndex, currentItem.material_code, e.target.value);
                                                 }
                                             }}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     handleOpenPlantSearchHelp(activeItemIndex, currentItem?.plant);
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : '1200'}
-                                            required={isCurrentHierarchyItem}
+                                            placeholder={!isCurrentItemFillable ? '—' : '1200'}
+                                            required={isCurrentItemFillable}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : fieldErrors[`item_${activeItemIndex}_plant`]
                                                     ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -6026,17 +6107,17 @@ export default function PurchaseRequisitionForm({
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
-                                            onClick={() => isCurrentHierarchyItem && handleOpenPlantSearchHelp(activeItemIndex, currentItem?.plant)}
+                                            disabled={!isCurrentItemFillable}
+                                            onClick={() => isCurrentItemFillable && handleOpenPlantSearchHelp(activeItemIndex, currentItem?.plant)}
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Plant Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / PlantVH'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
-                                    {isCurrentHierarchyItem && fieldErrors[`item_${activeItemIndex}_plant`] && (
+                                    {isCurrentItemFillable && fieldErrors[`item_${activeItemIndex}_plant`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
                                             <span>{fieldErrors[`item_${activeItemIndex}_plant`]}</span>
@@ -6051,17 +6132,17 @@ export default function PurchaseRequisitionForm({
                                             Item Category (F4)
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem ? 'Disabled' : 'Standard / Consignment'}
+                                            {!isCurrentItemFillable ? 'Disabled' : 'Standard / Consignment'}
                                         </span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.item_category || '')}
-                                            onChange={(e) => isCurrentHierarchyItem && updateCurrentItem({ item_category: e.target.value })}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.item_category || '')}
+                                            onChange={(e) => isCurrentItemFillable && updateCurrentItem({ item_category: e.target.value })}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     openSearchHelp(
@@ -6073,9 +6154,9 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : 'Standard'}
+                                            placeholder={!isCurrentItemFillable ? '—' : 'Standard'}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : fieldErrors[`item_${activeItemIndex}_item_category`]
                                                     ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -6084,9 +6165,9 @@ export default function PurchaseRequisitionForm({
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && openSearchHelp(
+                                                isCurrentItemFillable && openSearchHelp(
                                                     'item_category',
                                                     'Select Item Category (Search Help)',
                                                     dataCatalog.itemCategories,
@@ -6095,14 +6176,14 @@ export default function PurchaseRequisitionForm({
                                                 )
                                             }
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Item Category (Search Help - F4)'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Item Category (Search Help - F4)'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
-                                    {isCurrentHierarchyItem && fieldErrors[`item_${activeItemIndex}_item_category`] && (
+                                    {isCurrentItemFillable && fieldErrors[`item_${activeItemIndex}_item_category`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
                                             <span>{fieldErrors[`item_${activeItemIndex}_item_category`]}</span>
@@ -6117,7 +6198,7 @@ export default function PurchaseRequisitionForm({
                                             Account Assignment Category (F4)
                                         </label>
                                         <div className="flex items-center gap-1.5">
-                                            {isCurrentHierarchyItem && currentItem?.account_assignment_category && (
+                                            {isCurrentItemFillable && currentItem?.account_assignment_category && (
                                                 <button
                                                     type="button"
                                                     onClick={() => updateCurrentItem({ account_assignment_category: '' })}
@@ -6128,26 +6209,26 @@ export default function PurchaseRequisitionForm({
                                                 </button>
                                             )}
                                             <span className="text-[10px] text-[#556b82]">
-                                                {!isCurrentHierarchyItem ? 'Disabled' : currentItem?.account_assignment_category ? `Category ${currentItem.account_assignment_category}` : 'Stock / Inventory'}
+                                                {!isCurrentItemFillable ? 'Disabled' : currentItem?.account_assignment_category ? `Category ${currentItem.account_assignment_category}` : 'Stock / Inventory'}
                                             </span>
                                         </div>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.account_assignment_category || '')}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.account_assignment_category || '')}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && handleOpenAccountAssignmentCategorySearchHelp(
+                                                isCurrentItemFillable && handleOpenAccountAssignmentCategorySearchHelp(
                                                     activeItemIndex,
                                                     currentItem?.account_assignment_category
                                                 )
                                             }
                                             onChange={(e) =>
-                                                isCurrentHierarchyItem && updateCurrentItem({ account_assignment_category: e.target.value })
+                                                isCurrentItemFillable && updateCurrentItem({ account_assignment_category: e.target.value })
                                             }
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     handleOpenAccountAssignmentCategorySearchHelp(
@@ -6156,9 +6237,9 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : "Leave blank for Stock/Inventory, or 'K' for Cost Center"}
+                                            placeholder={!isCurrentItemFillable ? '—' : "Leave blank for Stock/Inventory, or 'K' for Cost Center"}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : fieldErrors[`item_${activeItemIndex}_account_assignment_category`]
                                                     ? 'border-rose-500 bg-rose-50/20 text-rose-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-500'
@@ -6167,22 +6248,22 @@ export default function PurchaseRequisitionForm({
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && handleOpenAccountAssignmentCategorySearchHelp(
+                                                isCurrentItemFillable && handleOpenAccountAssignmentCategorySearchHelp(
                                                     activeItemIndex,
                                                     currentItem?.account_assignment_category
                                                 )
                                             }
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Account Assignment Category (Search Help - F4) - Hits SAP CDS View YY1_AccountAssignmentCat'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Account Assignment Category (Search Help - F4) - Hits SAP CDS View YY1_AccountAssignmentCat'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
-                                    {isCurrentHierarchyItem && fieldErrors[`item_${activeItemIndex}_account_assignment_category`] && (
+                                    {isCurrentItemFillable && fieldErrors[`item_${activeItemIndex}_account_assignment_category`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
                                             <span>{fieldErrors[`item_${activeItemIndex}_account_assignment_category`]}</span>
@@ -6196,13 +6277,15 @@ export default function PurchaseRequisitionForm({
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
                                             Item Description <span className="text-rose-500">*</span>
                                         </label>
-                                        <span className="text-[10px] text-rose-600 font-medium"></span>
+                                        <span className="text-[10px] text-[#556b82]">
+                                            {hasCurrentHierarchy ? 'Maintained on outline node' : ''}
+                                        </span>
                                     </div>
                                     <input
                                         type="text"
                                         value={currentItem?.description || ''}
                                         onChange={(e) => updateCurrentItem({ description: e.target.value })}
-                                        placeholder="Material/ Service Detail description"
+                                        placeholder={hasCurrentHierarchy ? "Material / Service Outline description" : "Material / Service Detail description"}
                                         required
                                         className={`h-9 w-full rounded-md border px-3 text-xs focus:outline-none transition-colors ${
                                             fieldErrors[`item_${activeItemIndex}_description`]
@@ -6216,17 +6299,14 @@ export default function PurchaseRequisitionForm({
                                             <span>{fieldErrors[`item_${activeItemIndex}_description`]}</span>
                                         </p>
                                     )}
-                                    {/* <span className="mt-1 block text-[10px] text-[#556b82]">
-                                        Material / Service Detail description
-                                    </span> */}
                                 </div>
 
                                 {/* Material Group * */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block text-xs font-semibold text-[#1c2d42]">
-                                            Material Group {isCurrentHierarchyItem && <span className="text-rose-500">*</span>}
-                                            {isCurrentHierarchyItem && (currentItem?.item_type === 'material' ? (
+                                            Material Group {isCurrentItemFillable && <span className="text-rose-500">*</span>}
+                                            {isCurrentItemFillable && (currentItem?.item_type === 'material' ? (
                                                 <span className="ml-2 inline-flex items-center rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-medium text-blue-700">
                                                     Auto-Selected (Material)
                                                 </span>
@@ -6237,20 +6317,20 @@ export default function PurchaseRequisitionForm({
                                             ))}
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem
-                                                ? 'Disabled for top-level item'
+                                            {!isCurrentItemFillable
+                                                ? 'Disabled (Hierarchy Active)'
                                                 : currentItem?.item_type === 'material'
                                                 ? 'Auto from Material Master'
                                                 : 'SAP CDS: YY1_MATERIALGROUP_CDS'}
                                         </span>
                                     </div>
                                     <div className="relative">
-                                        {!isCurrentHierarchyItem ? (
+                                        {!isCurrentItemFillable ? (
                                             <input
                                                 type="text"
                                                 disabled
                                                 value=""
-                                                placeholder="— (Disabled for top-level item)"
+                                                placeholder="— (Disabled: hierarchy active)"
                                                 className="h-9 w-full rounded-md border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none px-3 text-xs font-mono placeholder:text-slate-400"
                                             />
                                         ) : currentItem?.item_type === 'material' ? (
@@ -6316,7 +6396,7 @@ export default function PurchaseRequisitionForm({
                                             </>
                                         )}
                                     </div>
-                                    {isCurrentHierarchyItem && fieldErrors[`item_${activeItemIndex}_material_group`] && (
+                                    {isCurrentItemFillable && fieldErrors[`item_${activeItemIndex}_material_group`] && (
                                         <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
                                             <AlertCircle className="h-3 w-3 shrink-0" />
                                             <span>{fieldErrors[`item_${activeItemIndex}_material_group`]}</span>
@@ -6331,17 +6411,17 @@ export default function PurchaseRequisitionForm({
                                             Storage Location (F4)
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem ? 'Disabled' : 'Plant dependent'}
+                                            {!isCurrentItemFillable ? 'Disabled' : 'Plant dependent'}
                                         </span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.storage_location || '')}
-                                            onChange={(e) => isCurrentHierarchyItem && updateCurrentItem({ storage_location: e.target.value })}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.storage_location || '')}
+                                            onChange={(e) => isCurrentItemFillable && updateCurrentItem({ storage_location: e.target.value })}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     handleOpenStorageLocationSearchHelp(
@@ -6351,27 +6431,27 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : "e.g. SL01, M100"}
+                                            placeholder={!isCurrentItemFillable ? '—' : "e.g. SL01, M100"}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                             }`}
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && handleOpenStorageLocationSearchHelp(
+                                                isCurrentItemFillable && handleOpenStorageLocationSearchHelp(
                                                     activeItemIndex,
                                                     currentItem?.storage_location,
                                                     currentItem?.plant
                                                 )
                                             }
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Storage Location Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / StorageLocationVH'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Storage Location Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / StorageLocationVH'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
@@ -6385,16 +6465,16 @@ export default function PurchaseRequisitionForm({
                                             Desired Supplier (F4)
                                         </label>
                                         <span className="text-[10px] text-[#556b82]">
-                                            {!isCurrentHierarchyItem ? 'Disabled' : 'Optional'}
+                                            {!isCurrentItemFillable ? 'Disabled' : 'Optional'}
                                         </span>
                                     </div>
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.desired_supplier || '')}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.desired_supplier || '')}
                                             onChange={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 const val = e.target.value;
                                                 const matched = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
                                                     (s: any) => (s.Supplier || s.code) === val
@@ -6406,7 +6486,7 @@ export default function PurchaseRequisitionForm({
                                                 });
                                             }}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     handleOpenSupplierSearchHelp(
@@ -6416,32 +6496,32 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : "e.g. 1000011"}
+                                            placeholder={!isCurrentItemFillable ? '—' : "e.g. 1000011"}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                             }`}
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && handleOpenSupplierSearchHelp(
+                                                isCurrentItemFillable && handleOpenSupplierSearchHelp(
                                                     'desired_supplier',
                                                     activeItemIndex,
                                                     currentItem?.desired_supplier
                                                 )
                                             }
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Desired Supplier (Search Help - F4)'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Desired Supplier (Search Help - F4)'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
-                                    {isCurrentHierarchyItem && (
+                                    {isCurrentItemFillable && (
                                         <span className="mt-1 block text-[10px] text-[#556b82]">
                                             {(() => {
                                                 const selectedSupplier = (sapSuppliersCache.length > 0 ? sapSuppliersCache : (dataCatalog.desiredSuppliers || [])).find(
@@ -6466,14 +6546,14 @@ export default function PurchaseRequisitionForm({
                                     </label>
                                     <input
                                         type="text"
-                                        disabled={!isCurrentHierarchyItem}
-                                        value={!isCurrentHierarchyItem ? '' : (currentItem?.supplier_material_number || '')}
+                                        disabled={!isCurrentItemFillable}
+                                        value={!isCurrentItemFillable ? '' : (currentItem?.supplier_material_number || '')}
                                         onChange={(e) =>
-                                            isCurrentHierarchyItem && updateCurrentItem({ supplier_material_number: e.target.value })
+                                            isCurrentItemFillable && updateCurrentItem({ supplier_material_number: e.target.value })
                                         }
-                                        placeholder={!isCurrentHierarchyItem ? '—' : "Vendor part # or spec"}
+                                        placeholder={!isCurrentItemFillable ? '—' : "Vendor part # or spec"}
                                         className={`h-9 w-full rounded-md border px-3 text-xs focus:outline-none transition-colors ${
-                                            !isCurrentHierarchyItem
+                                            !isCurrentItemFillable
                                                 ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                 : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                         }`}
@@ -6488,11 +6568,11 @@ export default function PurchaseRequisitionForm({
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.batch || '')}
-                                            onChange={(e) => isCurrentHierarchyItem && updateCurrentItem({ batch: e.target.value })}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.batch || '')}
+                                            onChange={(e) => isCurrentItemFillable && updateCurrentItem({ batch: e.target.value })}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     openSearchHelp(
@@ -6504,18 +6584,18 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : "BATCH-2026-A1"}
+                                            placeholder={!isCurrentItemFillable ? '—' : "BATCH-2026-A1"}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                             }`}
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && openSearchHelp(
+                                                isCurrentItemFillable && openSearchHelp(
                                                     'batch',
                                                     'Select Batch (Search Help)',
                                                     dataCatalog.batches,
@@ -6524,9 +6604,9 @@ export default function PurchaseRequisitionForm({
                                                 )
                                             }
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Batch (Search Help - F4)'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Batch (Search Help - F4)'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
@@ -6541,11 +6621,11 @@ export default function PurchaseRequisitionForm({
                                     <div className="relative">
                                         <input
                                             type="text"
-                                            disabled={!isCurrentHierarchyItem}
-                                            value={!isCurrentHierarchyItem ? '' : (currentItem?.revision_level || '')}
-                                            onChange={(e) => isCurrentHierarchyItem && updateCurrentItem({ revision_level: e.target.value })}
+                                            disabled={!isCurrentItemFillable}
+                                            value={!isCurrentItemFillable ? '' : (currentItem?.revision_level || '')}
+                                            onChange={(e) => isCurrentItemFillable && updateCurrentItem({ revision_level: e.target.value })}
                                             onKeyDown={(e) => {
-                                                if (!isCurrentHierarchyItem) return;
+                                                if (!isCurrentItemFillable) return;
                                                 if (e.key === 'F4') {
                                                     e.preventDefault();
                                                     openSearchHelp(
@@ -6557,18 +6637,18 @@ export default function PurchaseRequisitionForm({
                                                     );
                                                 }
                                             }}
-                                            placeholder={!isCurrentHierarchyItem ? '—' : "01"}
+                                            placeholder={!isCurrentItemFillable ? '—' : "01"}
                                             className={`h-9 w-full rounded-md border pr-9 pl-3 text-xs font-mono focus:outline-none transition-colors ${
-                                                !isCurrentHierarchyItem
+                                                !isCurrentItemFillable
                                                     ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed select-none placeholder:text-slate-400'
                                                     : 'border-[#d9e2ec] text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
                                             }`}
                                         />
                                         <button
                                             type="button"
-                                            disabled={!isCurrentHierarchyItem}
+                                            disabled={!isCurrentItemFillable}
                                             onClick={() =>
-                                                isCurrentHierarchyItem && openSearchHelp(
+                                                isCurrentItemFillable && openSearchHelp(
                                                     'revision_level',
                                                     'Select Revision Level (Search Help)',
                                                     dataCatalog.revisionLevels,
@@ -6577,9 +6657,9 @@ export default function PurchaseRequisitionForm({
                                                 )
                                             }
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
-                                                !isCurrentHierarchyItem ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
+                                                !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentHierarchyItem ? 'Disabled for top-level item' : 'Revision Level (Search Help - F4)'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Revision Level (Search Help - F4)'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>
@@ -6591,7 +6671,7 @@ export default function PurchaseRequisitionForm({
 
                     {/* TAB 2: Quantity and Date */}
                     {activeItemTab === 'quantity-date' && (
-                        !isCurrentHierarchyItem ? (
+                        hasCurrentHierarchy ? (
                             renderOutlineTabPlaceholder('Quantity and Date')
                         ) : (
                         <div className="space-y-6">
@@ -6797,7 +6877,7 @@ export default function PurchaseRequisitionForm({
 
                     {/* TAB 3: Valuation */}
                     {activeItemTab === 'valuation' && (
-                        !isCurrentHierarchyItem ? (
+                        hasCurrentHierarchy ? (
                             renderOutlineTabPlaceholder('Valuation')
                         ) : (
                         <div className="space-y-6">
@@ -7192,7 +7272,7 @@ export default function PurchaseRequisitionForm({
 
                     {/* TAB 4: Account Assignment */}
                     {activeItemTab === 'account-assignment' && (
-                        !isCurrentHierarchyItem ? (
+                        hasCurrentHierarchy ? (
                             renderOutlineTabPlaceholder('Account Assignment')
                         ) : (
                         <div className="space-y-6">
@@ -7408,7 +7488,7 @@ export default function PurchaseRequisitionForm({
 
                     {/* TAB 5: Source of Supply */}
                     {activeItemTab === 'source-of-supply' && (
-                        !isCurrentHierarchyItem ? (
+                        hasCurrentHierarchy ? (
                             renderOutlineTabPlaceholder('Source of Supply')
                         ) : (
                         <div className="space-y-6">
@@ -8012,7 +8092,7 @@ export default function PurchaseRequisitionForm({
 
                     {/* TAB 6: Contact Information */}
                     {activeItemTab === 'contact-info' && (
-                        !isCurrentHierarchyItem ? (
+                        hasCurrentHierarchy ? (
                             renderOutlineTabPlaceholder('Contact Information')
                         ) : (
                         <div className="space-y-6">

@@ -38,6 +38,8 @@ import {
     ListFilter,
     Check,
     Info,
+    CornerDownRight,
+    GitFork,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { SapPrStatusBadge, SapPrRefreshButton } from '@/components/sap/SapPrStatusBadge';
@@ -45,6 +47,11 @@ import { SapPrStatusBadge, SapPrRefreshButton } from '@/components/sap/SapPrStat
 interface PrItem {
     id: number;
     item_number: string;
+    hierarchy_number?: string | null;
+    parent_item_number?: string | null;
+    parent_hierarchy_number?: string | null;
+    is_outline?: boolean;
+    item_hierarchy_type?: string | null;
     item_type?: string;
     item_category?: string;
     pur_reqn_release_status?: string | null;
@@ -775,7 +782,7 @@ export default function ShowPurchaseRequisitionPage({
                         <table className="w-full text-left text-xs text-[#1c2d42]">
                             <thead className="bg-[#f8fafc] text-[11px] font-semibold text-[#556b82] border-b border-slate-200">
                                 <tr>
-                                    <th className="py-3 px-3">Item #</th>
+                                    <th className="py-3 px-3 min-w-[150px]">Hierarchy / Item #</th>
                                     <th className="py-3 px-2.5">SAP Status</th>
                                     <th className="py-3 px-2.5">Type</th>
                                     <th className="py-3 px-2.5">Item Cat.</th>
@@ -810,12 +817,49 @@ export default function ShowPurchaseRequisitionPage({
                                                 }`}
                                             >
                                                 <td className="py-3 px-3 font-mono font-bold text-[#0070f2]">
-                                                    <div className="flex items-center gap-1.5">
-                                                        {isSelected && (
-                                                            <span className="h-1.5 w-1.5 rounded-full bg-[#0070f2] shrink-0" />
-                                                        )}
-                                                        <span>{item.item_number}</span>
-                                                    </div>
+                                                    {(() => {
+                                                        const hNum = (item.hierarchy_number || String(idx + 1)).trim();
+                                                        const depth = Math.max(0, hNum.split('.').length - 1);
+                                                        const isItemSet = Boolean(item.is_outline || item.item_hierarchy_type === 'item_set');
+
+                                                        return (
+                                                            <div
+                                                                className="flex items-center gap-1.5"
+                                                                style={{ paddingLeft: `${depth * 14}px` }}
+                                                            >
+                                                                {depth > 0 && (
+                                                                    <CornerDownRight className="h-3 w-3 text-indigo-400 shrink-0" />
+                                                                )}
+                                                                {isSelected && (
+                                                                    <span className="h-1.5 w-1.5 rounded-full bg-[#0070f2] shrink-0" />
+                                                                )}
+                                                                <span
+                                                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-bold shrink-0 ${
+                                                                        isItemSet
+                                                                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                                                                            : depth > 0
+                                                                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                                                            : 'bg-blue-50 text-[#0070f2] border border-blue-200'
+                                                                    }`}
+                                                                    title={`Hierarchy Number: ${hNum}${item.parent_hierarchy_number ? ` (Parent: ${item.parent_hierarchy_number})` : ''}`}
+                                                                >
+                                                                    {hNum}
+                                                                </span>
+                                                                <span className="text-[10px] text-slate-500 font-normal">
+                                                                    {item.item_number}
+                                                                </span>
+                                                                {isItemSet && (
+                                                                    <span
+                                                                        className="inline-flex items-center gap-0.5 text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1 py-0.2 rounded shrink-0"
+                                                                        title="Item Set (Outline Node)"
+                                                                    >
+                                                                        <Layers className="h-2.5 w-2.5" />
+                                                                        <span>Set</span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="py-3 px-2.5">
                                                     {item.pur_reqn_release_status ? (
@@ -913,6 +957,20 @@ export default function ShowPurchaseRequisitionPage({
                                     <span className="rounded-md bg-blue-100 text-[#0070f2] px-2.5 py-1 text-xs font-mono font-bold">
                                         Item #{currentItem.item_number}
                                     </span>
+                                    <span className="rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 px-2.5 py-1 text-xs font-mono font-bold">
+                                        Hierarchy: {currentItem.hierarchy_number || selectedItemIndex + 1}
+                                    </span>
+                                    {currentItem.parent_hierarchy_number && (
+                                        <span className="text-xs text-slate-500 font-medium">
+                                            (Under Item {currentItem.parent_hierarchy_number})
+                                        </span>
+                                    )}
+                                    {(currentItem.is_outline || currentItem.item_hierarchy_type === 'item_set') && (
+                                        <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 border border-purple-200 px-2 py-0.5 text-xs font-bold text-purple-700">
+                                            <Layers className="h-3 w-3" />
+                                            <span>Item Set</span>
+                                        </span>
+                                    )}
                                     <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${
                                         currentItem.item_type === 'service'
                                             ? 'bg-purple-100 text-purple-800 border border-purple-200'

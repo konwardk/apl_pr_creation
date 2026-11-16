@@ -10,6 +10,7 @@ import { formatCurrencyAmount } from '@/lib/utils';
 export interface PrintItem {
     id?: number;
     item_number?: string;
+    hierarchy_number?: string;
     material_code?: string;
     description: string;
     material_group?: string;
@@ -720,9 +721,9 @@ export default function PurchaseRequisitionPrintModal({
 
                                         return (
                                             <tr key={item.id || index} style={{ borderBottom: '1px solid #000000', verticalAlign: 'top' }}>
-                                                {/* 1. Sl. No. */}
+                                                {/* 1. Sl. No. / Hierarchy */}
                                                 <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
-                                                    {index + 1}.
+                                                    {item.hierarchy_number || (index + 1)}.
                                                 </td>
 
                                                 {/* 2. Code No. */}

@@ -170,6 +170,9 @@ class PurchaseRequisition extends Model
             'PC' => 'ST',
             'HR' => 'STD',
             'DAY' => 'TAG',
+            'NO' => 'ST',
+            'NOS' => 'ST',
+            'NUM' => 'ST',
         ];
 
         $upper = strtoupper(trim($uom));
@@ -214,7 +217,9 @@ class PurchaseRequisition extends Model
             'ROL' => 'RO',
             '%' => 'P1',
             'P1' => 'P1',
-            'NO' => 'C62',
+            'NO' => 'PCE',
+            'NOS' => 'PCE',
+            'NUM' => 'PCE',
             'JOB' => 'JOB',
             'LOT' => 'LOT',
         ];
@@ -239,25 +244,46 @@ class PurchaseRequisition extends Model
             }
         }
 
+        // Filter items to send to SAP:
+        // In SAP S/4HANA Cloud OData V4 (API_PURCHASEREQUISITION_2), every item in _PurchaseRequisitionItem
+        // must be a valid procurement item with a quantity > 0 and either a Material or Account Assignment Category.
+        // Outline items / item sets (is_outline = true, quantity = 0) are local grouping nodes and cannot be processed by SAP as procurement line items.
+        $hasHierarchy = $this->items->contains(function ($it) {
+            return $it->is_outline || !empty($it->parent_hierarchy_number) || str_contains($it->hierarchy_number ?? '', '.');
+        });
+
+        $itemsToSend = $this->items->filter(function ($item) use ($hasHierarchy) {
+            if ($hasHierarchy && ($item->is_outline || $item->item_hierarchy_type === 'item_set' || (float) $item->quantity <= 0)) {
+                return false;
+            }
+            return true;
+        })->values();
+
+        // Fallback: If no functional items, send all items
+        if ($itemsToSend->isEmpty()) {
+            $itemsToSend = $this->items->values();
+        }
+
         $payload = [
             'PurchaseRequisitionType' => $this->pr_type ?: 'ZMAT',
             'PurReqnDescription' => mb_substr($this->description ?: 'Purchase Requisition', 0, 40),
             'PurReqnHeaderNote' => (string) ($this->header_note ?? ''),
             'SourceDetermination' => (bool) $this->auto_source_determination,
             'PurReqnDoOnlyValidation' => $doOnlyValidation,
-            '_PurchaseRequisitionItem' => $this->items->map(function ($item, $index) use ($uomIsoMapping) {
+            '_PurchaseRequisitionItem' => $itemsToSend->map(function ($item, $index) use ($uomIsoMapping) {
                 $itemNum = (string) (intval($item->item_number) ?: (($index + 1) * 10));
                 $baseUnit = $item->unit_of_measure ?: 'EA';
 
                 // Resolve SAP internal unit & ISO code from CDS View mapping or fallback
                 $upperUnit = strtoupper(trim($baseUnit));
+                $internalOverride = static::mapUnitOfMeasureToSapInternal($baseUnit);
                 $uomInfo = $uomIsoMapping[$upperUnit] ?? null;
-                $sapUnit = is_array($uomInfo)
-                    ? ($uomInfo['sapCode'] ?: static::mapUnitOfMeasureToSapInternal($baseUnit))
-                    : static::mapUnitOfMeasureToSapInternal($baseUnit);
-                $isoCode = is_array($uomInfo)
-                    ? ($uomInfo['isoCode'] ?: static::mapUnitOfMeasureToIso($sapUnit ?: $baseUnit))
-                    : (is_string($uomInfo) && $uomInfo !== '' ? $uomInfo : static::mapUnitOfMeasureToIso($sapUnit ?: $baseUnit));
+                $sapUnit = ($internalOverride !== $baseUnit)
+                    ? $internalOverride
+                    : (is_array($uomInfo) ? ($uomInfo['sapCode'] ?: static::mapUnitOfMeasureToSapInternal($baseUnit)) : static::mapUnitOfMeasureToSapInternal($baseUnit));
+                $isoCode = (is_array($uomInfo) && !empty($uomInfo['isoCode']) && $internalOverride === $baseUnit)
+                    ? $uomInfo['isoCode']
+                    : static::mapUnitOfMeasureToIso($sapUnit ?: $baseUnit);
 
                 $itemPayload = [
                     'PurchaseRequisitionItem' => $itemNum,
@@ -316,14 +342,21 @@ class PurchaseRequisition extends Model
                     $itemPayload['RequirementTracking'] = $item->requirement_tracking_number;
                 }
 
+                // Item Hierarchy mapping:
+                // SAP S/4HANA Cloud API_PURCHASEREQUISITION_2 accepts PurReqnItemExternalReference (max 10 chars)
+                // which stores the item's hierarchy number (e.g. '1.1', '1.2', '1.1.1') in standard SAP tracking.
+                if (!empty($item->hierarchy_number)) {
+                    $itemPayload['PurReqnItemExternalReference'] = mb_substr((string) $item->hierarchy_number, 0, 10);
+                }
+
                 if ($item->item_type === 'service') {
                     $itemPayload['ProductTypeCode'] = '2';
-                    if ($item->requisition_date) {
-                        $itemPayload['PerformancePeriodStartDate'] = $item->requisition_date->format('Y-m-d');
-                    }
-                    if ($item->delivery_date) {
-                        $itemPayload['PerformancePeriodEndDate'] = $item->delivery_date->format('Y-m-d');
-                    }
+                    $itemPayload['PerformancePeriodStartDate'] = $item->requisition_date
+                        ? $item->requisition_date->format('Y-m-d')
+                        : now()->format('Y-m-d');
+                    $itemPayload['PerformancePeriodEndDate'] = $item->delivery_date
+                        ? $item->delivery_date->format('Y-m-d')
+                        : now()->addDays(30)->format('Y-m-d');
                 } else {
                     $itemPayload['ProductTypeCode'] = '1';
                 }

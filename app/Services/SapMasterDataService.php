@@ -1919,6 +1919,10 @@ class SapMasterDataService
 
                 $parsedItems[] = [
                     'item_number' => $itemNum,
+                    'hierarchy_number' => $raw['PurgConfigurableNumber'] ?? null,
+                    'parent_item_number' => $raw['PurchasingParentItem'] ?? null,
+                    'is_outline' => !empty($raw['Isoutline']) || !empty($raw['IsOutline']),
+                    'item_hierarchy_type' => (!empty($raw['Isoutline']) || !empty($raw['IsOutline'])) ? 'item_set' : 'functional_item',
                     'release_status' => $relStatus,
                     'release_status_text' => $relText,
                     'processing_status' => $procStatus,

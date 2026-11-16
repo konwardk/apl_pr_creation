@@ -14,6 +14,12 @@ class PurchaseRequisitionItem extends Model
     protected $fillable = [
         'purchase_requisition_id',
         'item_number',
+        'hierarchy_number',
+        'parent_item_number',
+        'parent_hierarchy_number',
+        'is_outline',
+        'item_hierarchy_type',
+        'external_sort_number',
         'item_type',
         'item_category',
         'pur_reqn_release_status',
@@ -68,6 +74,7 @@ class PurchaseRequisitionItem extends Model
     ];
 
     protected $casts = [
+        'is_outline' => 'boolean',
         'quantity' => 'decimal:3',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',

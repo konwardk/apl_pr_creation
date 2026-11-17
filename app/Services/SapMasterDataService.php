@@ -1262,7 +1262,7 @@ class SapMasterDataService
     ): array {
         $endpoint = $endpointUrl ?: $this->getEndpoint(
             'storage_locations',
-            '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
+            '/sap/opu/odata/sap/ZUI_TMS_02?format=json'
         );
 
         [$authUser, $authPass] = $this->getAuthCredentials($username, $password);

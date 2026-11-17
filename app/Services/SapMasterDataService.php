@@ -72,10 +72,20 @@ class SapMasterDataService
             return [$username, $password];
         }
 
-        // 1. If active SapUrl model has stored credentials, use them
+        // 1. If matching or active SapUrl model has stored credentials, use them
         if (class_exists(\App\Models\SapUrl::class)) {
             try {
-                $active = \App\Models\SapUrl::getActiveRecord();
+                $host = parse_url($this->baseUrl, PHP_URL_HOST);
+                $active = null;
+
+                if (!empty($host)) {
+                    $active = \App\Models\SapUrl::where('url', 'like', "%{$host}%")->first();
+                }
+
+                if (!$active) {
+                    $active = \App\Models\SapUrl::getActiveRecord();
+                }
+
                 if ($active) {
                     if (!empty($active->username) && !empty($active->password)) {
                         return [
@@ -88,7 +98,7 @@ class SapMasterDataService
                     $envName = strtolower($active->environment_name ?? '');
 
                     // Quality / Test environment credentials
-                    if (str_contains($url, 'my443658') || str_contains($envName, 'quality') || str_contains($envName, 'test')) {
+                    if (str_contains($this->baseUrl, 'my443658') || str_contains($url, 'my443658') || str_contains($envName, 'quality') || str_contains($envName, 'test')) {
                         return [
                             $username ?: env('SAP_TEST_ODATA_USER', env('SAP_QUALITY_ODATA_USER', env('SAP_ODATA_USER', 'Communication_user'))),
                             $password ?: env('SAP_TEST_ODATA_PASSWORD', env('SAP_QUALITY_ODATA_PASSWORD', env('SAP_ODATA_PASSWORD', 'Communication@1123456789'))),
@@ -96,7 +106,7 @@ class SapMasterDataService
                     }
 
                     // Development environment credentials
-                    if (str_contains($url, 'my443544') || str_contains($envName, 'dev')) {
+                    if (str_contains($this->baseUrl, 'my443544') || str_contains($url, 'my443544') || str_contains($envName, 'dev')) {
                         return [
                             $username ?: env('SAP_DEV_ODATA_USER', 'BTP_S4_INTEGRATION'),
                             $password ?: env('SAP_DEV_ODATA_PASSWORD', 'Assampetrochemical@123#'),
@@ -119,6 +129,22 @@ class SapMasterDataService
     }
 
     /**
+     * Get the SAP API base URL (with -api subdomain for S/4HANA Cloud when appropriate).
+     */
+    public function getApiBaseUrl(): string
+    {
+        if (str_contains($this->baseUrl, '-api.')) {
+            return $this->baseUrl;
+        }
+
+        if (str_contains($this->baseUrl, '.s4hana.cloud.sap')) {
+            return preg_replace('/^(https?:\/\/[^\.]+)(\.s4hana\.cloud\.sap)/i', '$1-api$2', $this->baseUrl);
+        }
+
+        return $this->baseUrl;
+    }
+
+    /**
      * Resolve endpoint URL using config key with fallback to base URL + relative path.
      *
      * @param string $configKey Key inside config('sap.endpoints.*')
@@ -133,12 +159,32 @@ class SapMasterDataService
             $configured = str_replace('\$', '$', $configured);
 
             if (str_starts_with($configured, 'http://') || str_starts_with($configured, 'https://')) {
-                // Re-anchor path & query to the current active baseUrl
                 $parts = parse_url($configured);
+                $configuredHost = $parts['host'] ?? '';
                 $path = ($parts['path'] ?? '') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+
+                // If configured endpoint explicitly uses -api subdomain or targets ZUI_TMS_02,
+                // re-anchor to the active API base URL
+                if (str_contains($configuredHost, '-api.') || str_contains($path, 'ZUI_TMS_02')) {
+                    return $this->getApiBaseUrl() . '/' . ltrim($path, '/');
+                }
+
+                // Re-anchor path & query to the current active baseUrl
                 return $this->baseUrl . '/' . ltrim($path, '/');
             }
             return $this->baseUrl . '/' . ltrim($configured, '/');
+        }
+
+        if (str_starts_with($relativePath, 'http://') || str_starts_with($relativePath, 'https://')) {
+            $parts = parse_url($relativePath);
+            $relHost = $parts['host'] ?? '';
+            $path = ($parts['path'] ?? '') . (isset($parts['query']) ? '?' . $parts['query'] : '');
+
+            if (str_contains($relHost, '-api.') || str_contains($path, 'ZUI_TMS_02')) {
+                return $this->getApiBaseUrl() . '/' . ltrim($path, '/');
+            }
+
+            return $this->baseUrl . '/' . ltrim($path, '/');
         }
 
         return $this->baseUrl . '/' . ltrim($relativePath, '/');
@@ -1251,7 +1297,7 @@ class SapMasterDataService
 
     /**
      * Fetch Storage Locations from SAP S/4HANA Cloud Value Help Service:
-     * ZUI_TMS_DESPATCH_04 / StorageLocationVH
+     * ZUI_TMS_02 / StorageLocationVH
      */
     public function fetchStorageLocationsFromSap(
         ?string $search = null,
@@ -1262,7 +1308,7 @@ class SapMasterDataService
     ): array {
         $endpoint = $endpointUrl ?: $this->getEndpoint(
             'storage_locations',
-            '/sap/opu/odata/sap/ZUI_TMS_02?format=json'
+            '/sap/opu/odata/sap/ZUI_TMS_02/StorageLocationVH?$format=json'
         );
 
         [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
@@ -1313,7 +1359,7 @@ class SapMasterDataService
                         'is_live' => true,
                         'status' => $response->status(),
                         'latency_ms' => $durationMs,
-                        'source' => 'SAP S/4HANA Cloud (Live Service: ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
+                        'source' => 'SAP S/4HANA Cloud (Live Service: ZUI_TMS_02 / StorageLocationVH)',
                         'endpoint' => $targetUrl,
                         'count' => count($items),
                         'items' => $items,
@@ -1418,7 +1464,58 @@ class SapMasterDataService
      */
     public function getFormattedFallbackStorageLocations(?string $plant = null): array
     {
-        return [];
+        // $all = [
+        //     // Plant 1100
+        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1100', 'extra' => 'Plant 1100 • Store'],
+        //     // Plant 1200 (Namrup)
+        //     ['code' => 'F125', 'name' => 'F125 - 125 TPD Formalin', 'StorageLocation' => 'F125', 'StorageLocationName' => '125 TPD Formalin', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Formalin'],
+        //     ['code' => 'FNB1', 'name' => 'FNB1 - 125 TPD Bay 1', 'StorageLocation' => 'FNB1', 'StorageLocationName' => '125 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Bay 1'],
+        //     ['code' => 'HZG1', 'name' => 'HZG1 - Hazardous GD 1', 'StorageLocation' => 'HZG1', 'StorageLocationName' => 'Hazardous GD 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • Hazardous GD 1'],
+        //     ['code' => 'HZG2', 'name' => 'HZG2 - Hazardous GD 2', 'StorageLocation' => 'HZG2', 'StorageLocationName' => 'Hazardous GD 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Hazardous GD 2'],
+        //     ['code' => 'ISST', 'name' => 'ISST - ISGEC Store', 'StorageLocation' => 'ISST', 'StorageLocationName' => 'ISGEC Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • ISGEC Store'],
+        //     ['code' => 'M100', 'name' => 'M100 - 100 TPD Methanol', 'StorageLocation' => 'M100', 'StorageLocationName' => '100 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Methanol'],
+        //     ['code' => 'M2B1', 'name' => 'M2B1 - 100 TPD Bay 1', 'StorageLocation' => 'M2B1', 'StorageLocationName' => '100 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Bay 1'],
+        //     ['code' => 'M3B1', 'name' => 'M3B1 - 500 TPD Bay 1', 'StorageLocation' => 'M3B1', 'StorageLocationName' => '500 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 1'],
+        //     ['code' => 'M3B2', 'name' => 'M3B2 - 500 TPD Bay 2', 'StorageLocation' => 'M3B2', 'StorageLocationName' => '500 TPD Bay 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 2'],
+        //     ['code' => 'M3B3', 'name' => 'M3B3 - 500 TPD Bay 3', 'StorageLocation' => 'M3B3', 'StorageLocationName' => '500 TPD Bay 3', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 3'],
+        //     ['code' => 'M3B4', 'name' => 'M3B4 - 500 TPD Bay 4', 'StorageLocation' => 'M3B4', 'StorageLocationName' => '500 TPD Bay 4', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 4'],
+        //     ['code' => 'M3B5', 'name' => 'M3B5 - 500 TPD Bay 5', 'StorageLocation' => 'M3B5', 'StorageLocationName' => '500 TPD Bay 5', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 5'],
+        //     ['code' => 'M3B6', 'name' => 'M3B6 - 500 TPD Bay 6', 'StorageLocation' => 'M3B6', 'StorageLocationName' => '500 TPD Bay 6', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 6'],
+        //     ['code' => 'M500', 'name' => 'M500 - 500 TPD Methanol', 'StorageLocation' => 'M500', 'StorageLocationName' => '500 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Methanol'],
+        //     ['code' => 'MAIN', 'name' => 'MAIN - Main Store', 'StorageLocation' => 'MAIN', 'StorageLocationName' => 'Main Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • Main Store'],
+        //     ['code' => 'PRJ1', 'name' => 'PRJ1 - Project Store 1', 'StorageLocation' => 'PRJ1', 'StorageLocationName' => 'Project Store 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • Project Store 1'],
+        //     ['code' => 'PRJ2', 'name' => 'PRJ2 - Project Store 2', 'StorageLocation' => 'PRJ2', 'StorageLocationName' => 'Project Store 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Project Store 2'],
+        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • Store'],
+        //     ['code' => 'SLDM', 'name' => 'SLDM - Damage', 'StorageLocation' => 'SLDM', 'StorageLocationName' => 'Damage', 'Plant' => '1200', 'extra' => 'Plant 1200 • Damage'],
+        //     ['code' => 'SLEW', 'name' => 'SLEW - E Waste', 'StorageLocation' => 'SLEW', 'StorageLocationName' => 'E Waste', 'Plant' => '1200', 'extra' => 'Plant 1200 • E Waste'],
+        //     ['code' => 'SLM2', 'name' => 'SLM2 - Methanol 2', 'StorageLocation' => 'SLM2', 'StorageLocationName' => 'Methanol 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Methanol 2'],
+        //     ['code' => 'SLM3', 'name' => 'SLM3 - Methanol 3', 'StorageLocation' => 'SLM3', 'StorageLocationName' => 'Methanol 3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Methanol 3'],
+        //     ['code' => 'SLOY', 'name' => 'SLOY - Open Yard', 'StorageLocation' => 'SLOY', 'StorageLocationName' => 'Open Yard', 'Plant' => '1200', 'extra' => 'Plant 1200 • Open Yard'],
+        //     ['code' => 'SLSC', 'name' => 'SLSC - Scarp', 'StorageLocation' => 'SLSC', 'StorageLocationName' => 'Scarp', 'Plant' => '1200', 'extra' => 'Plant 1200 • Scarp'],
+        //     ['code' => 'SSE2', 'name' => 'SSE2 - Elec Sub-Stre M2', 'StorageLocation' => 'SSE2', 'StorageLocationName' => 'Elec Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Elec Sub-Stre M2'],
+        //     ['code' => 'SSE3', 'name' => 'SSE3 - Elec Sub-Stre M3', 'StorageLocation' => 'SSE3', 'StorageLocationName' => 'Elec Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Elec Sub-Stre M3'],
+        //     ['code' => 'SSI2', 'name' => 'SSI2 - Inst Sub-Stre M2', 'StorageLocation' => 'SSI2', 'StorageLocationName' => 'Inst Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Inst Sub-Stre M2'],
+        //     ['code' => 'SSI3', 'name' => 'SSI3 - Inst Sub-Stre M3', 'StorageLocation' => 'SSI3', 'StorageLocationName' => 'Inst Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Inst Sub-Stre M3'],
+        //     ['code' => 'SSM2', 'name' => 'SSM2 - Mech Sub-Stre M2', 'StorageLocation' => 'SSM2', 'StorageLocationName' => 'Mech Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M2'],
+        //     ['code' => 'SSM3', 'name' => 'SSM3 - Mech Sub-Stre M3', 'StorageLocation' => 'SSM3', 'StorageLocationName' => 'Mech Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M3'],
+        //     ['code' => 'WSCN', 'name' => 'WSCN - Waste Container', 'StorageLocation' => 'WSCN', 'StorageLocationName' => 'Waste Container', 'Plant' => '1200', 'extra' => 'Plant 1200 • Waste Container'],
+        //     // Plant 1300
+        //     ['code' => 'F200', 'name' => 'F200 - 200 TPD Formalin', 'StorageLocation' => 'F200', 'StorageLocationName' => '200 TPD Formalin', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Formalin'],
+        //     ['code' => 'FBB1', 'name' => 'FBB1 - 200 TPD Bay 1', 'StorageLocation' => 'FBB1', 'StorageLocationName' => '200 TPD Bay 1', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Bay 1'],
+        //     ['code' => 'ONRD', 'name' => 'ONRD - On Road', 'StorageLocation' => 'ONRD', 'StorageLocationName' => 'On Road', 'Plant' => '1300', 'extra' => 'Plant 1300 • On Road'],
+        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1300', 'extra' => 'Plant 1300 • Store'],
+        //     // Plant 1400
+        //     ['code' => 'ONRD', 'name' => 'ONRD - On Road', 'StorageLocation' => 'ONRD', 'StorageLocationName' => 'On Road', 'Plant' => '1400', 'extra' => 'Plant 1400 • On Road'],
+        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1400', 'extra' => 'Plant 1400 • Store'],
+        // ];
+        $all = "Hello";
+
+        if (!empty($plant)) {
+            $p = trim($plant);
+            return array_values(array_filter($all, fn($it) => $it['Plant'] === $p));
+        }
+
+        return $all;
     }
 
     /**

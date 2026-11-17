@@ -908,6 +908,13 @@ export default function PurchaseRequisitionForm({
                 if (d?.items?.length) setSapOutlineContractsCache(d.items);
             })
             .catch(() => {});
+
+        fetch('/sap-storage-locations', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) setSapStorageLocationsCache(d.items);
+            })
+            .catch(() => {});
     }, []);
 
 
@@ -1537,7 +1544,7 @@ export default function PurchaseRequisitionForm({
     };
 
     /**
-     * Hit SAP S/4HANA Cloud Value Help Service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+     * Hit SAP S/4HANA Cloud Value Help Service (ZUI_TMS_02 / StorageLocationVH)
      * API for Storage Location F4 Search Help.
      * Shows StorageLocation (code), StorageLocationName (description), and Plant.
      */
@@ -1552,7 +1559,7 @@ export default function PurchaseRequisitionForm({
         if (sapStorageLocationsCache.length > 0) {
             setSearchHelpState({
                 isOpen: true,
-                title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
+                title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_02 / StorageLocationVH)',
                 subtitle: targetPlant
                     ? `SAP S/4HANA Cloud (StorageLocationVH • Plant ${targetPlant} • ${sapStorageLocationsCache.length} locations)`
                     : `SAP S/4HANA Cloud (StorageLocationVH • ${sapStorageLocationsCache.length} locations)`,
@@ -1569,10 +1576,10 @@ export default function PurchaseRequisitionForm({
         // Open modal immediately with loading state (no fallback)
         setSearchHelpState({
             isOpen: true,
-            title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)',
+            title: 'Select Storage Location - SAP S/4HANA Cloud (ZUI_TMS_02 / StorageLocationVH)',
             subtitle: targetPlant
-                ? `Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH for Plant ${targetPlant})...`
-                : 'Connecting to SAP S/4HANA Cloud (ZUI_TMS_DESPATCH_04 / StorageLocationVH)...',
+                ? `Connecting to SAP S/4HANA Cloud (ZUI_TMS_02 / StorageLocationVH for Plant ${targetPlant})...`
+                : 'Connecting to SAP S/4HANA Cloud (ZUI_TMS_02 / StorageLocationVH)...',
             options: [],
             selectedCode: currentCode || '',
             field: 'storage_location',
@@ -6451,7 +6458,7 @@ export default function PurchaseRequisitionForm({
                                             className={`absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 transition-colors ${
                                                 !isCurrentItemFillable ? 'text-slate-300 cursor-not-allowed' : 'text-[#0070f2] hover:bg-blue-50'
                                             }`}
-                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Storage Location Search Help (F4) - Hits SAP Service ZUI_TMS_DESPATCH_04 / StorageLocationVH'}
+                                            title={!isCurrentItemFillable ? 'Disabled: hierarchy active against item' : 'Storage Location Search Help (F4) - Hits SAP Service ZUI_TMS_02 / StorageLocationVH'}
                                         >
                                             <Search className="h-3.5 w-3.5" />
                                         </button>

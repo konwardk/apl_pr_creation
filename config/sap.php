@@ -1,6 +1,9 @@
 <?php
 
 $baseUrl = rtrim(env('SAP_S4HANA_URL', 'https://my443658.s4hana.cloud.sap'), '/');
+$apiBaseUrl = str_contains($baseUrl, '-api.')
+    ? $baseUrl
+    : (str_contains($baseUrl, '.s4hana.cloud.sap') ? preg_replace('/^(https?:\/\/[^\.]+)(\.s4hana\.cloud\.sap)/i', '$1-api$2', $baseUrl) : $baseUrl);
 
 return [
     /*
@@ -60,10 +63,10 @@ return [
             $baseUrl . '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/PlantVH?format=json'
         ),
 
-        // Value Help Service for Storage Locations (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+        // Value Help Service for Storage Locations (ZUI_TMS_02 / StorageLocationVH)
         'storage_locations' => env(
             'SAP_STORAGE_LOCATIONS_ENDPOINT',
-            $baseUrl . '/sap/opu/odata/sap/ZUI_TMS_DESPATCH_04/StorageLocationVH?format=json'
+            $apiBaseUrl . '/sap/opu/odata/sap/ZUI_TMS_02/StorageLocationVH?format=json'
         ),
 
         // CDS View for Material Groups (YY1_MATERIALGROUP_CDS)

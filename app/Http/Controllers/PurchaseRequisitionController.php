@@ -70,7 +70,7 @@ class PurchaseRequisitionController extends Controller
     }
 
     /**
-     * Fetch Storage Locations from SAP S/4HANA Cloud Value Help Service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+     * Fetch Storage Locations from SAP S/4HANA Cloud Value Help Service (ZUI_TMS_02 / StorageLocationVH)
      */
     public function getStorageLocations(Request $request): JsonResponse
     {
@@ -575,7 +575,7 @@ class PurchaseRequisitionController extends Controller
             $purchasingGroups = $this->sapService->getFormattedFallbackPurchasingGroups();
         }
 
-        // 10. Storage Locations from live SAP S/4HANA Cloud service (ZUI_TMS_DESPATCH_04 / StorageLocationVH)
+        // 10. Storage Locations from live SAP S/4HANA Cloud service (ZUI_TMS_02 / StorageLocationVH)
         $storageLocationsResult = $this->sapService->fetchStorageLocationsFromSap();
         $storageLocations = ($storageLocationsResult['success'] ?? false && !empty($storageLocationsResult['items']))
             ? $storageLocationsResult['items']

@@ -11,6 +11,7 @@ interface CreatePurchaseRequisitionModalProps {
     headerOptions?: HeaderOption[];
     prDocumentTypes?: PrDocumentType[];
     itemCategories?: ItemCategory[];
+    masterData?: any;
 }
 
 export default function CreatePurchaseRequisitionModal({
@@ -20,6 +21,7 @@ export default function CreatePurchaseRequisitionModal({
     headerOptions = [],
     prDocumentTypes = [],
     itemCategories = [],
+    masterData,
 }: CreatePurchaseRequisitionModalProps) {
     if (!isOpen) return null;
 
@@ -85,6 +87,7 @@ export default function CreatePurchaseRequisitionModal({
                         headerOptions={headerOptions}
                         prDocumentTypes={prDocumentTypes}
                         itemCategories={itemCategories}
+                        masterData={masterData}
                     />
                 </div>
             </div>

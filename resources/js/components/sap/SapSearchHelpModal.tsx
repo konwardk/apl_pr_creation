@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, X, Check, Database } from 'lucide-react';
 
 export interface SearchHelpOption {
@@ -34,9 +34,15 @@ export default function SapSearchHelpModal({
     onSearch,
 }: SapSearchHelpModalProps) {
     const [searchQuery, setSearchQuery] = useState('');
+    const [appliedSearchQuery, setAppliedSearchQuery] = useState('');
     const [lastSearchedQuery, setLastSearchedQuery] = useState('');
     const [isSearchingServer, setIsSearchingServer] = useState(false);
     const [selectedPlantFilter, setSelectedPlantFilter] = useState<string>('ALL');
+
+    const inputRef = useRef<HTMLInputElement | null>(null);
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+    // Track whether the modal was already open — reset search only on the closed→open transition
+    const wasOpenRef = useRef(false);
 
     const isStorageLocationSearch = useMemo(() => {
         return (
@@ -55,22 +61,55 @@ export default function SapSearchHelpModal({
         return Array.from(plantsSet).sort();
     }, [options, isStorageLocationSearch]);
 
-    // When modal opens, initialize plant filter to initialPlant if available
-    React.useEffect(() => {
-        if (isOpen) {
+    // Cleanup debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+            }
+        };
+    }, []);
+
+    // Reset search state ONLY when the modal transitions from closed → open.
+    // Do NOT include availablePlants or options in deps — that would re-trigger
+    // the reset (clearing searchQuery) every time the filtered list changes.
+    useEffect(() => {
+        const justOpened = isOpen && !wasOpenRef.current;
+        wasOpenRef.current = isOpen;
+
+        if (justOpened) {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+            }
             setSearchQuery('');
+            setAppliedSearchQuery('');
             setLastSearchedQuery('');
             setIsSearchingServer(false);
-            if (initialPlant && initialPlant.trim() && availablePlants.includes(initialPlant.trim())) {
-                setSelectedPlantFilter(initialPlant.trim());
-            } else {
-                setSelectedPlantFilter('ALL');
-            }
+            // Plant filter: only relevant for Storage Location searches
+            setSelectedPlantFilter(
+                initialPlant && initialPlant.trim() && availablePlants.includes(initialPlant.trim())
+                    ? initialPlant.trim()
+                    : 'ALL'
+            );
+            const timer = setTimeout(() => {
+                inputRef.current?.focus();
+            }, 50);
+            return () => clearTimeout(timer);
         }
-    }, [isOpen, initialPlant, availablePlants]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, initialPlant]);
+    // ↑ availablePlants intentionally excluded: changing options (filtering results)
+    //   must NOT reset the searchQuery the user is actively typing.
 
     const handleExecuteSearch = async () => {
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+        }
         const query = searchQuery.trim();
+        setAppliedSearchQuery(query);
         setLastSearchedQuery(query);
         if (onSearch) {
             setIsSearchingServer(true);
@@ -82,17 +121,22 @@ export default function SapSearchHelpModal({
         }
     };
 
-    const handleClearSearch = async () => {
-        setSearchQuery('');
-        setLastSearchedQuery('');
-        if (onSearch && lastSearchedQuery) {
-            setIsSearchingServer(true);
-            try {
-                await onSearch('');
-            } finally {
-                setIsSearchingServer(false);
-            }
+    const handleClearSearch = () => {
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
         }
+        setSearchQuery('');
+        setAppliedSearchQuery('');
+        setLastSearchedQuery('');
+        if (onSearch) {
+            onSearch('');
+        }
+        setTimeout(() => inputRef.current?.focus(), 20);
+    };
+
+    const handleSearchInputChange = (val: string) => {
+        setSearchQuery(val);
     };
 
     // Identify search category stably based on title and options
@@ -203,32 +247,84 @@ export default function SapSearchHelpModal({
             }
         }
 
-        // If onSearch is provided (e.g. material search), filtering is handled externally.
-        // The `options` prop already reflects the filtered result, so skip client-side text filtering.
-        if (onSearch) return base;
-
-        const q = searchQuery.toLowerCase().trim();
+        const q = appliedSearchQuery.toLowerCase().trim();
         if (!q) return base;
+        const cleanQ = q.replace(/^0+/, '');
         const searchTerms = q.split(/\s+/).filter(Boolean);
 
-        return base.filter((opt) => {
+        const matches = base.filter((opt) => {
             const raw = opt.raw_data || {};
+
+            // 1. Dedicated Material Search: strictly match Material Number / SKU and Material Description
+            if (isMaterialSearch) {
+                const product = String(opt.Product || opt.code || opt.ProductExternalID || opt.Material || '').toLowerCase();
+                const cleanProduct = product.replace(/^0+/, '');
+                const extId = String(opt.ProductExternalID || raw.ProductExternalID || '').toLowerCase();
+                const productDesc = String(
+                    opt.ProductDescription ||
+                    opt.description ||
+                    opt.MaterialDescription ||
+                    opt.ProductName ||
+                    opt.name ||
+                    opt.poText ||
+                    raw.ProductDescription ||
+                    raw.ProductDescription_1 ||
+                    raw.ProductDescription_2 ||
+                    raw.ProductDescription_3 ||
+                    raw.MaterialDescription ||
+                    raw.ProductName ||
+                    raw.ProductText ||
+                    raw.ShortText ||
+                    raw.LongText ||
+                    raw.Description ||
+                    raw.YY1_ProductDescription ||
+                    raw.YY1_MaterialDescription ||
+                    ''
+                ).toLowerCase();
+
+                const isNumberMatch = product.includes(q) || (cleanQ.length > 0 && cleanProduct.includes(cleanQ)) || extId.includes(q);
+                const isDescMatch = productDesc.includes(q);
+
+                if (searchTerms.length > 1) {
+                    const combined = `${product} ${extId} ${productDesc}`;
+                    return searchTerms.every((term) => {
+                        const cleanTerm = term.replace(/^0+/, '');
+                        return combined.includes(term) || (cleanTerm.length > 0 && cleanProduct.includes(cleanTerm));
+                    });
+                }
+                return isNumberMatch || isDescMatch;
+            }
+
+            // General / other F4 search types
             const product = String(opt.Product || opt.ProductExternalID || opt.Material || opt.material || opt.MaterialGroup || opt.GLAccount || opt.CostCenter || opt.code || '').toLowerCase();
-            const productName = String(opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.GLAccountName || opt.name || '').toLowerCase();
+            const extId = String(opt.ProductExternalID || raw.ProductExternalID || '').toLowerCase();
+
+            // 2. Material Description & Names (all candidates)
             const productDesc = String(
                 opt.ProductDescription ||
                 opt.ProductDescription_1 ||
                 opt.ProductDescription_2 ||
                 opt.ProductDescription_3 ||
                 opt.description ||
+                opt.MaterialDescription ||
+                opt.ProductName ||
+                opt.name ||
                 opt.poText ||
                 raw.ProductDescription ||
                 raw.ProductDescription_1 ||
                 raw.MaterialDescription ||
                 raw.ProductName ||
                 raw.poText ||
+                raw.ProductText ||
+                raw.ShortText ||
+                raw.LongText ||
+                raw.Description ||
+                raw.YY1_ProductDescription ||
+                raw.YY1_MaterialDescription ||
                 ''
             ).toLowerCase();
+
+            const productName = String(opt.ProductName || opt.MaterialGroupName || opt.PlantName || opt.AcctAssignmentCategoryName || opt.GLAccountName || opt.name || '').toLowerCase();
             const storLoc = String(opt.StorageLocation || '').toLowerCase();
             const storLocName = String(opt.StorageLocationName || '').toLowerCase();
             const companyCode = String(opt.CompanyCode || opt.companyCode || '').toLowerCase();
@@ -241,7 +337,6 @@ export default function SapSearchHelpModal({
             const uomCommercial = String(opt.UnitOfMeasureCommercialName || '').toLowerCase();
             const uomLong = String(opt.UnitOfMeasureLongName || '').toLowerCase();
             const group = String(opt.ProductGroup || opt.materialGroup || opt.MaterialGroup || '').toLowerCase();
-            const extId = String(opt.ProductExternalID || '').toLowerCase();
             const type = String(opt.ProductType || opt.materialType || '').toLowerCase();
             const supplier = String(opt.Supplier || opt.supplierName || opt.SupplierName || '').toLowerCase();
             const purchOrg = String(opt.PurchasingOrganization || opt.purchasing_organization || opt.purchasingOrg || '').toLowerCase();
@@ -268,18 +363,19 @@ export default function SapSearchHelpModal({
             const costCenterDesc = String(opt.CostCenterDescription || opt.description || '').toLowerCase();
 
             // Combined searchable text for comprehensive and multi-word token matching
-            const combinedText = `${product} ${productName} ${productDesc} ${costCenterName} ${costCenterDesc} ${storLoc} ${storLocName} ${companyCode} ${controllingArea} ${profitCenter} ${longName} ${plant} ${supplier} ${purchOrg} ${purchOrgName} ${purchGroup} ${purchGroupName} ${plants} ${extra} ${uom} ${uomCommercial} ${uomLong} ${group} ${type} ${proc} ${currency} ${extId} ${infoRecord} ${infoSupplier} ${infoSupplierName} ${infoMat} ${taxCode} ${taxCodeName} ${vatCondType} ${taxCalcProc} ${country} ${rate} ${contractType} ${contractTypeName} ${contractCat}`;
+            const combinedText = `${product} ${extId} ${productDesc} ${productName} ${costCenterName} ${costCenterDesc} ${storLoc} ${storLocName} ${companyCode} ${controllingArea} ${profitCenter} ${longName} ${plant} ${supplier} ${purchOrg} ${purchOrgName} ${purchGroup} ${purchGroupName} ${plants} ${extra} ${uom} ${uomCommercial} ${uomLong} ${group} ${type} ${proc} ${currency} ${infoRecord} ${infoSupplier} ${infoSupplierName} ${infoMat} ${taxCode} ${taxCodeName} ${vatCondType} ${taxCalcProc} ${country} ${rate} ${contractType} ${contractTypeName} ${contractCat}`;
 
-            // 1. Check if every search word is present in the combined text
-            if (searchTerms.every((term) => combinedText.includes(term))) {
-                return true;
+            // Multi-word search: all words must match somewhere in combinedText
+            if (searchTerms.length > 1) {
+                return searchTerms.every((term) => combinedText.includes(term));
             }
 
-            // 2. Direct query check against individual fields
+            // Single search term: checks material number or material description or other fields
             return (
                 product.includes(q) ||
-                productName.includes(q) ||
+                extId.includes(q) ||
                 productDesc.includes(q) ||
+                productName.includes(q) ||
                 costCenterName.includes(q) ||
                 costCenterDesc.includes(q) ||
                 storLoc.includes(q) ||
@@ -303,7 +399,6 @@ export default function SapSearchHelpModal({
                 type.includes(q) ||
                 proc.includes(q) ||
                 currency.includes(q) ||
-                extId.includes(q) ||
                 infoRecord.includes(q) ||
                 infoSupplier.includes(q) ||
                 infoSupplierName.includes(q) ||
@@ -319,7 +414,31 @@ export default function SapSearchHelpModal({
                 contractCat.includes(q)
             );
         });
-    }, [options, searchQuery, isStorageLocationSearch, selectedPlantFilter]);
+
+        // Sort matches by relevance so exact or prefix matches appear at the top
+        return matches.sort((a, b) => {
+            const rawA = a.raw_data || {};
+            const rawB = b.raw_data || {};
+            const prodA = String(a.Product || a.code || '').toLowerCase();
+            const prodB = String(b.Product || b.code || '').toLowerCase();
+            const cleanProdA = prodA.replace(/^0+/, '');
+            const cleanProdB = prodB.replace(/^0+/, '');
+            const descA = String(a.ProductDescription || a.description || a.ProductName || a.name || rawA.ProductDescription || rawA.MaterialDescription || '').toLowerCase();
+            const descB = String(b.ProductDescription || b.description || b.ProductName || b.name || rawB.ProductDescription || rawB.MaterialDescription || '').toLowerCase();
+
+            const score = (prod: string, cleanProd: string, desc: string) => {
+                if (prod === q || (cleanQ && cleanProd === cleanQ)) return 1000;
+                if (desc === q) return 950;
+                if (prod.startsWith(q) || (cleanQ && cleanProd.startsWith(cleanQ))) return 850;
+                if (desc.startsWith(q)) return 800;
+                if (prod.includes(q) || (cleanQ && cleanProd.includes(cleanQ))) return 600;
+                if (desc.includes(q)) return 500;
+                return 100;
+            };
+
+            return score(prodB, cleanProdB, descB) - score(prodA, cleanProdA, descA);
+        });
+    }, [options, appliedSearchQuery, isStorageLocationSearch, selectedPlantFilter]);
 
     if (!isOpen) return null;
 
@@ -351,64 +470,87 @@ export default function SapSearchHelpModal({
                 {/* Search Bar */}
                 <div className="p-3.5 border-b border-slate-100 bg-white">
                     <div className="flex items-center gap-2">
+                        {/* Input wrapper */}
                         <div className="relative flex-1">
-                            <Search className="absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-[#8c9ba5]" />
+                            {/* Left search icon — spins while server search is active */}
+                            {isSearchingServer ? (
+                                <div className="absolute top-1/2 left-3 -translate-y-1/2 pointer-events-none">
+                                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#0070f2] border-t-transparent" />
+                                </div>
+                            ) : (
+                                <Search className="absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-[#8c9ba5] pointer-events-none" />
+                            )}
+
                             <input
+                                ref={inputRef}
                                 type="text"
                                 value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onChange={(e) => handleSearchInputChange(e.target.value)}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         e.preventDefault();
                                         e.stopPropagation();
                                         handleExecuteSearch();
+                                    } else if (e.key === 'Escape') {
+                                        if (searchQuery) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleClearSearch();
+                                        }
                                     }
                                 }}
                                 placeholder={
                                     isMaterialSearch
-                                        ? "Search by Material No (e.g. 1000000005, DINING) or Description (e.g. Decowoods, Chair, Grease)..."
+                                        ? "Search by Material No (e.g. 1000000005) or Description (e.g. Chair, Grease, Decowoods)…"
                                         : isMaterialGroupSearch
-                                        ? "Search by Material Group code (e.g. 100001, 110001) or description (e.g. Acids, Pipes)..."
+                                        ? "Search by Material Group code (e.g. 100001) or description (e.g. Acids, Pipes)…"
                                         : isGlAccountSearch
-                                        ? "Search by G/L Account # (e.g. 12545200), Company Code (e.g. 1000), or Account Name..."
+                                        ? "Search by G/L Account # (e.g. 12545200), Company Code (e.g. 1000), or Account Name…"
                                         : isCostCenterSearch
-                                        ? "Search by Cost Center (e.g. 10101PCC01), Profit Center (e.g. 1010PC0010), Area (e.g. A000)..."
+                                        ? "Search by Cost Center (e.g. 10101PCC01), Profit Center, or Controlling Area…"
                                         : isSupplierSearch
-                                        ? "Search by Supplier Code (e.g. 1000011, V-10029) or Supplier Name (e.g. Aarbee Enterprises, Tata Chemicals)..."
+                                        ? "Search by Supplier Code (e.g. 1000011) or Supplier Name (e.g. Aarbee, Tata)…"
                                         : isPurchasingGroupSearch
-                                        ? "Search by Purchase Group Code (e.g. 103, 001) or description..."
+                                        ? "Search by Purchase Group Code (e.g. 103, 001) or description…"
                                         : isUnitOfMeasureSearch
-                                        ? "Search by Unit (e.g. NO, EA), Commercial Name (e.g. NO, PC), or Long Name (e.g. Number, Piece)..."
+                                        ? "Search by Unit (e.g. NO, EA), Commercial Name, or Long Name (e.g. Number, Piece)…"
                                         : isTaxCodeSearch
-                                        ? "Search by Tax Code (e.g. J2, G3), Description, Rate, Condition Type (e.g. JICG), or Country..."
+                                        ? "Search by Tax Code (e.g. J2, G3), Description, Rate, or Condition Type…"
                                         : isOutlineContractSearch
-                                        ? "Search by Contract Type (e.g. CMK, MK), Name (e.g. Quantity Contract), or Category (K)..."
+                                        ? "Search by Contract Type (e.g. CMK, MK), Name, or Category (K)…"
                                         : isInfoRecordSearch
-                                        ? "Search by Purchasing Info Record (e.g. 5300000000), Supplier (e.g. V1200, Namrup), or Material (e.g. 1000000005)..."
+                                        ? "Search by Purchasing Info Record, Supplier, or Material…"
                                         : isStorageLocationSearch
-                                        ? "Search by Storage Location (e.g. SL01, M100), Plant (e.g. 1200), or description..."
-                                        : "Type to search code or description..."
+                                        ? "Search by Storage Location (e.g. SL01, M100), Plant, or description…"
+                                        : "Type to search code or description…"
                                 }
                                 autoFocus
-                                className="h-9 w-full rounded-md border border-[#d9e2ec] pl-9 pr-8 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] focus:outline-none"
+                                className={`h-9 w-full rounded-md border ${
+                                    isSearchingServer
+                                        ? 'border-[#0070f2] ring-1 ring-[#0070f2]/30'
+                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                } pl-9 ${searchQuery ? 'pr-9' : 'pr-3'} text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:outline-none transition-all`}
                             />
+
+                            {/* ✕ Clear button — always visible when there is text */}
                             {searchQuery && (
                                 <button
                                     type="button"
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        setSearchQuery('');
+                                        handleClearSearch();
                                     }}
-                                    className="absolute top-1/2 right-2.5 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1"
-                                    title="Clear input"
+                                    className="absolute top-1/2 right-2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-800 transition-colors cursor-pointer"
+                                    title="Clear search (Esc)"
+                                    aria-label="Clear search"
                                 >
-                                    <X className="h-3.5 w-3.5" />
+                                    <X className="h-3 w-3" />
                                 </button>
                             )}
                         </div>
 
-                        {/* Search Button */}
+                        {/* Search Button — triggers immediate search / Enter shortcut */}
                         <button
                             type="button"
                             onClick={(e) => {
@@ -416,11 +558,11 @@ export default function SapSearchHelpModal({
                                 e.stopPropagation();
                                 handleExecuteSearch();
                             }}
-                            disabled={isLoading || isSearchingServer}
+                            disabled={isLoading && options.length === 0}
                             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[#0070f2] px-4 text-xs font-semibold text-white shadow-xs hover:bg-[#005ecb] active:bg-[#004fa8] transition-colors disabled:opacity-60 cursor-pointer shrink-0"
-                            title="Execute Search"
+                            title="Search (Enter)"
                         >
-                            {isLoading || isSearchingServer ? (
+                            {isSearchingServer ? (
                                 <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
                             ) : (
                                 <Search className="h-3.5 w-3.5" />
@@ -428,8 +570,8 @@ export default function SapSearchHelpModal({
                             <span>Search</span>
                         </button>
 
-                        {/* Reset / Show All Button */}
-                        {(searchQuery.trim() || lastSearchedQuery) && (
+                        {/* Reset / Show All — only visible once a search has been executed */}
+                        {(searchQuery.trim() || appliedSearchQuery || lastSearchedQuery) && (
                             <button
                                 type="button"
                                 onClick={(e) => {
@@ -437,10 +579,10 @@ export default function SapSearchHelpModal({
                                     e.stopPropagation();
                                     handleClearSearch();
                                 }}
-                                disabled={isLoading || isSearchingServer}
-                                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors shrink-0 disabled:opacity-60 cursor-pointer"
-                                title="Reset Search / Show All"
+                                className="inline-flex h-9 items-center justify-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors shrink-0 cursor-pointer"
+                                title="Reset — Show all results"
                             >
+                                <X className="h-3 w-3" />
                                 Reset
                             </button>
                         )}
@@ -483,11 +625,11 @@ export default function SapSearchHelpModal({
                     )}
 
                     {/* Active search banner — shown when a search was executed */}
-                    {lastSearchedQuery && (
+                    {appliedSearchQuery && (
                         <div className="mt-2 flex items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs animate-in fade-in duration-150">
                             <Search className="h-3 w-3 text-blue-600 shrink-0" />
                             <span className="text-blue-700 font-medium">
-                                Showing <span className="font-bold">{filteredOptions.length}</span> result{filteredOptions.length !== 1 ? 's' : ''} for &ldquo;<span className="italic">{lastSearchedQuery}</span>&rdquo;
+                                Showing <span className="font-bold">{filteredOptions.length}</span> result{filteredOptions.length !== 1 ? 's' : ''} for &ldquo;<span className="italic">{appliedSearchQuery}</span>&rdquo;
                             </span>
                             <div className="ml-auto flex items-center gap-1.5 shrink-0">
                                 {/* Clear Search — clears input text only */}
@@ -498,8 +640,7 @@ export default function SapSearchHelpModal({
                                         e.stopPropagation();
                                         handleClearSearch();
                                     }}
-                                    disabled={isSearchingServer}
-                                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold underline text-xs disabled:opacity-60 cursor-pointer"
+                                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold underline text-xs cursor-pointer"
                                 >
                                     <X className="h-3 w-3" />
                                     Clear Search
@@ -513,8 +654,7 @@ export default function SapSearchHelpModal({
                                         e.stopPropagation();
                                         handleClearSearch();
                                     }}
-                                    disabled={isLoading || isSearchingServer}
-                                    className="inline-flex h-6 items-center justify-center gap-1 rounded border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors disabled:opacity-60 cursor-pointer shadow-xs"
+                                    className="inline-flex h-6 items-center justify-center gap-1 rounded border border-slate-300 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer shadow-xs"
                                     title="Reset Search — Show all materials"
                                 >
                                     {isSearchingServer ? (
@@ -529,7 +669,7 @@ export default function SapSearchHelpModal({
 
                 {/* Options Table */}
                 <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-                    {isLoading ? (
+                    {isLoading && options.length === 0 ? (
                         <div className="py-16 text-center text-xs text-[#556b82]">
                             <div className="inline-flex h-8 w-8 animate-spin items-center justify-center rounded-full border-3 border-[#0070f2] border-t-transparent mb-3" />
                             <p className="font-bold text-slate-700">Connecting to SAP S/4HANA Cloud...</p>
@@ -544,6 +684,20 @@ export default function SapSearchHelpModal({
                                     ? `No entries matching "${searchQuery}"`
                                     : 'No data found or accessible from SAP CDS View.'}
                             </p>
+                            {searchQuery.trim() && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleClearSearch();
+                                    }}
+                                    className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-[#0070f2] hover:bg-blue-50 transition-colors cursor-pointer"
+                                >
+                                    <X className="h-3 w-3" />
+                                    Clear search and show all
+                                </button>
+                            )}
                         </div>
                     ) : (
                         <table className="w-full text-left text-xs text-[#1c2d42]">
@@ -674,13 +828,47 @@ export default function SapSearchHelpModal({
                                                     {/* Material No */}
                                                     <td className="py-2.5 px-3.5 font-mono font-bold text-[#0070f2]">
                                                         <span className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs text-[#1c2d42]">
-                                                            {opt.Product || opt.code}
+                                                            {opt._formatted?.Material ? (
+                                                                <span dangerouslySetInnerHTML={{ __html: opt._formatted.Material }} />
+                                                            ) : (
+                                                                opt.Product || opt.code
+                                                            )}
                                                         </span>
                                                     </td>
                                                     {/* Material Description */}
                                                     <td className="py-2.5 px-4 text-xs">
                                                         <div className="font-semibold text-slate-800">
-                                                            {opt.ProductDescription || opt.description || opt.ProductName || opt.name || opt.poText || '-'}
+                                                            {opt._formatted?.MaterialDescription ? (
+                                                                <span dangerouslySetInnerHTML={{ __html: opt._formatted.MaterialDescription }} />
+                                                            ) : (() => {
+                                                                const raw = opt.raw_data || {};
+                                                                const code = String(opt.Product || opt.code || opt.ProductExternalID || '').trim().toLowerCase();
+                                                                const candidates = [
+                                                                    opt.ProductDescription,
+                                                                    opt.description,
+                                                                    opt.MaterialDescription,
+                                                                    opt.ProductName,
+                                                                    opt.name,
+                                                                    opt.poText,
+                                                                    raw.ProductDescription,
+                                                                    raw.MaterialDescription,
+                                                                    raw.ProductText,
+                                                                    raw.MaterialText,
+                                                                    raw.Description,
+                                                                    raw.ShortText,
+                                                                    raw.LongText,
+                                                                    raw.ProductName,
+                                                                    raw.PurchaseOrderItemText,
+                                                                    raw.YY1_ProductDescription,
+                                                                    raw.YY1_MaterialDescription,
+                                                                ];
+                                                                for (const cand of candidates) {
+                                                                    if (cand && typeof cand === 'string' && cand.trim() && cand.trim().toLowerCase() !== code) {
+                                                                        return cand.trim();
+                                                                    }
+                                                                }
+                                                                return opt.ProductDescription || opt.description || opt.ProductName || opt.name || opt.poText || '-';
+                                                            })()}
                                                         </div>
                                                         {opt.poText && opt.poText !== opt.ProductDescription && opt.poText !== opt.ProductName && opt.poText !== opt.description && (
                                                             <div className="text-[11px] text-slate-500 mt-0.5">

@@ -39,6 +39,7 @@ class PurchaseRequisition extends Model
         'header_note',
         'header_option_id',
         'pr_type',
+        'requisition_type',
         'auto_source_determination',
         'company_code',
         'plant',
@@ -150,6 +151,22 @@ class PurchaseRequisition extends Model
     public function contractRequisitionLocal(): HasOne
     {
         return $this->hasOne(ContractRequisition::class, 'purchase_requisition_id');
+    }
+
+    /**
+     * PR Type classification (e.g. Normal, Emergent).
+     */
+    public function purchaseRequisitionType(): HasOne
+    {
+        return $this->hasOne(PurchaseRequisitionType::class, 'purchase_requisition_id');
+    }
+
+    /**
+     * Alias for purchaseRequisitionType.
+     */
+    public function prTypeRecord(): HasOne
+    {
+        return $this->hasOne(PurchaseRequisitionType::class, 'purchase_requisition_id');
     }
 
     /**

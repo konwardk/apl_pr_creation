@@ -144,6 +144,12 @@ interface PurchaseRequisition {
     header_note?: string | null;
     header_option_id?: number | null;
     pr_type: string;
+    requisition_type?: string | null;
+    purchase_requisition_type?: {
+        pr_type?: string;
+        name?: string;
+        remarks?: string;
+    } | null;
     auto_source_determination?: boolean;
     company_code: string;
     plant: string;
@@ -504,8 +510,32 @@ export default function ShowPurchaseRequisitionPage({
                     </div>
 
                     <div className="p-6 space-y-6">
-                        {/* Row 1: Description, Document Type & Header Option */}
-                        <div className={`grid grid-cols-1 ${pr.header_option ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6`}>
+                        {/* Row 1: PR Type, Description, Document Type & Header Option */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3.5">
+                                <span className="block text-[11px] font-semibold text-[#556b82] uppercase tracking-wider">
+                                    PR Type
+                                </span>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <span className={`inline-flex items-center gap-1 font-semibold text-xs px-2.5 py-0.5 rounded border ${
+                                        (pr.requisition_type || pr.purchase_requisition_type?.pr_type) === 'emergent'
+                                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                            : 'bg-blue-50 text-[#0070f2] border-blue-200'
+                                    }`}>
+                                        {(pr.requisition_type || pr.purchase_requisition_type?.pr_type) === 'emergent' ? '⚡ Emergent' : '✓ Normal'}
+                                    </span>
+                                </div>
+                                {pr.purchase_requisition_type?.remarks ? (
+                                    <p className="mt-1 text-[11px] text-amber-800 font-medium line-clamp-2">
+                                        Reason: {pr.purchase_requisition_type.remarks}
+                                    </p>
+                                ) : (
+                                    <p className="mt-1 text-[11px] text-[#556b82]">
+                                        {(pr.requisition_type || pr.purchase_requisition_type?.pr_type) === 'emergent' ? 'Urgent / emergency requisition' : 'Regular planned purchase requisition'}
+                                    </p>
+                                )}
+                            </div>
+
                             <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3.5">
                                 <span className="block text-[11px] font-semibold text-[#556b82] uppercase tracking-wider">
                                     Purchase Requisition Description
@@ -533,7 +563,7 @@ export default function ShowPurchaseRequisitionPage({
                             </div>
 
                             {pr.header_option && (
-                                <div className="rounded-lg border border-purple-100 bg-purple-50/40 p-3.5">
+                                <div className="rounded-lg border border-purple-100 bg-purple-50/40 p-3.5 sm:col-span-2 lg:col-span-3">
                                     <span className="block text-[11px] font-semibold text-purple-700 uppercase tracking-wider">
                                         Header Option
                                     </span>

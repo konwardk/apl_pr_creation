@@ -11,6 +11,13 @@ export interface PrintItem {
     id?: number;
     item_number?: string;
     hierarchy_number?: string;
+    parent_hierarchy_number?: string | null;
+    parent_item_number?: string | null;
+    is_outline?: boolean | number;
+    item_hierarchy_type?: 'item_set' | 'functional_item' | string | null;
+    external_sort_number?: string | null;
+    item_type?: string;
+    item_category?: string;
     material_code?: string;
     description: string;
     material_group?: string;
@@ -37,6 +44,13 @@ export interface PrintPurchaseRequisition {
     description: string;
     header_note?: string | null;
     pr_type?: string;
+    requisition_type?: string | null;
+    purchase_requisition_type?: {
+        id?: number;
+        pr_type?: string;
+        name?: string;
+        remarks?: string;
+    } | null;
     plant?: string;
     company_code?: string;
     total_amount?: number | string;
@@ -150,6 +164,12 @@ export default function PurchaseRequisitionPrintModal({
         cr?.req_designation ||
         'Officer / In-charge';
     const prDate = formatDate(pr.created_at);
+    const rawPrType =
+        pr.requisition_type ||
+        (pr as any).purchase_requisition_type?.pr_type ||
+        (pr as any).purchase_requisition_type?.name ||
+        'NORMAL';
+    const prTypeLabel = String(rawPrType).trim().toUpperCase();
 
     // Primary GL Account / Cost Center for Main Head
     const mainHead =
@@ -157,18 +177,76 @@ export default function PurchaseRequisitionPrintModal({
         items.find((i) => i.cost_center)?.cost_center ||
         ''; // Operational Budget (General)
 
+    // Helper to determine if an item is an Item Set (outline header node)
+    const isItemSet = (item: PrintItem, allItems: PrintItem[]): boolean => {
+        if (Boolean(item.is_outline || item.item_hierarchy_type === 'item_set')) {
+            return true;
+        }
+        const hNum = (item.hierarchy_number || '').trim();
+        if (!hNum) return false;
+        return allItems.some(
+            (other) =>
+                other !== item &&
+                ((other.parent_hierarchy_number && other.parent_hierarchy_number === hNum) ||
+                 (item.item_number && other.parent_item_number && other.parent_item_number === item.item_number) ||
+                 (other.hierarchy_number && other.hierarchy_number.startsWith(`${hNum}.`)))
+        );
+    };
+
+    // Helper to determine if an item is a child hierarchy item (e.g. 1.1, 1.2)
+    const isChildHierarchyItem = (item: PrintItem): boolean => {
+        const hNum = (item.hierarchy_number || '').trim();
+        return Boolean(item.parent_hierarchy_number || hNum.includes('.'));
+    };
+
+    // Helper to get child items belonging to an item set
+    const getChildrenOfItemSet = (parent: PrintItem, allItems: PrintItem[]): PrintItem[] => {
+        const hNum = (parent.hierarchy_number || '').trim();
+        if (!hNum) return [];
+        return allItems.filter(
+            (other) =>
+                other !== parent &&
+                ((other.parent_hierarchy_number && other.parent_hierarchy_number === hNum) ||
+                 (parent.item_number && other.parent_item_number && other.parent_item_number === parent.item_number) ||
+                 (other.hierarchy_number && other.hierarchy_number.startsWith(`${hNum}.`)))
+        );
+    };
+
+    // Sort items so child hierarchy items follow their parent item set sequentially
+    const sortedItems = [...items].sort((a, b) => {
+        if (a.external_sort_number && b.external_sort_number && a.external_sort_number !== b.external_sort_number) {
+            return a.external_sort_number.localeCompare(b.external_sort_number, undefined, { numeric: true });
+        }
+        if (a.hierarchy_number && b.hierarchy_number && a.hierarchy_number !== b.hierarchy_number) {
+            return a.hierarchy_number.localeCompare(b.hierarchy_number, undefined, { numeric: true });
+        }
+        if (a.item_number && b.item_number && a.item_number !== b.item_number) {
+            return a.item_number.localeCompare(b.item_number, undefined, { numeric: true });
+        }
+        return 0;
+    });
+
     // Delivery dates
-    const deliveryDates = items
+    const deliveryDates = sortedItems
         .map((i) => i.delivery_date)
         .filter(Boolean) as string[];
     const firstDeliveryDate =
         deliveryDates.length > 0 ? formatDate(deliveryDates[0]) : '';
-    const totalItemQty = items.reduce(
-        (sum, item) => sum + (Number(item.quantity) || 0),
-        0
-    );
+
+    // Total quantity: For Item Sets, actual procurement quantities are held by their child items.
+    const totalItemQty = sortedItems.reduce((sum, item) => {
+        if (isItemSet(item, sortedItems)) {
+            return sum;
+        }
+        return sum + (Number(item.quantity) || 0);
+    }, 0);
+
+    // Total calculated cost: If an item is an Item Set with children, its value is represented by its child items.
     const totalCalculatedCost =
-        items.reduce((sum, item) => {
+        sortedItems.reduce((sum, item) => {
+            if (isItemSet(item, sortedItems)) {
+                return sum;
+            }
             const itemCost =
                 item.total_price ||
                 (Number(item.unit_price) && Number(item.quantity)
@@ -177,7 +255,7 @@ export default function PurchaseRequisitionPrintModal({
                 0;
             return sum + (Number(itemCost) || 0);
         }, 0) || Number(pr.total_amount) || 0;
-    const spacerHeight = Math.max(35, 130 - Math.min(items.length, 4) * 22);
+    const spacerHeight = Math.max(35, 130 - Math.min(sortedItems.length, 4) * 22);
 
     /**
      * Isolated printing via hidden iframe using the exact same inline CSS styles
@@ -488,25 +566,25 @@ export default function PurchaseRequisitionPrintModal({
                         }}
                     >
                         {/* 1. TOP HEADER WITH APL LOGO ON TOP LEFT & CENTERED TITLE */}
-                        <div style={{ position: 'relative', width: '100%', marginBottom: '10px' }}>
+                        <div style={{ position: 'relative', width: '100%', minHeight: '70px', marginBottom: '12px' }}>
                             {/* APL Logo */}
-                            <div style={{ position: 'absolute', left: '0', top: '0', display: 'flex', alignItems: 'center' }}>
+                            <div style={{ position: 'absolute', left: '0', top: '1px', display: 'flex', alignItems: 'center' }}>
                                 <img
                                     src="/images/APL_Logo.jpg"
                                     alt="Assam Petro-Chemicals Limited"
-                                    style={{ height: '54px', width: 'auto', objectFit: 'contain' }}
+                                    style={{ height: '68px', width: 'auto', objectFit: 'contain' }}
                                 />
                             </div>
 
                             {/* Centered Document Title */}
-                            <div style={{ textAlign: 'center', padding: '0 80px' }}>
-                                <div style={{ fontSize: '15px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            <div style={{ textAlign: 'center', padding: '0 85px' }}>
+                                <div style={{ fontSize: '18px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.6px', lineHeight: 1.25 }}>
                                     ASSAM PETRO-CHEMICALS LIMITED
                                 </div>
-                                <div style={{ fontSize: '12.5px', fontWeight: 'bold', textDecoration: 'underline', marginTop: '2px' }}>
-                                    (MATERIALS INDENT FORM (NORMAL))
+                                <div style={{ fontSize: '14.5px', fontWeight: 'bold', textDecoration: 'underline', marginTop: '3px', letterSpacing: '0.3px', lineHeight: 1.25 }}>
+                                    (MATERIALS INDENT FORM ({prTypeLabel}))
                                 </div>
-                                <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '2px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 'bold', marginTop: '2px', letterSpacing: '0.2px' }}>
                                     (F-2)
                                 </div>
                             </div>
@@ -708,8 +786,21 @@ export default function PurchaseRequisitionPrintModal({
                                 </tr>
                             </thead>
                             <tbody>
-                                {items.length > 0 ? (
-                                    items.map((item, index) => {
+                                {sortedItems.length > 0 ? (
+                                    sortedItems.map((item, index) => {
+                                        const isSet = isItemSet(item, sortedItems);
+                                        const isChild = isChildHierarchyItem(item);
+                                        const children = isSet ? getChildrenOfItemSet(item, sortedItems) : [];
+                                        const childrenCost = children.reduce((csum, child) => {
+                                            const childCost =
+                                                child.total_price ||
+                                                (Number(child.unit_price) && Number(child.quantity)
+                                                    ? Number(child.unit_price) * Number(child.quantity)
+                                                    : child.unit_price) ||
+                                                0;
+                                            return csum + (Number(childCost) || 0);
+                                        }, 0);
+
                                         const itemCost =
                                             item.total_price ||
                                             (Number(item.unit_price) && Number(item.quantity)
@@ -718,12 +809,57 @@ export default function PurchaseRequisitionPrintModal({
                                             0;
                                         const hasUnitPrice = Number(item.unit_price) > 0;
                                         const hasMultipleQty = Number(item.quantity) > 1;
+                                        const hNum = (item.hierarchy_number || String(index + 1)).trim();
 
                                         return (
-                                            <tr key={item.id || index} style={{ borderBottom: '1px solid #000000', verticalAlign: 'top' }}>
+                                            <tr
+                                                key={item.id || index}
+                                                style={{
+                                                    borderBottom: '1px solid #000000',
+                                                    verticalAlign: 'top',
+                                                    backgroundColor: isSet ? '#faf7fd' : '#ffffff',
+                                                }}
+                                            >
                                                 {/* 1. Sl. No. / Hierarchy */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
-                                                    {item.hierarchy_number || (index + 1)}.
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
+                                                    <div style={{ fontWeight: 'bold', fontSize: isChild ? '9.5px' : '10px', color: isSet ? '#6b21a8' : isChild ? '#3730a3' : '#000000' }}>
+                                                        {hNum}{hNum.includes('.') ? '' : '.'}
+                                                    </div>
+                                                    {isSet ? (
+                                                        <span
+                                                            style={{
+                                                                display: 'inline-block',
+                                                                fontSize: '7.5px',
+                                                                fontWeight: 'bold',
+                                                                color: '#6b21a8',
+                                                                backgroundColor: '#f3e8ff',
+                                                                border: '1px solid #d8b4fe',
+                                                                borderRadius: '2px',
+                                                                padding: '0 3px',
+                                                                marginTop: '2px',
+                                                                textTransform: 'uppercase',
+                                                                letterSpacing: '0.3px',
+                                                            }}
+                                                        >
+                                                            Set
+                                                        </span>
+                                                    ) : isChild ? (
+                                                        <span
+                                                            style={{
+                                                                display: 'inline-block',
+                                                                fontSize: '7px',
+                                                                fontWeight: 'bold',
+                                                                color: '#4338ca',
+                                                                backgroundColor: '#e0e7ff',
+                                                                border: '1px solid #c7d2fe',
+                                                                borderRadius: '2px',
+                                                                padding: '0 2px',
+                                                                marginTop: '1px',
+                                                            }}
+                                                        >
+                                                            Hier
+                                                        </span>
+                                                    ) : null}
                                                 </td>
 
                                                 {/* 2. Code No. */}
@@ -732,40 +868,130 @@ export default function PurchaseRequisitionPrintModal({
                                                 </td>
 
                                                 {/* 3. Description of Material */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 6px' }}>
-                                                    <div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25 }}>
-                                                        {item.description}
-                                                    </div>
-                                                    {item.item_note && (
-                                                        <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#333333', marginTop: '2px' }}>
-                                                            Note: {item.item_note}
+                                                <td style={{ borderRight: '1px solid #000000', padding: isChild ? '4px 6px 4px 14px' : '5px 6px' }}>
+                                                    {isSet ? (
+                                                        <div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                                                                <span
+                                                                    style={{
+                                                                        fontSize: '8px',
+                                                                        fontWeight: 'bold',
+                                                                        color: '#ffffff',
+                                                                        backgroundColor: '#7c3aed',
+                                                                        borderRadius: '2px',
+                                                                        padding: '1px 4px',
+                                                                        textTransform: 'uppercase',
+                                                                        letterSpacing: '0.4px',
+                                                                        lineHeight: '1.2',
+                                                                    }}
+                                                                >
+                                                                    ITEM SET
+                                                                </span>
+                                                                <span style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25, color: '#111827' }}>
+                                                                    {item.description}
+                                                                </span>
+                                                            </div>
+                                                            {item.item_note && (
+                                                                <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#444444', marginTop: '2px' }}>
+                                                                    Note: {item.item_note}
+                                                                </div>
+                                                            )}
+                                                            {(item.cost_center || item.gl_account || item.material_group) && (
+                                                                <div style={{ fontSize: '9px', color: '#555555', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                                    {item.cost_center && <span>CC: {item.cost_center}</span>}
+                                                                    {item.gl_account && <span>GL: {item.gl_account}</span>}
+                                                                    {item.material_group && <span>Grp: {item.material_group}</span>}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    )}
-                                                    {(item.cost_center || item.gl_account || item.material_group) && (
-                                                        <div style={{ fontSize: '9px', color: '#444444', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                                            {item.cost_center && <span>CC: {item.cost_center}</span>}
-                                                            {item.gl_account && <span>GL: {item.gl_account}</span>}
-                                                            {item.material_group && <span>Grp: {item.material_group}</span>}
+                                                    ) : isChild ? (
+                                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px' }}>
+                                                            <span style={{ color: '#4f46e5', fontWeight: 'bold', fontSize: '12px', lineHeight: 1.1, userSelect: 'none' }}>
+                                                                ↳
+                                                            </span>
+                                                            <div style={{ flex: 1 }}>
+                                                                <div style={{ fontWeight: 600, fontSize: '10.5px', lineHeight: 1.25, color: '#1f2937' }}>
+                                                                    {item.description}
+                                                                </div>
+                                                                {item.item_note && (
+                                                                    <div style={{ fontSize: '9px', fontStyle: 'italic', color: '#555555', marginTop: '1px' }}>
+                                                                        Note: {item.item_note}
+                                                                    </div>
+                                                                )}
+                                                                {(item.cost_center || item.gl_account || item.material_group) && (
+                                                                    <div style={{ fontSize: '8.5px', color: '#555555', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                                                        {item.cost_center && <span>CC: {item.cost_center}</span>}
+                                                                        {item.gl_account && <span>GL: {item.gl_account}</span>}
+                                                                        {item.material_group && <span>Grp: {item.material_group}</span>}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25 }}>
+                                                                {item.description}
+                                                            </div>
+                                                            {item.item_note && (
+                                                                <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#333333', marginTop: '2px' }}>
+                                                                    Note: {item.item_note}
+                                                                </div>
+                                                            )}
+                                                            {(item.cost_center || item.gl_account || item.material_group) && (
+                                                                <div style={{ fontSize: '9px', color: '#444444', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                                    {item.cost_center && <span>CC: {item.cost_center}</span>}
+                                                                    {item.gl_account && <span>GL: {item.gl_account}</span>}
+                                                                    {item.material_group && <span>Grp: {item.material_group}</span>}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </td>
 
                                                 {/* 4. Unit */}
                                                 <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
-                                                    {item.unit_of_measure || 'No.'}
+                                                    {isSet ? (item.unit_of_measure || 'SET') : (item.unit_of_measure || 'No.')}
                                                 </td>
 
                                                 {/* 5. Qty. Required */}
                                                 <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
-                                                    {item.quantity}
+                                                    {isSet ? (
+                                                        children.length > 0 ? (
+                                                            <div>
+                                                                <span>{item.quantity ? item.quantity : '1'}</span>
+                                                                <div style={{ fontSize: '7.5px', color: '#6b21a8', fontWeight: 'normal' }}>
+                                                                    ({children.length} item{children.length > 1 ? 's' : ''})
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            item.quantity || '1'
+                                                        )
+                                                    ) : (
+                                                        item.quantity
+                                                    )}
                                                 </td>
 
                                                 {/* 6. App. Cost (Rs.) */}
                                                 <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                                                    <div style={{ fontWeight: 'bold' }}>{formatCurrencyAmount(itemCost)}</div>
-                                                    {hasUnitPrice && hasMultipleQty && (
-                                                        <div style={{ fontSize: '8.5px', color: '#555555', marginTop: '1px' }}>
-                                                            @ {formatCurrencyAmount(item.unit_price)}
+                                                    {isSet ? (
+                                                        childrenCost > 0 ? (
+                                                            <div>
+                                                                <div style={{ fontWeight: 'bold', color: '#6b21a8' }}>{formatCurrencyAmount(childrenCost)}</div>
+                                                                <div style={{ fontSize: '7.5px', color: '#6b21a8', fontStyle: 'italic' }}>Subtotal</div>
+                                                            </div>
+                                                        ) : Number(itemCost) > 0 ? (
+                                                            <div style={{ fontWeight: 'bold' }}>{formatCurrencyAmount(itemCost)}</div>
+                                                        ) : (
+                                                            <span style={{ color: '#888888' }}>—</span>
+                                                        )
+                                                    ) : (
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold' }}>{formatCurrencyAmount(itemCost)}</div>
+                                                            {hasUnitPrice && hasMultipleQty && (
+                                                                <div style={{ fontSize: '8.5px', color: '#555555', marginTop: '1px' }}>
+                                                                    @ {formatCurrencyAmount(item.unit_price)}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </td>
@@ -806,7 +1032,7 @@ export default function PurchaseRequisitionPrintModal({
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000', padding: '12px 8px', textAlign: 'center', fontStyle: 'italic', fontWeight: 600, fontSize: '11px', color: '#333333', letterSpacing: '0.3px' }}>
-                                        *** ({numberToWordCount(items.length || 1)}) ***
+                                        *** ({numberToWordCount(sortedItems.length || 1)}) ***
                                     </td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>

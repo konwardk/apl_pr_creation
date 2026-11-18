@@ -29,6 +29,7 @@ class DashboardController extends Controller
             'attachments',
             'contractRequisition',
             'contractRequisitionLocal',
+            'purchaseRequisitionType',
         ])->latest();
 
         // If employee, only show their own created PRs

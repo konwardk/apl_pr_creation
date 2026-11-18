@@ -74,6 +74,7 @@ interface PurchaseRequisition {
     header_option?: HeaderOption | null;
     description: string;
     pr_type: string;
+    requisition_type?: string | null;
     company_code: string;
     plant: string;
     total_amount: number | string;
@@ -605,8 +606,15 @@ export default function Dashboard({
 
                                                 {/* Description & Items */}
                                                 <td className="py-3 px-3">
-                                                    <div className="font-semibold text-[#1c2d42] max-w-sm truncate" title={pr.description}>
-                                                        {pr.description}
+                                                    <div className="flex items-center gap-1.5 max-w-sm">
+                                                        <span className="font-semibold text-[#1c2d42] truncate" title={pr.description}>
+                                                            {pr.description}
+                                                        </span>
+                                                        {pr.requisition_type === 'emergent' && (
+                                                            <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 border border-amber-300">
+                                                                ⚡ Emergent
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="text-[11px] text-[#556b82] mt-0.5">
                                                         {pr.items && pr.items.length > 0 ? (

@@ -203,6 +203,14 @@ export default function PurchaseRequisitionForm({
     // Header State
     const [description, setDescription] = useState(initialData?.description || '');
     const [prType, setPrType] = useState(initialData?.pr_type || defaultDocType);
+    const [requisitionType, setRequisitionType] = useState<string>(
+        initialData?.requisition_type ||
+        (initialData as any)?.purchase_requisition_type?.pr_type ||
+        'normal'
+    );
+    const [prTypeRemarks, setPrTypeRemarks] = useState<string>(
+        (initialData as any)?.purchase_requisition_type?.remarks || ''
+    );
     const [headerOptionId, setHeaderOptionId] = useState<string>(
         initialData?.header_option_id ? String(initialData.header_option_id) : ''
     );
@@ -726,6 +734,12 @@ export default function PurchaseRequisitionForm({
         if (initialData && initialData.id) {
             setDescription(initialData.description || '');
             setPrType(initialData.pr_type || defaultDocType);
+            setRequisitionType(
+                initialData.requisition_type ||
+                (initialData as any).purchase_requisition_type?.pr_type ||
+                'normal'
+            );
+            setPrTypeRemarks((initialData as any)?.purchase_requisition_type?.remarks || '');
             setHeaderOptionId(initialData.header_option_id ? String(initialData.header_option_id) : '');
             setAutoSourceDetermination(Boolean(initialData.auto_source_determination));
             setHeaderNote(initialData.header_note || '');
@@ -836,7 +850,19 @@ export default function PurchaseRequisitionForm({
         targetPlant: undefined,
     });
 
-    const [sapMaterialsCache, setSapMaterialsCache] = useState<SearchHelpOption[]>([]);
+    const [sapMaterialsCache, setSapMaterialsCache] = useState<SearchHelpOption[]>(() => {
+        if (dataCatalog.materials && dataCatalog.materials.length > 0) {
+            return dataCatalog.materials;
+        }
+        try {
+            const stored = sessionStorage.getItem('sap_materials_cache');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (_) {}
+        return [];
+    });
     const [sapAccountAssignmentCategoriesCache, setSapAccountAssignmentCategoriesCache] = useState<SearchHelpOption[]>([]);
     const [sapPlantsCache, setSapPlantsCache] = useState<SearchHelpOption[]>([]);
     const [sapStorageLocationsCache, setSapStorageLocationsCache] = useState<SearchHelpOption[]>([]);
@@ -850,6 +876,7 @@ export default function PurchaseRequisitionForm({
     const [sapInfoRecordsCache, setSapInfoRecordsCache] = useState<SearchHelpOption[]>([]);
     const [sapTaxCodesCache, setSapTaxCodesCache] = useState<SearchHelpOption[]>([]);
     const [sapOutlineContractsCache, setSapOutlineContractsCache] = useState<SearchHelpOption[]>([]);
+    const materialSearchAbortRef = React.useRef<AbortController | null>(null);
 
     // Silently pre-fetch plants, purchasing groups, AACs, units of measure, tax codes, info records, and outline contracts to enhance validation & F4 responsiveness
     React.useEffect(() => {
@@ -915,7 +942,29 @@ export default function PurchaseRequisitionForm({
                 if (d?.items?.length) setSapStorageLocationsCache(d.items);
             })
             .catch(() => {});
+
+        fetch('/sap-materials', { headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d?.items?.length) {
+                    setSapMaterialsCache(d.items);
+                    try { sessionStorage.setItem('sap_materials_cache', JSON.stringify(d.items)); } catch (_) {}
+                }
+            })
+            .catch(() => {});
     }, []);
+
+    React.useEffect(() => {
+        if (dataCatalog.materials && dataCatalog.materials.length > 0) {
+            setSapMaterialsCache((prev) => {
+                if (prev.length === 0) {
+                    try { sessionStorage.setItem('sap_materials_cache', JSON.stringify(dataCatalog.materials)); } catch (_) {}
+                    return dataCatalog.materials || [];
+                }
+                return prev;
+            });
+        }
+    }, [dataCatalog.materials]);
 
 
     // Valuation lookup tracking & debouncing
@@ -1013,8 +1062,41 @@ export default function PurchaseRequisitionForm({
         if (!matData) return;
 
         const valCalc = calculateValuationPriceFromItem(matData);
-        const productCode = matData.Product || matData.ProductExternalID || matData.code || '';
-        const productName = matData.ProductDescription || matData.description || (matData.ProductName && matData.ProductName !== productCode ? matData.ProductName : '') || (matData.name && matData.name !== productCode ? matData.name : '') || matData.ProductName || matData.name || matData.Product || '';
+        const productCode = String(matData.Product || matData.ProductExternalID || matData.code || '').trim();
+        const raw = matData.raw_data || {};
+        
+        // Find best non-code description
+        const descCandidates = [
+            matData.ProductDescription,
+            matData.description,
+            matData.MaterialDescription,
+            matData.ProductName,
+            matData.name,
+            matData.poText,
+            raw.ProductDescription,
+            raw.MaterialDescription,
+            raw.ProductText,
+            raw.MaterialText,
+            raw.Description,
+            raw.ShortText,
+            raw.LongText,
+            raw.PurchaseOrderItemText,
+            raw.ProductName,
+            raw.YY1_ProductDescription,
+            raw.YY1_MaterialDescription,
+            raw.YY1_ProductText,
+            raw.YY1_Description,
+        ];
+        let productName = '';
+        for (const cand of descCandidates) {
+            if (cand && typeof cand === 'string' && cand.trim() && cand.trim().toLowerCase() !== productCode.toLowerCase()) {
+                productName = cand.trim();
+                break;
+            }
+        }
+        if (!productName) {
+            productName = matData.ProductDescription || matData.description || matData.ProductName || matData.name || matData.Product || productCode;
+        }
         const plantFromApi = matData.Plant || matData.plant || matData.ValuationArea || targetPlant || '';
         const uom = matData.BaseUnit || matData.UnitOfMeasure || matData.uom || 'EA';
         
@@ -1208,34 +1290,41 @@ export default function PurchaseRequisitionForm({
         setActiveItemIndex(targetIndex);
         const targetPlant = (plantCode || items[targetIndex]?.plant || defaultPlant).trim();
 
-        if (sapMaterialsCache.length > 0) {
-            setSearchHelpState({
-                isOpen: true,
-                title: 'Select Material & Plant Valuation - SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS)',
-                subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${sapMaterialsCache.length} items)`,
-                options: sapMaterialsCache,
-                selectedCode: currentCode || '',
-                field: 'material_code',
-                targetIndex,
-                targetPlant,
-                isLoading: false,
-            });
-            return;
+        // 1. Gather all immediately available materials (cache, dataCatalog, or sessionStorage)
+        let initialMaterials = sapMaterialsCache;
+        if (initialMaterials.length === 0 && dataCatalog.materials && dataCatalog.materials.length > 0) {
+            initialMaterials = dataCatalog.materials;
+            setSapMaterialsCache(initialMaterials);
+        }
+        if (initialMaterials.length === 0) {
+            try {
+                const stored = sessionStorage.getItem('sap_materials_cache');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        initialMaterials = parsed;
+                        setSapMaterialsCache(parsed);
+                    }
+                }
+            } catch (_) {}
         }
 
-        // Open modal immediately with loading state (no fallback)
+        // 2. Open modal immediately with available materials so user can type on FIRST KEYSTROKE!
         setSearchHelpState({
             isOpen: true,
             title: 'Select Material & Plant Valuation - SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS)',
-            subtitle: `Connecting to SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS)...`,
-            options: [],
+            subtitle: initialMaterials.length > 0
+                ? `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${initialMaterials.length} items ready)`
+                : 'Connecting to SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS)...',
+            options: initialMaterials,
             selectedCode: currentCode || '',
             field: 'material_code',
             targetIndex,
             targetPlant,
-            isLoading: true,
+            isLoading: initialMaterials.length === 0,
         });
 
+        // 3. Fetch materials in background without restricting plant so all 96+ items are available
         try {
             const res = await fetch('/sap-materials', {
                 headers: {
@@ -1244,15 +1333,23 @@ export default function PurchaseRequisitionForm({
                 },
             });
             const data = await res.json();
-            if (data.items && data.items.length > 0) {
-                setSapMaterialsCache(data.items);
-                setSearchHelpState((prev) => ({
-                    ...prev,
-                    options: data.items,
-                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${data.items.length} items)`,
-                    isLoading: false,
-                }));
-            } else {
+            const fetchedItems: any[] = data.items || [];
+            if (fetchedItems.length > 0) {
+                setSapMaterialsCache(fetchedItems);
+                try { sessionStorage.setItem('sap_materials_cache', JSON.stringify(fetchedItems)); } catch (_) {}
+                setSearchHelpState((prev) => {
+                    if (prev.field !== 'material_code' || !prev.isOpen) return prev;
+                    const existing = new Set(fetchedItems.map((m: any) => String(m.Product || m.code)));
+                    const extras = prev.options.filter((o: any) => !existing.has(String(o.Product || o.code)));
+                    const merged = extras.length > 0 ? [...fetchedItems, ...extras] : fetchedItems;
+                    return {
+                        ...prev,
+                        options: merged,
+                        subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${merged.length} items)`,
+                        isLoading: false,
+                    };
+                });
+            } else if (initialMaterials.length === 0) {
                 setSearchHelpState((prev) => ({
                     ...prev,
                     options: [],
@@ -1262,148 +1359,218 @@ export default function PurchaseRequisitionForm({
             }
         } catch (err) {
             console.error('Failed to fetch materials from SAP CDS view:', err);
-            setSearchHelpState((prev) => ({
-                ...prev,
-                options: [],
-                subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
-                isLoading: false,
-            }));
+            if (initialMaterials.length === 0) {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: [],
+                    subtitle: 'No Value Found (Failed to connect to SAP Cloud)',
+                    isLoading: false,
+                }));
+            }
         }
     };
 
     /**
-     * Hit SAP CDS View API (/sap-materials) when user submits search query in F4 Search Help
+     * Search SAP CDS View API (/sap-materials) when user submits search query in F4 Search Help.
+     * Merges any newly returned materials from SAP Cloud into the options list.
      */
     const handleMaterialSearchQuery = async (query: string) => {
-        const targetPlant = (searchHelpState.targetPlant || currentItem?.plant || defaultPlant).trim();
         const trimmedQuery = query.trim();
 
-        // 1. If query is empty — restore full cached list immediately
+        // Cancel any in-flight API request
+        if (materialSearchAbortRef.current) {
+            materialSearchAbortRef.current.abort();
+            materialSearchAbortRef.current = null;
+        }
+
+        // ── 1. Empty query → restore the full cached list ────────────────────
         if (!trimmedQuery) {
-            if (sapMaterialsCache.length > 0) {
+            let fullList = sapMaterialsCache;
+            if (fullList.length === 0 && dataCatalog.materials && dataCatalog.materials.length > 0) {
+                fullList = dataCatalog.materials;
+            }
+            if (fullList.length === 0) {
+                try {
+                    const stored = sessionStorage.getItem('sap_materials_cache');
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        if (Array.isArray(parsed) && parsed.length > 0) fullList = parsed;
+                    }
+                } catch (_) {}
+            }
+            if (fullList.length > 0) {
                 setSearchHelpState((prev) => ({
                     ...prev,
-                    options: sapMaterialsCache,
-                    subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${sapMaterialsCache.length} items)`,
+                    options: fullList,
+                    subtitle: `SAP S/4HANA Cloud • ${fullList.length} materials ready`,
                     isLoading: false,
                 }));
             }
             return;
         }
 
-        // 2. Client-side filter against full cache — covers Material No + all description variants
-        const term = trimmedQuery.toLowerCase();
-        const searchWords = term.split(/\s+/).filter(Boolean);
+        // ── 2. Instant local search from cache (matches Material Number OR Description) ──
+        const qLower = trimmedQuery.toLowerCase();
+        const cleanQ = qLower.replace(/^0+/, '');
+        const words = qLower.split(/\s+/).filter(Boolean);
 
-        const matchItem = (it: any): boolean => {
-            const raw = it.raw_data || {};
+        const filterMaterial = (item: any) => {
+            const raw = item.raw_data || {};
+            const prod = String(item.Product || item.code || item.ProductExternalID || item.Material || '').toLowerCase();
+            const cleanProd = prod.replace(/^0+/, '');
+            const extId = String(item.ProductExternalID || raw.ProductExternalID || '').toLowerCase();
+            const desc = String(
+                item.ProductDescription ||
+                item.description ||
+                item.MaterialDescription ||
+                item.ProductName ||
+                item.name ||
+                item.poText ||
+                raw.ProductDescription ||
+                raw.ProductDescription_1 ||
+                raw.ProductDescription_2 ||
+                raw.ProductDescription_3 ||
+                raw.MaterialDescription ||
+                raw.ProductName ||
+                raw.ProductText ||
+                raw.ShortText ||
+                raw.LongText ||
+                raw.Description ||
+                ''
+            ).toLowerCase();
 
-            // Material Number fields
-            const code     = String(it.Product            || it.code               || it.ProductExternalID || '').toLowerCase();
-            const extId    = String(it.ProductExternalID  || raw.ProductExternalID  || '').toLowerCase();
+            const isNumberMatch = prod.includes(qLower) || (cleanQ.length > 0 && cleanProd.includes(cleanQ)) || extId.includes(qLower);
+            const isDescMatch = desc.includes(qLower);
 
-            // Description / Name fields — cover every variant the PHP parser emits
-            const prodName = String(it.ProductName          || raw.ProductName          || '').toLowerCase();
-            const prodDesc = String(it.ProductDescription   || raw.ProductDescription   || '').toLowerCase();
-            const desc1    = String(it.ProductDescription_1 || raw.ProductDescription_1 || '').toLowerCase();
-            const desc2    = String(it.ProductDescription_2 || raw.ProductDescription_2 || '').toLowerCase();
-            const desc3    = String(it.ProductDescription_3 || raw.ProductDescription_3 || '').toLowerCase();
-            const descGen  = String(it.description          || raw.description          || '').toLowerCase();
-            const nameGen  = String(it.name                 || raw.name                || '').toLowerCase();
-            const poText   = String(it.poText               || raw.poText              || '').toLowerCase();
-
-            // Combined searchable text — all fields joined
-            const combined = `${code} ${extId} ${prodName} ${prodDesc} ${desc1} ${desc2} ${desc3} ${descGen} ${nameGen} ${poText}`;
-
-            // Multi-word: every word must appear somewhere in the combined text
-            if (searchWords.length > 1) {
-                return searchWords.every((w) => combined.includes(w));
+            if (words.length > 1) {
+                const combined = `${prod} ${desc} ${extId}`;
+                return words.every((w) => {
+                    const cw = w.replace(/^0+/, '');
+                    return combined.includes(w) || (cw.length > 0 && cleanProd.includes(cw));
+                });
             }
 
-            // Single term: fast substring check across individual fields
-            return (
-                code.includes(term)     ||
-                extId.includes(term)    ||
-                prodName.includes(term) ||
-                prodDesc.includes(term) ||
-                desc1.includes(term)    ||
-                desc2.includes(term)    ||
-                desc3.includes(term)    ||
-                descGen.includes(term)  ||
-                nameGen.includes(term)  ||
-                poText.includes(term)
-            );
+            return isNumberMatch || isDescMatch;
         };
 
-        const cachedMatches = sapMaterialsCache.filter(matchItem);
+        const scoreItem = (a: any) => {
+            const prod = String(a.Product || a.code || '').toLowerCase();
+            const cleanProd = prod.replace(/^0+/, '');
+            const raw = a.raw_data || {};
+            const desc = String(a.ProductDescription || a.description || a.ProductName || a.name || raw.ProductDescription || '').toLowerCase();
 
-        if (cachedMatches.length > 0) {
-            setSearchHelpState((prev) => ({
-                ...prev,
-                options: cachedMatches,
-                isLoading: false,
-                subtitle: `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${cachedMatches.length} item${cachedMatches.length !== 1 ? 's' : ''} matching "${trimmedQuery}")`,
-            }));
-            return;
+            if (prod === qLower || (cleanQ && cleanProd === cleanQ)) return 1000;
+            if (desc === qLower) return 950;
+            if (prod.startsWith(qLower) || (cleanQ && cleanProd.startsWith(cleanQ))) return 850;
+            if (desc.startsWith(qLower)) return 800;
+            if (prod.includes(qLower) || (cleanQ && cleanProd.includes(cleanQ))) return 600;
+            if (desc.includes(qLower)) return 500;
+            return 100;
+        };
+
+        let pool = sapMaterialsCache;
+        if (pool.length === 0 && dataCatalog.materials && dataCatalog.materials.length > 0) {
+            pool = dataCatalog.materials;
+        }
+        if (pool.length === 0) {
+            try {
+                const stored = sessionStorage.getItem('sap_materials_cache');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed) && parsed.length > 0) pool = parsed;
+                }
+            } catch (_) {}
         }
 
-        // 3. Cache miss — query SAP Cloud live
-        setSearchHelpState((prev) => ({
-            ...prev,
-            isLoading: true,
-            subtitle: `Searching SAP Cloud for "${trimmedQuery}"...`,
-        }));
+        const localMatches = pool.filter(filterMaterial).sort((a, b) => scoreItem(b) - scoreItem(a));
+
+        if (localMatches.length > 0) {
+            setSearchHelpState((prev) => ({
+                ...prev,
+                options: localMatches,
+                isLoading: false,
+                subtitle: `Found ${localMatches.length} matching material${localMatches.length !== 1 ? 's' : ''} for "${trimmedQuery}"`,
+            }));
+        } else {
+            setSearchHelpState((prev) => ({
+                ...prev,
+                isLoading: true,
+                subtitle: `Searching SAP Cloud for "${trimmedQuery}"...`,
+            }));
+        }
+
+        // ── 3. Query SAP S/4HANA Cloud live API in background / fallback ─────
+        const controller = new AbortController();
+        materialSearchAbortRef.current = controller;
 
         try {
             const queryParams = new URLSearchParams();
             queryParams.set('search', trimmedQuery);
-            if (targetPlant) {
-                queryParams.set('plant', targetPlant);
-                queryParams.set('valuationArea', targetPlant);
-            }
 
             const res = await fetch(`/sap-materials?${queryParams.toString()}`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
+                signal: controller.signal,
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             });
-            const data = await res.json();
-            const liveItems: any[] = data.items || [];
 
-            // Merge new live results into cache so subsequent searches benefit
-            if (liveItems.length > 0) {
-                setSapMaterialsCache((prev) => {
-                    const existingCodes = new Set(prev.map((m: any) => String(m.Product || m.code)));
-                    const newItems = liveItems.filter((li: any) => !existingCodes.has(String(li.Product || li.code)));
-                    return newItems.length > 0 ? [...prev, ...newItems] : prev;
-                });
+            if (res.ok) {
+                const data = await res.json();
+                const freshItems: any[] = data.items || [];
+
+                if (freshItems.length > 0) {
+                    setSapMaterialsCache((prev) => {
+                        const existing = new Set(prev.map((m: any) => String(m.Product || m.code)));
+                        const newOnes = freshItems.filter((fi: any) => !existing.has(String(fi.Product || fi.code)));
+                        const updated = newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+                        try { sessionStorage.setItem('sap_materials_cache', JSON.stringify(updated)); } catch (_) {}
+                        return updated;
+                    });
+
+                    // Merge freshItems with localMatches (avoid duplicates)
+                    const seenCodes = new Set<string>();
+                    const merged: any[] = [];
+                    for (const it of [...freshItems, ...localMatches]) {
+                        const key = String(it.Product || it.code || '');
+                        if (key && !seenCodes.has(key)) {
+                            seenCodes.add(key);
+                            merged.push(it);
+                        } else if (!key) {
+                            merged.push(it);
+                        }
+                    }
+                    merged.sort((a, b) => scoreItem(b) - scoreItem(a));
+
+                    setSearchHelpState((prev) => ({
+                        ...prev,
+                        options: merged,
+                        isLoading: false,
+                        subtitle: `SAP Cloud returned ${merged.length} matching material${merged.length !== 1 ? 's' : ''} for "${trimmedQuery}"`,
+                    }));
+                    return;
+                }
             }
 
-            setSearchHelpState((prev) => ({
-                ...prev,
-                options: liveItems,
-                isLoading: false,
-                subtitle: liveItems.length > 0
-                    ? `SAP S/4HANA Cloud (CDS: YY1_PRODUCTPLANTVALUATION_CDS • ${liveItems.length} item${liveItems.length !== 1 ? 's' : ''} matching "${trimmedQuery}")`
-                    : `No materials found matching "${trimmedQuery}"`,
-            }));
-        } catch (err) {
-            console.error('Failed to search materials from SAP CDS view:', err);
-            // On failure, attempt a local re-filter with less strict matching (startsWith)
-            const fallbackMatches = sapMaterialsCache.filter((it: any) => {
-                const code = String(it.Product || it.code || '').toLowerCase();
-                const name = String(it.ProductName || it.ProductDescription || it.description || it.name || '').toLowerCase();
-                return code.startsWith(term) || name.startsWith(term);
-            });
-            setSearchHelpState((prev) => ({
-                ...prev,
-                options: fallbackMatches.length > 0 ? fallbackMatches : sapMaterialsCache,
-                isLoading: false,
-                subtitle: fallbackMatches.length > 0
-                    ? `${fallbackMatches.length} local result${fallbackMatches.length !== 1 ? 's' : ''} for "${trimmedQuery}" (SAP Cloud unavailable)`
-                    : 'SAP Cloud unavailable — showing full cached list',
-            }));
+            if (localMatches.length === 0) {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    options: [],
+                    isLoading: false,
+                    subtitle: `No materials found on SAP Cloud for "${trimmedQuery}"`,
+                }));
+            }
+        } catch (err: any) {
+            if (err?.name === 'AbortError') return;
+            console.error('SAP material search error:', err);
+            if (localMatches.length === 0) {
+                setSearchHelpState((prev) => ({
+                    ...prev,
+                    isLoading: false,
+                    subtitle: `No materials found for "${trimmedQuery}"`,
+                }));
+            }
+        } finally {
+            if (materialSearchAbortRef.current === controller) {
+                materialSearchAbortRef.current = null;
+            }
         }
     };
 
@@ -3564,6 +3731,8 @@ export default function PurchaseRequisitionForm({
         formData.append('header_note', headerNote || '');
         if (headerOptionId) formData.append('header_option_id', headerOptionId);
         formData.append('pr_type', prType);
+        formData.append('requisition_type', requisitionType);
+        if (prTypeRemarks) formData.append('pr_type_remarks', prTypeRemarks);
         formData.append('auto_source_determination', autoSourceDetermination ? '1' : '0');
         formData.append('company_code', companyCode || '1000');
         formData.append('plant', currentItem?.plant || '1000');
@@ -3758,6 +3927,8 @@ export default function PurchaseRequisitionForm({
         setDescription('');
         setHeaderNote('');
         setPrType(defaultDocType);
+        setRequisitionType('normal');
+        setPrTypeRemarks('');
         setHeaderOptionId('');
         const initialItem = createEmptyPrItem('00010', '', '1', '', '', 'functional_item', false);
         setItems([initialItem]);
@@ -4005,38 +4176,44 @@ export default function PurchaseRequisitionForm({
                             </button>
                         </div>
                     )}
-                    {/* Top Row: Description & Document Type */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {/* Purchase Requisition Description */}
+                    {/* Top Row: PR Type, Document Type & Description */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        {/* 1. PR Type */}
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
-                                    Purchase Requisition Description <span className="text-slate-400 font-normal"></span>
+                                    PR Type <span className="text-rose-500">*</span>
                                 </label>
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+                                    requisitionType === 'emergent'
+                                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                        : 'bg-blue-50 text-[#0070f2] border-blue-200'
+                                }`}>
+                                    {requisitionType === 'emergent' ? '⚡ Emergent' : '✓ Normal'}
+                                </span>
                             </div>
-                            <input
-                                type="text"
-                                value={description}
-                                onChange={(e) => {
-                                    setDescription(e.target.value);
-                                    clearFieldError('header_description');
-                                }}
-                                placeholder="Enter purchase requisition description..."
-                                className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:outline-none transition-colors ${
-                                    fieldErrors['header_description']
-                                        ? 'border-rose-500 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-rose-900'
-                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
-                                }`}
-                            />
-                            {fieldErrors['header_description'] && (
-                                <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
-                                    <AlertCircle className="h-3 w-3 shrink-0" />
-                                    <span>{fieldErrors['header_description']}</span>
-                                </p>
-                            )}
+                            <select
+                                value={requisitionType}
+                                onChange={(e) => setRequisitionType(e.target.value)}
+                                className="h-9 w-full rounded-md border border-[#d9e2ec] px-3 text-xs text-[#1c2d42] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2] bg-white transition-colors"
+                            >
+                                {(dataCatalog.prTypes && dataCatalog.prTypes.length > 0 ? dataCatalog.prTypes : [
+                                    { code: 'normal', name: 'Normal' },
+                                    { code: 'emergent', name: 'Emergent' },
+                                ]).map((pt) => (
+                                    <option key={pt.code} value={pt.code}>
+                                        {pt.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <span className="mt-1 block text-[10px] text-[#556b82]">
+                                {requisitionType === 'emergent'
+                                    ? 'Urgent / emergency purchase requisition'
+                                    : 'Regular planned purchase requisition'}
+                            </span>
                         </div>
 
-                        {/* Document Type */}
+                        {/* 2. Document Type */}
                         <div>
                             <div className="flex items-center justify-between mb-1.5">
                                 <label className="block text-xs font-semibold text-[#1c2d42]">
@@ -4093,7 +4270,55 @@ export default function PurchaseRequisitionForm({
                                 );
                             })()}
                         </div>
+
+                        {/* 3. Purchase Requisition Description */}
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="block text-xs font-semibold text-[#1c2d42]">
+                                    Purchase Requisition Description <span className="text-slate-400 font-normal"></span>
+                                </label>
+                            </div>
+                            <input
+                                type="text"
+                                value={description}
+                                onChange={(e) => {
+                                    setDescription(e.target.value);
+                                    clearFieldError('header_description');
+                                }}
+                                placeholder="Enter purchase requisition description..."
+                                className={`h-9 w-full rounded-md border px-3 text-xs text-[#1c2d42] placeholder-[#8c9ba5] focus:outline-none transition-colors ${
+                                    fieldErrors['header_description']
+                                        ? 'border-rose-500 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-rose-900'
+                                        : 'border-[#d9e2ec] focus:border-[#0070f2] focus:ring-1 focus:ring-[#0070f2]'
+                                }`}
+                            />
+                            {fieldErrors['header_description'] && (
+                                <p className="mt-1 text-xs text-rose-600 font-medium flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3 shrink-0" />
+                                    <span>{fieldErrors['header_description']}</span>
+                                </p>
+                            )}
+                        </div>
                     </div>
+
+                    {/* Emergent PR Justification / Remarks Row (only when Emergent is selected) */}
+                    {requisitionType === 'emergent' && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3.5 animate-in fade-in duration-200">
+                            <div className="flex items-center gap-2 mb-1.5">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold">!</span>
+                                <label className="block text-xs font-semibold text-amber-900">
+                                    Emergent Procurement Reason / Justification <span className="text-slate-400 font-normal">(Optional)</span>
+                                </label>
+                            </div>
+                            <input
+                                type="text"
+                                value={prTypeRemarks}
+                                onChange={(e) => setPrTypeRemarks(e.target.value)}
+                                placeholder="State reason for emergent requisition (e.g. Critical breakdown, emergency shutdown spare, plant safety)..."
+                                className="h-9 w-full rounded-md border border-amber-300 bg-white px-3 text-xs text-[#1c2d42] placeholder-amber-800/40 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-none transition-colors"
+                            />
+                        </div>
+                    )}
 
                     {/* Requisitioner Details: 1. Requisitioner Name, 2. Req. Designation, 3. Req. Department */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-3 border-t border-slate-100">

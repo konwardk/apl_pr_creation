@@ -482,6 +482,88 @@ class SapMasterDataService
             '/sap/opu/odata/sap/YY1_PRODUCTPLANTVALUATION_CDS/YY1_ProductPlantValuation?$format=json'
         );
 
+        $isFullFetch = empty($search) && empty($material) && empty($valuationArea);
+        if ($isFullFetch) {
+            $cached = \Illuminate\Support\Facades\Cache::get('sap_materials_cds_all_items');
+            if (!empty($cached) && is_array($cached) && !empty($cached['items'])) {
+                return $cached;
+            }
+        }
+
+        // Fast search using cached material catalog if available
+        if (!empty($search) && empty($material)) {
+            $cachedFull = \Illuminate\Support\Facades\Cache::get('sap_materials_cds_all_items');
+            if (!empty($cachedFull['items'])) {
+                $term = strtolower(trim($search));
+                $cleanTerm = ltrim($term, '0');
+                $words = array_filter(explode(' ', $term));
+                $filtered = array_values(array_filter($cachedFull['items'], function ($it) use ($term, $cleanTerm, $words) {
+                    $prod = strtolower((string)($it['Product'] ?? $it['code'] ?? ''));
+                    $cleanProd = ltrim($prod, '0');
+                    $desc = strtolower(implode(' ', array_filter([
+                        $it['ProductDescription'] ?? '',
+                        $it['ProductName'] ?? '',
+                        $it['name'] ?? '',
+                        $it['description'] ?? '',
+                        $it['poText'] ?? '',
+                        $it['ProductDescription_1'] ?? '',
+                        $it['ProductDescription_2'] ?? '',
+                        $it['ProductDescription_3'] ?? '',
+                    ])));
+
+                    $prodMatch = str_contains($prod, $term) || (!empty($cleanTerm) && str_contains($cleanProd, $cleanTerm));
+                    $descMatch = str_contains($desc, $term);
+
+                    if (count($words) > 1) {
+                        $combined = "{$prod} {$desc}";
+                        foreach ($words as $w) {
+                            $cw = ltrim($w, '0');
+                            $wMatch = str_contains($combined, $w) || (!empty($cw) && str_contains($cleanProd, $cw));
+                            if (!$wMatch) return false;
+                        }
+                        return true;
+                    }
+
+                    return $prodMatch || $descMatch;
+                }));
+
+                if (!empty($filtered)) {
+                    usort($filtered, function ($a, $b) use ($term, $cleanTerm) {
+                        $prodA = strtolower((string)($a['Product'] ?? $a['code'] ?? ''));
+                        $prodB = strtolower((string)($b['Product'] ?? $b['code'] ?? ''));
+                        $cleanProdA = ltrim($prodA, '0');
+                        $cleanProdB = ltrim($prodB, '0');
+                        $descA = strtolower((string)($a['ProductDescription'] ?? $a['description'] ?? $a['ProductName'] ?? $a['name'] ?? ''));
+                        $descB = strtolower((string)($b['ProductDescription'] ?? $b['description'] ?? $b['ProductName'] ?? $b['name'] ?? ''));
+
+                        $score = function ($prod, $cleanProd, $desc) use ($term, $cleanTerm) {
+                            if ($prod === $term || (!empty($cleanTerm) && $cleanProd === $cleanTerm)) return 1000;
+                            if ($desc === $term) return 950;
+                            if (str_starts_with($prod, $term) || (!empty($cleanTerm) && str_starts_with($cleanProd, $cleanTerm))) return 850;
+                            if (str_starts_with($desc, $term)) return 800;
+                            if (str_contains($prod, $term) || (!empty($cleanTerm) && str_contains($cleanProd, $cleanTerm))) return 600;
+                            if (str_contains($desc, $term)) return 500;
+                            return 100;
+                        };
+
+                        return $score($prodB, $cleanProdB, $descB) <=> $score($prodA, $cleanProdA, $descA);
+                    });
+
+                    return [
+                        'success' => true,
+                        'is_live' => true,
+                        'status' => 200,
+                        'latency_ms' => 1,
+                        'source' => 'SAP S/4HANA Cloud (Fast Cache: YY1_PRODUCTPLANTVALUATION_CDS)',
+                        'endpoint' => $endpoint,
+                        'count' => count($filtered),
+                        'items' => $filtered,
+                        'message' => "Successfully retrieved " . count($filtered) . " materials from fast cache in 1ms.",
+                    ];
+                }
+            }
+        }
+
         [$authUser, $authPass] = $this->getAuthCredentials($username, $password);
 
         if (!empty($authUser) && !empty($authPass)) {
@@ -528,6 +610,60 @@ class SapMasterDataService
                         $resp = (clone $request)->get($targetUrl);
                         if ($resp->successful()) {
                             $response = $resp;
+                        }
+                    }
+                }
+
+                // 3. If search query is provided, query SAP CDS view with substringof on ProductDescription, ProductName, or Product
+                if (!$response && !empty($search)) {
+                    $cleanSearch = trim($search);
+                    $safeSearch = str_replace("'", "''", $cleanSearch);
+
+                    // Try filtering on Product (exact or partial) and ProductDescription (standard SAP S/4HANA CDS field)
+                    $searchFilterDesc = "Product eq '{$safeSearch}' or substringof('{$safeSearch}', Product) or substringof('{$safeSearch}', ProductDescription)";
+                    if (!empty($cleanedPlant)) {
+                        $targetUrl = $baseUri . "?\$filter=" . urlencode("({$searchFilterDesc}) and Plant eq '{$cleanedPlant}'") . "&\$top=50&\$format=json";
+                        $resp = (clone $request)->get($targetUrl);
+                        if ($resp->successful()) {
+                            $parsedItems = $this->parseMaterialODataItems($resp->json());
+                            if (!empty($parsedItems)) {
+                                $response = $resp;
+                            }
+                        }
+                    }
+                    if (!$response) {
+                        $targetUrl = $baseUri . "?\$filter=" . urlencode($searchFilterDesc) . "&\$top=50&\$format=json";
+                        $resp = (clone $request)->get($targetUrl);
+                        if ($resp->successful()) {
+                            $parsedItems = $this->parseMaterialODataItems($resp->json());
+                            if (!empty($parsedItems)) {
+                                $response = $resp;
+                            }
+                        }
+                    }
+
+                    // If ProductDescription filter failed or yielded nothing, try ProductName
+                    if (!$response) {
+                        $searchFilterName = "Product eq '{$safeSearch}' or substringof('{$safeSearch}', Product) or substringof('{$safeSearch}', ProductName)";
+                        if (!empty($cleanedPlant)) {
+                            $targetUrl = $baseUri . "?\$filter=" . urlencode("({$searchFilterName}) and Plant eq '{$cleanedPlant}'") . "&\$top=50&\$format=json";
+                            $resp = (clone $request)->get($targetUrl);
+                            if ($resp->successful()) {
+                                $parsedItems = $this->parseMaterialODataItems($resp->json());
+                                if (!empty($parsedItems)) {
+                                    $response = $resp;
+                                }
+                            }
+                        }
+                        if (!$response) {
+                            $targetUrl = $baseUri . "?\$filter=" . urlencode($searchFilterName) . "&\$top=50&\$format=json";
+                            $resp = (clone $request)->get($targetUrl);
+                            if ($resp->successful()) {
+                                $parsedItems = $this->parseMaterialODataItems($resp->json());
+                                if (!empty($parsedItems)) {
+                                    $response = $resp;
+                                }
+                            }
                         }
                     }
                 }
@@ -604,9 +740,36 @@ class SapMasterDataService
                             // Single term: substring match
                             return str_contains($haystack, $term);
                         }));
+
+                        // Sort by relevance so top matching material number or description is in the first row
+                        usort($items, function ($a, $b) use ($term) {
+                            $scoreA = 0;
+                            $scoreB = 0;
+                            $prodA = strtolower((string)($a['Product'] ?? $a['code'] ?? ''));
+                            $prodB = strtolower((string)($b['Product'] ?? $b['code'] ?? ''));
+                            $descA = strtolower((string)($a['ProductDescription'] ?? $a['description'] ?? $a['ProductName'] ?? ''));
+                            $descB = strtolower((string)($b['ProductDescription'] ?? $b['description'] ?? $b['ProductName'] ?? ''));
+
+                            if ($prodA === $term) $scoreA += 1000;
+                            if ($prodB === $term) $scoreB += 1000;
+                            if ($descA === $term) $scoreA += 900;
+                            if ($descB === $term) $scoreB += 900;
+
+                            if (str_starts_with($prodA, $term)) $scoreA += 800;
+                            if (str_starts_with($prodB, $term)) $scoreB += 800;
+                            if (str_starts_with($descA, $term)) $scoreA += 700;
+                            if (str_starts_with($descB, $term)) $scoreB += 700;
+
+                            if (str_contains($descA, $term)) $scoreA += 400;
+                            if (str_contains($descB, $term)) $scoreB += 400;
+                            if (str_contains($prodA, $term)) $scoreA += 300;
+                            if (str_contains($prodB, $term)) $scoreB += 300;
+
+                            return $scoreB <=> $scoreA;
+                        });
                     }
 
-                    return [
+                    $result = [
                         'success' => true,
                         'is_live' => true,
                         'status' => $response->status(),
@@ -617,6 +780,12 @@ class SapMasterDataService
                         'items' => $items,
                         'message' => "Successfully fetched " . count($items) . " materials live from SAP CDS View in {$durationMs}ms.",
                     ];
+
+                    if ($isFullFetch && !empty($items)) {
+                        \Illuminate\Support\Facades\Cache::put('sap_materials_cds_all_items', $result, 1800);
+                    }
+
+                    return $result;
                 }
 
                 $errorBody = $response->body();
@@ -699,6 +868,51 @@ class SapMasterDataService
             $productDesc1 = trim((string)($rec['ProductDescription_1'] ?? ''));
             $productDesc2 = trim((string)($rec['ProductDescription_2'] ?? ''));
             $productDesc3 = trim((string)($rec['ProductDescription_3'] ?? ''));
+
+            // Look through any additional common SAP description fields
+            if (empty($productDesc)) {
+                foreach ([
+                    'ProductText',
+                    'MaterialText',
+                    'ItemDescription',
+                    'LongText',
+                    'ShortText',
+                    'PurchaseOrderItemText',
+                    'YY1_ProductDescription',
+                    'YY1_MaterialDescription',
+                    'YY1_ProductText',
+                    'YY1_MaterialText',
+                    'YY1_Description',
+                    'ProductName',
+                    'MaterialName',
+                ] as $tryKey) {
+                    if (!empty($rec[$tryKey]) && trim((string)$rec[$tryKey]) !== '' && trim((string)$rec[$tryKey]) !== (string)$product) {
+                        $productDesc = trim((string)$rec[$tryKey]);
+                        break;
+                    }
+                }
+            }
+
+            // Also check any string property in $rec containing desc/text/name (excluding non-description keys)
+            if (empty($productDesc)) {
+                foreach ($rec as $k => $v) {
+                    if (is_string($v) && trim($v) !== '' && trim($v) !== (string)$product) {
+                        $kLower = strtolower($k);
+                        if (
+                            (str_contains($kLower, 'desc') || str_contains($kLower, 'text') || str_contains($kLower, 'name')) &&
+                            !str_contains($kLower, 'plant') &&
+                            !str_contains($kLower, 'company') &&
+                            !str_contains($kLower, 'user') &&
+                            !str_contains($kLower, 'type') &&
+                            !str_contains($kLower, 'valuation') &&
+                            !str_contains($kLower, 'group')
+                        ) {
+                            $productDesc = trim($v);
+                            break;
+                        }
+                    }
+                }
+            }
 
             $productName = '';
             foreach (['ProductName', 'ProductDescription', 'ProductDescription_1', 'MaterialDescription', 'Description', 'name'] as $nameKey) {
@@ -1464,51 +1678,50 @@ class SapMasterDataService
      */
     public function getFormattedFallbackStorageLocations(?string $plant = null): array
     {
-        // $all = [
-        //     // Plant 1100
-        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1100', 'extra' => 'Plant 1100 • Store'],
-        //     // Plant 1200 (Namrup)
-        //     ['code' => 'F125', 'name' => 'F125 - 125 TPD Formalin', 'StorageLocation' => 'F125', 'StorageLocationName' => '125 TPD Formalin', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Formalin'],
-        //     ['code' => 'FNB1', 'name' => 'FNB1 - 125 TPD Bay 1', 'StorageLocation' => 'FNB1', 'StorageLocationName' => '125 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Bay 1'],
-        //     ['code' => 'HZG1', 'name' => 'HZG1 - Hazardous GD 1', 'StorageLocation' => 'HZG1', 'StorageLocationName' => 'Hazardous GD 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • Hazardous GD 1'],
-        //     ['code' => 'HZG2', 'name' => 'HZG2 - Hazardous GD 2', 'StorageLocation' => 'HZG2', 'StorageLocationName' => 'Hazardous GD 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Hazardous GD 2'],
-        //     ['code' => 'ISST', 'name' => 'ISST - ISGEC Store', 'StorageLocation' => 'ISST', 'StorageLocationName' => 'ISGEC Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • ISGEC Store'],
-        //     ['code' => 'M100', 'name' => 'M100 - 100 TPD Methanol', 'StorageLocation' => 'M100', 'StorageLocationName' => '100 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Methanol'],
-        //     ['code' => 'M2B1', 'name' => 'M2B1 - 100 TPD Bay 1', 'StorageLocation' => 'M2B1', 'StorageLocationName' => '100 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Bay 1'],
-        //     ['code' => 'M3B1', 'name' => 'M3B1 - 500 TPD Bay 1', 'StorageLocation' => 'M3B1', 'StorageLocationName' => '500 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 1'],
-        //     ['code' => 'M3B2', 'name' => 'M3B2 - 500 TPD Bay 2', 'StorageLocation' => 'M3B2', 'StorageLocationName' => '500 TPD Bay 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 2'],
-        //     ['code' => 'M3B3', 'name' => 'M3B3 - 500 TPD Bay 3', 'StorageLocation' => 'M3B3', 'StorageLocationName' => '500 TPD Bay 3', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 3'],
-        //     ['code' => 'M3B4', 'name' => 'M3B4 - 500 TPD Bay 4', 'StorageLocation' => 'M3B4', 'StorageLocationName' => '500 TPD Bay 4', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 4'],
-        //     ['code' => 'M3B5', 'name' => 'M3B5 - 500 TPD Bay 5', 'StorageLocation' => 'M3B5', 'StorageLocationName' => '500 TPD Bay 5', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 5'],
-        //     ['code' => 'M3B6', 'name' => 'M3B6 - 500 TPD Bay 6', 'StorageLocation' => 'M3B6', 'StorageLocationName' => '500 TPD Bay 6', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 6'],
-        //     ['code' => 'M500', 'name' => 'M500 - 500 TPD Methanol', 'StorageLocation' => 'M500', 'StorageLocationName' => '500 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Methanol'],
-        //     ['code' => 'MAIN', 'name' => 'MAIN - Main Store', 'StorageLocation' => 'MAIN', 'StorageLocationName' => 'Main Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • Main Store'],
-        //     ['code' => 'PRJ1', 'name' => 'PRJ1 - Project Store 1', 'StorageLocation' => 'PRJ1', 'StorageLocationName' => 'Project Store 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • Project Store 1'],
-        //     ['code' => 'PRJ2', 'name' => 'PRJ2 - Project Store 2', 'StorageLocation' => 'PRJ2', 'StorageLocationName' => 'Project Store 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Project Store 2'],
-        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • Store'],
-        //     ['code' => 'SLDM', 'name' => 'SLDM - Damage', 'StorageLocation' => 'SLDM', 'StorageLocationName' => 'Damage', 'Plant' => '1200', 'extra' => 'Plant 1200 • Damage'],
-        //     ['code' => 'SLEW', 'name' => 'SLEW - E Waste', 'StorageLocation' => 'SLEW', 'StorageLocationName' => 'E Waste', 'Plant' => '1200', 'extra' => 'Plant 1200 • E Waste'],
-        //     ['code' => 'SLM2', 'name' => 'SLM2 - Methanol 2', 'StorageLocation' => 'SLM2', 'StorageLocationName' => 'Methanol 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Methanol 2'],
-        //     ['code' => 'SLM3', 'name' => 'SLM3 - Methanol 3', 'StorageLocation' => 'SLM3', 'StorageLocationName' => 'Methanol 3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Methanol 3'],
-        //     ['code' => 'SLOY', 'name' => 'SLOY - Open Yard', 'StorageLocation' => 'SLOY', 'StorageLocationName' => 'Open Yard', 'Plant' => '1200', 'extra' => 'Plant 1200 • Open Yard'],
-        //     ['code' => 'SLSC', 'name' => 'SLSC - Scarp', 'StorageLocation' => 'SLSC', 'StorageLocationName' => 'Scarp', 'Plant' => '1200', 'extra' => 'Plant 1200 • Scarp'],
-        //     ['code' => 'SSE2', 'name' => 'SSE2 - Elec Sub-Stre M2', 'StorageLocation' => 'SSE2', 'StorageLocationName' => 'Elec Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Elec Sub-Stre M2'],
-        //     ['code' => 'SSE3', 'name' => 'SSE3 - Elec Sub-Stre M3', 'StorageLocation' => 'SSE3', 'StorageLocationName' => 'Elec Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Elec Sub-Stre M3'],
-        //     ['code' => 'SSI2', 'name' => 'SSI2 - Inst Sub-Stre M2', 'StorageLocation' => 'SSI2', 'StorageLocationName' => 'Inst Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Inst Sub-Stre M2'],
-        //     ['code' => 'SSI3', 'name' => 'SSI3 - Inst Sub-Stre M3', 'StorageLocation' => 'SSI3', 'StorageLocationName' => 'Inst Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Inst Sub-Stre M3'],
-        //     ['code' => 'SSM2', 'name' => 'SSM2 - Mech Sub-Stre M2', 'StorageLocation' => 'SSM2', 'StorageLocationName' => 'Mech Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M2'],
-        //     ['code' => 'SSM3', 'name' => 'SSM3 - Mech Sub-Stre M3', 'StorageLocation' => 'SSM3', 'StorageLocationName' => 'Mech Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M3'],
-        //     ['code' => 'WSCN', 'name' => 'WSCN - Waste Container', 'StorageLocation' => 'WSCN', 'StorageLocationName' => 'Waste Container', 'Plant' => '1200', 'extra' => 'Plant 1200 • Waste Container'],
-        //     // Plant 1300
-        //     ['code' => 'F200', 'name' => 'F200 - 200 TPD Formalin', 'StorageLocation' => 'F200', 'StorageLocationName' => '200 TPD Formalin', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Formalin'],
-        //     ['code' => 'FBB1', 'name' => 'FBB1 - 200 TPD Bay 1', 'StorageLocation' => 'FBB1', 'StorageLocationName' => '200 TPD Bay 1', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Bay 1'],
-        //     ['code' => 'ONRD', 'name' => 'ONRD - On Road', 'StorageLocation' => 'ONRD', 'StorageLocationName' => 'On Road', 'Plant' => '1300', 'extra' => 'Plant 1300 • On Road'],
-        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1300', 'extra' => 'Plant 1300 • Store'],
-        //     // Plant 1400
-        //     ['code' => 'ONRD', 'name' => 'ONRD - On Road', 'StorageLocation' => 'ONRD', 'StorageLocationName' => 'On Road', 'Plant' => '1400', 'extra' => 'Plant 1400 • On Road'],
-        //     ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1400', 'extra' => 'Plant 1400 • Store'],
-        // ];
-        $all = "Hello";
+        $all = [
+            // Plant 1100
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1100', 'extra' => 'Plant 1100 • Store'],
+            // Plant 1200 (Namrup)
+            ['code' => 'F125', 'name' => 'F125 - 125 TPD Formalin', 'StorageLocation' => 'F125', 'StorageLocationName' => '125 TPD Formalin', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Formalin'],
+            ['code' => 'FNB1', 'name' => 'FNB1 - 125 TPD Bay 1', 'StorageLocation' => 'FNB1', 'StorageLocationName' => '125 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 125 TPD Bay 1'],
+            ['code' => 'HZG1', 'name' => 'HZG1 - Hazardous GD 1', 'StorageLocation' => 'HZG1', 'StorageLocationName' => 'Hazardous GD 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • Hazardous GD 1'],
+            ['code' => 'HZG2', 'name' => 'HZG2 - Hazardous GD 2', 'StorageLocation' => 'HZG2', 'StorageLocationName' => 'Hazardous GD 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Hazardous GD 2'],
+            ['code' => 'ISST', 'name' => 'ISST - ISGEC Store', 'StorageLocation' => 'ISST', 'StorageLocationName' => 'ISGEC Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • ISGEC Store'],
+            ['code' => 'M100', 'name' => 'M100 - 100 TPD Methanol', 'StorageLocation' => 'M100', 'StorageLocationName' => '100 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Methanol'],
+            ['code' => 'M2B1', 'name' => 'M2B1 - 100 TPD Bay 1', 'StorageLocation' => 'M2B1', 'StorageLocationName' => '100 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 100 TPD Bay 1'],
+            ['code' => 'M3B1', 'name' => 'M3B1 - 500 TPD Bay 1', 'StorageLocation' => 'M3B1', 'StorageLocationName' => '500 TPD Bay 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 1'],
+            ['code' => 'M3B2', 'name' => 'M3B2 - 500 TPD Bay 2', 'StorageLocation' => 'M3B2', 'StorageLocationName' => '500 TPD Bay 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 2'],
+            ['code' => 'M3B3', 'name' => 'M3B3 - 500 TPD Bay 3', 'StorageLocation' => 'M3B3', 'StorageLocationName' => '500 TPD Bay 3', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 3'],
+            ['code' => 'M3B4', 'name' => 'M3B4 - 500 TPD Bay 4', 'StorageLocation' => 'M3B4', 'StorageLocationName' => '500 TPD Bay 4', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 4'],
+            ['code' => 'M3B5', 'name' => 'M3B5 - 500 TPD Bay 5', 'StorageLocation' => 'M3B5', 'StorageLocationName' => '500 TPD Bay 5', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 5'],
+            ['code' => 'M3B6', 'name' => 'M3B6 - 500 TPD Bay 6', 'StorageLocation' => 'M3B6', 'StorageLocationName' => '500 TPD Bay 6', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Bay 6'],
+            ['code' => 'M500', 'name' => 'M500 - 500 TPD Methanol', 'StorageLocation' => 'M500', 'StorageLocationName' => '500 TPD Methanol', 'Plant' => '1200', 'extra' => 'Plant 1200 • 500 TPD Methanol'],
+            ['code' => 'MAIN', 'name' => 'MAIN - Main Store', 'StorageLocation' => 'MAIN', 'StorageLocationName' => 'Main Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • Main Store'],
+            ['code' => 'PRJ1', 'name' => 'PRJ1 - Project Store 1', 'StorageLocation' => 'PRJ1', 'StorageLocationName' => 'Project Store 1', 'Plant' => '1200', 'extra' => 'Plant 1200 • Project Store 1'],
+            ['code' => 'PRJ2', 'name' => 'PRJ2 - Project Store 2', 'StorageLocation' => 'PRJ2', 'StorageLocationName' => 'Project Store 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Project Store 2'],
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1200', 'extra' => 'Plant 1200 • Store'],
+            ['code' => 'SLDM', 'name' => 'SLDM - Damage', 'StorageLocation' => 'SLDM', 'StorageLocationName' => 'Damage', 'Plant' => '1200', 'extra' => 'Plant 1200 • Damage'],
+            ['code' => 'SLEW', 'name' => 'SLEW - E Waste', 'StorageLocation' => 'SLEW', 'StorageLocationName' => 'E Waste', 'Plant' => '1200', 'extra' => 'Plant 1200 • E Waste'],
+            ['code' => 'SLM2', 'name' => 'SLM2 - Methanol 2', 'StorageLocation' => 'SLM2', 'StorageLocationName' => 'Methanol 2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Methanol 2'],
+            ['code' => 'SLM3', 'name' => 'SLM3 - Methanol 3', 'StorageLocation' => 'SLM3', 'StorageLocationName' => 'Methanol 3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Methanol 3'],
+            ['code' => 'SLOY', 'name' => 'SLOY - Open Yard', 'StorageLocation' => 'SLOY', 'StorageLocationName' => 'Open Yard', 'Plant' => '1200', 'extra' => 'Plant 1200 • Open Yard'],
+            ['code' => 'SLSC', 'name' => 'SLSC - Scarp', 'StorageLocation' => 'SLSC', 'StorageLocationName' => 'Scarp', 'Plant' => '1200', 'extra' => 'Plant 1200 • Scarp'],
+            ['code' => 'SSE2', 'name' => 'SSE2 - Elec Sub-Stre M2', 'StorageLocation' => 'SSE2', 'StorageLocationName' => 'Elec Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Elec Sub-Stre M2'],
+            ['code' => 'SSE3', 'name' => 'SSE3 - Elec Sub-Stre M3', 'StorageLocation' => 'SSE3', 'StorageLocationName' => 'Elec Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Elec Sub-Stre M3'],
+            ['code' => 'SSI2', 'name' => 'SSI2 - Inst Sub-Stre M2', 'StorageLocation' => 'SSI2', 'StorageLocationName' => 'Inst Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Inst Sub-Stre M2'],
+            ['code' => 'SSI3', 'name' => 'SSI3 - Inst Sub-Stre M3', 'StorageLocation' => 'SSI3', 'StorageLocationName' => 'Inst Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Inst Sub-Stre M3'],
+            ['code' => 'SSM2', 'name' => 'SSM2 - Mech Sub-Stre M2', 'StorageLocation' => 'SSM2', 'StorageLocationName' => 'Mech Sub-Stre M2', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M2'],
+            ['code' => 'SSM3', 'name' => 'SSM3 - Mech Sub-Stre M3', 'StorageLocation' => 'SSM3', 'StorageLocationName' => 'Mech Sub-Stre M3', 'Plant' => '1200', 'extra' => 'Plant 1200 • Mech Sub-Stre M3'],
+            ['code' => 'WSCN', 'name' => 'WSCN - Waste Container', 'StorageLocation' => 'WSCN', 'StorageLocationName' => 'Waste Container', 'Plant' => '1200', 'extra' => 'Plant 1200 • Waste Container'],
+            // Plant 1300
+            ['code' => 'F200', 'name' => 'F200 - 200 TPD Formalin', 'StorageLocation' => 'F200', 'StorageLocationName' => '200 TPD Formalin', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Formalin'],
+            ['code' => 'FBB1', 'name' => 'FBB1 - 200 TPD Bay 1', 'StorageLocation' => 'FBB1', 'StorageLocationName' => '200 TPD Bay 1', 'Plant' => '1300', 'extra' => 'Plant 1300 • 200 TPD Bay 1'],
+            ['code' => 'ONRD', 'name' => 'ONRD - On Road', 'StorageLocation' => 'ONRD', 'StorageLocationName' => 'On Road', 'Plant' => '1300', 'extra' => 'Plant 1300 • On Road'],
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1300', 'extra' => 'Plant 1300 • Store'],
+            // Plant 1400
+            ['code' => 'ONRD', 'name' => 'ONRD - On Road', 'StorageLocation' => 'ONRD', 'StorageLocationName' => 'On Road', 'Plant' => '1400', 'extra' => 'Plant 1400 • On Road'],
+            ['code' => 'SL01', 'name' => 'SL01 - Store', 'StorageLocation' => 'SL01', 'StorageLocationName' => 'Store', 'Plant' => '1400', 'extra' => 'Plant 1400 • Store'],
+        ];
 
         if (!empty($plant)) {
             $p = trim($plant);

@@ -2,6 +2,7 @@ import { SearchHelpOption } from './SapSearchHelpModal';
 
 export interface SapMasterDataConfig {
     documentTypes: SearchHelpOption[];
+    prTypes?: SearchHelpOption[];
     plants: SearchHelpOption[];
     itemCategories: SearchHelpOption[];
     materialTypes: SearchHelpOption[];
@@ -29,6 +30,10 @@ export interface SapMasterDataConfig {
 
 export const defaultSapMasterData: SapMasterDataConfig = {
     documentTypes: [],
+    prTypes: [
+        { code: 'normal', name: 'Normal', extra: 'Regular planned purchase requisition' },
+        { code: 'emergent', name: 'Emergent', extra: 'Emergent / urgent purchase requisition' },
+    ],
     itemCategories: [
         { code: 'Standard', name: 'Standard (0 / Blank)', extra: 'Standard material or service procurement' },
         { code: 'K', name: 'K - Consignment', extra: 'Vendor consignment stock stored at plant' },

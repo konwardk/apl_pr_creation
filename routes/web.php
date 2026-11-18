@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\MaterialSearchController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeptManagementController;
 use App\Http\Controllers\HeaderOptionController;
@@ -32,6 +33,8 @@ Route::middleware(['auth', /* 'verified', */ 'role'])->group(function () {
     Route::get('attachments/{attachment}/download', [PurchaseRequisitionController::class, 'downloadAttachment'])->name('attachments.download');
     Route::delete('attachments/{attachment}', [PurchaseRequisitionController::class, 'deleteAttachment'])->name('attachments.destroy');
     Route::get('sap-materials', [PurchaseRequisitionController::class, 'getMaterials'])->name('sap-materials.index');
+    Route::get('api/materials/search', [MaterialSearchController::class, 'search'])->name('api.materials.search');
+    Route::get('api/materials/status', [MaterialSearchController::class, 'status'])->name('api.materials.status');
     Route::get('sap-account-assignment-categories', [PurchaseRequisitionController::class, 'getAccountAssignmentCategories'])->name('sap-account-assignment-categories.index');
     Route::get('sap-plants', [PurchaseRequisitionController::class, 'getPlants'])->name('sap-plants.index');
     Route::get('sap-storage-locations', [PurchaseRequisitionController::class, 'getStorageLocations'])->name('sap-storage-locations.index');

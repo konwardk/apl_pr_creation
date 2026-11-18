@@ -10,6 +10,7 @@ use App\Models\PurchasingGroup;
 use App\Models\PurchasingOrganization;
 use App\Models\PurchaseRequisition;
 use App\Models\PurchaseRequisitionItem;
+use App\Models\PurchaseRequisitionType;
 use App\Models\ContractRequisition;
 use App\Models\User;
 use App\Services\SapMasterDataService;
@@ -333,6 +334,7 @@ class PurchaseRequisitionController extends Controller
             'attachments',
             'contractRequisition',
             'contractRequisitionLocal',
+            'purchaseRequisitionType',
             'user',
             'user.department',
         ]);
@@ -377,7 +379,7 @@ class PurchaseRequisitionController extends Controller
             );
         }
 
-        $purchaseRequisition->load(['items', 'headerOption', 'attachments', 'contractRequisition', 'contractRequisitionLocal']);
+        $purchaseRequisition->load(['items', 'headerOption', 'attachments', 'contractRequisition', 'contractRequisitionLocal', 'purchaseRequisitionType']);
         $config = $this->getMasterDataConfig($request);
         $cr = $purchaseRequisition->contractRequisition ?? $purchaseRequisition->contractRequisitionLocal;
         $defaultCrNo = $cr?->cr_no ?? $this->generateNextCrNumber(false, $purchaseRequisition->user_id ?? $request->user()?->id);
@@ -607,6 +609,10 @@ class PurchaseRequisitionController extends Controller
                     'extra' => $opt->code ?: '',
                 ])->toArray(),
                 'documentTypes' => $docTypesData,
+                'prTypes' => [
+                    ['code' => 'normal', 'name' => 'Normal', 'description' => 'Regular planned purchase requisition'],
+                    ['code' => 'emergent', 'name' => 'Emergent', 'description' => 'Emergent / urgent purchase requisition'],
+                ],
                 'itemCategories' => $itemCategoriesData,
                 'plants' => $plants,
                 'accountAssignmentCategories' => $accountAssignmentCategories,
@@ -662,6 +668,8 @@ class PurchaseRequisitionController extends Controller
             'header_note' => 'nullable|string',
             'header_option_id' => 'nullable|exists:header_options,id',
             'pr_type' => 'required|string|max:10',
+            'requisition_type' => 'nullable|string|max:50',
+            'pr_type_remarks' => 'nullable|string|max:500',
             'auto_source_determination' => 'nullable|boolean',
             'company_code' => 'nullable|string|max:10',
             'plant' => 'nullable|string|max:10',
@@ -875,6 +883,11 @@ class PurchaseRequisitionController extends Controller
                     $primaryPlant = $validated['items'][0]['plant'] ?? ($validated['plant'] ?? '1200');
                     $primaryDesc = !empty($validated['description']) ? $validated['description'] : ($validated['items'][0]['description'] ?? 'Purchase Requisition');
 
+                    $requisitionType = strtolower(trim($request->input('requisition_type', 'normal') ?: 'normal'));
+                    if (!in_array($requisitionType, ['normal', 'emergent'])) {
+                        $requisitionType = 'normal';
+                    }
+
                     $pr = PurchaseRequisition::create([
                         'pr_number' => $prNumber,
                         'user_id' => $request->user()?->id,
@@ -882,6 +895,7 @@ class PurchaseRequisitionController extends Controller
                         'header_note' => $validated['header_note'] ?? null,
                         'header_option_id' => $validated['header_option_id'] ?? null,
                         'pr_type' => $validated['pr_type'] ?? 'ZMAT',
+                        'requisition_type' => $requisitionType,
                         'auto_source_determination' => !empty($validated['auto_source_determination']),
                         'company_code' => $validated['company_code'] ?? '1000',
                         'plant' => $primaryPlant,
@@ -894,6 +908,19 @@ class PurchaseRequisitionController extends Controller
                         'sap_sync_message' => $isDraft
                             ? 'Saved as Draft in local MySQL database (is_draft = 1). Not synced to SAP server.'
                             : 'Created in local database. Ready for SAP S/4HANA OData V4 POST.',
+                    ]);
+
+                    // Store PR type classification in dedicated table purchase_requisition_types
+                    PurchaseRequisitionType::create([
+                        'purchase_requisition_id' => $pr->id,
+                        'pr_number' => $prNumber,
+                        'sap_pr_number' => $pr->sap_pr_number,
+                        'pr_type' => $requisitionType,
+                        'name' => ucfirst($requisitionType),
+                        'remarks' => $request->input('pr_type_remarks') ?? $request->input('remarks'),
+                        'user_id' => $request->user()?->id,
+                        'is_draft' => $isDraft ? 1 : 0,
+                        'sap_sync_status' => $isDraft ? 'draft' : 'pending',
                     ]);
 
                     foreach ($validated['items'] as $index => $itemData) {
@@ -1130,6 +1157,11 @@ class PurchaseRequisitionController extends Controller
                 'sap_response' => $syncResult['response'],
             ]);
 
+            PurchaseRequisitionType::where('purchase_requisition_id', $pr->id)->update([
+                'sap_pr_number' => $sapPrNum,
+                'sap_sync_status' => 'synced',
+            ]);
+
             // Dispatch any attached files to SAP Attachment Service (API_CV_ATTACHMENT_SRV)
             foreach ($pr->attachments as $att) {
                 $this->sapService->uploadAttachmentToSap($att, $sapPrNum, $att->item_number);
@@ -1173,6 +1205,10 @@ class PurchaseRequisitionController extends Controller
                 'sap_sync_message' => $syncResult['message'] ?? 'Failed to sync with SAP',
                 'sap_payload' => $syncResult['payload'] ?? $pr->sap_payload,
                 'sap_response' => $syncResult['response'] ?? null,
+            ]);
+
+            PurchaseRequisitionType::where('purchase_requisition_id', $pr->id)->update([
+                'sap_sync_status' => 'failed',
             ]);
 
             if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
@@ -1249,6 +1285,11 @@ class PurchaseRequisitionController extends Controller
                 'sap_response' => $syncResult['response'],
             ]);
 
+            PurchaseRequisitionType::where('purchase_requisition_id', $purchaseRequisition->id)->update([
+                'sap_pr_number' => $sapPrNum,
+                'sap_sync_status' => 'synced',
+            ]);
+
             // Dispatch any attached files to SAP Attachment Service (API_CV_ATTACHMENT_SRV)
             foreach ($purchaseRequisition->attachments as $att) {
                 $this->sapService->uploadAttachmentToSap($att, $sapPrNum, $att->item_number);
@@ -1277,6 +1318,10 @@ class PurchaseRequisitionController extends Controller
                 'sap_response' => $syncResult['response'] ?? null,
             ]);
 
+            PurchaseRequisitionType::where('purchase_requisition_id', $purchaseRequisition->id)->update([
+                'sap_sync_status' => 'failed',
+            ]);
+
             return back()->with('error', "SAP Cloud sync failed: " . ($syncResult['message'] ?? 'Unknown error'));
         }
     }
@@ -1294,6 +1339,10 @@ class PurchaseRequisitionController extends Controller
             'is_draft' => 0,
             'approval_status' => 'approved',
             'sap_sync_message' => 'Draft finalized in local database. Ready for SAP S/4HANA OData V4 sync.',
+        ]);
+
+        PurchaseRequisitionType::where('purchase_requisition_id', $purchaseRequisition->id)->update([
+            'is_draft' => 0,
         ]);
 
         return back()->with('success', "Purchase Requisition {$purchaseRequisition->pr_number} draft finalized (is_draft = 0). It is now eligible for SAP Cloud sync.");
@@ -1332,6 +1381,8 @@ class PurchaseRequisitionController extends Controller
             'header_note' => 'nullable|string',
             'header_option_id' => 'nullable|exists:header_options,id',
             'pr_type' => 'required|string|max:10',
+            'requisition_type' => 'nullable|string|max:50',
+            'pr_type_remarks' => 'nullable|string|max:500',
             'auto_source_determination' => 'nullable|boolean',
             'company_code' => 'nullable|string|max:10',
             'plant' => 'nullable|string|max:10',
@@ -1538,11 +1589,17 @@ class PurchaseRequisitionController extends Controller
             $primaryPlant = $validated['items'][0]['plant'] ?? ($validated['plant'] ?? $purchaseRequisition->plant);
             $primaryDesc = !empty($validated['description']) ? $validated['description'] : ($validated['items'][0]['description'] ?? $purchaseRequisition->description);
 
+            $requisitionType = strtolower(trim($request->input('requisition_type', $purchaseRequisition->requisition_type ?: 'normal') ?: 'normal'));
+            if (!in_array($requisitionType, ['normal', 'emergent'])) {
+                $requisitionType = 'normal';
+            }
+
             $purchaseRequisition->update([
                 'description' => $primaryDesc,
                 'header_note' => $validated['header_note'] ?? null,
                 'header_option_id' => $validated['header_option_id'] ?? null,
                 'pr_type' => $validated['pr_type'] ?? $purchaseRequisition->pr_type,
+                'requisition_type' => $requisitionType,
                 'auto_source_determination' => !empty($validated['auto_source_determination']),
                 'company_code' => $validated['company_code'] ?? '1000',
                 'plant' => $primaryPlant,
@@ -1556,6 +1613,21 @@ class PurchaseRequisitionController extends Controller
                     ? 'Updated Draft in local MySQL database (is_draft = 1). Not synced to SAP server.'
                     : 'Updated in local database. Ready for SAP S/4HANA OData V4 POST.',
             ]);
+
+            // Update or create PR type record in dedicated purchase_requisition_types table
+            PurchaseRequisitionType::updateOrCreate(
+                ['purchase_requisition_id' => $purchaseRequisition->id],
+                [
+                    'pr_number' => $purchaseRequisition->pr_number,
+                    'sap_pr_number' => $purchaseRequisition->sap_pr_number,
+                    'pr_type' => $requisitionType,
+                    'name' => ucfirst($requisitionType),
+                    'remarks' => $request->input('pr_type_remarks') ?? $request->input('remarks'),
+                    'user_id' => $request->user()?->id,
+                    'is_draft' => $isDraft ? 1 : 0,
+                    'sap_sync_status' => $isDraft ? 'draft' : 'pending',
+                ]
+            );
 
             $keptItemIds = [];
 
@@ -1801,6 +1873,11 @@ class PurchaseRequisitionController extends Controller
                 'sap_response' => $syncResult['response'],
             ]);
 
+            PurchaseRequisitionType::where('purchase_requisition_id', $purchaseRequisition->id)->update([
+                'sap_pr_number' => $sapPrNum,
+                'sap_sync_status' => 'synced',
+            ]);
+
             foreach ($purchaseRequisition->attachments as $att) {
                 $this->sapService->uploadAttachmentToSap($att, $sapPrNum, $att->item_number);
             }
@@ -1843,6 +1920,10 @@ class PurchaseRequisitionController extends Controller
                 'sap_sync_message' => $syncResult['message'] ?? 'Failed to sync with SAP',
                 'sap_payload' => $syncResult['payload'] ?? $purchaseRequisition->sap_payload,
                 'sap_response' => $syncResult['response'] ?? null,
+            ]);
+
+            PurchaseRequisitionType::where('purchase_requisition_id', $purchaseRequisition->id)->update([
+                'sap_sync_status' => 'failed',
             ]);
 
             if ($request->wantsJson() || $request->ajax() || $request->header('X-Requested-With') === 'XMLHttpRequest') {

@@ -312,7 +312,7 @@ export default function PurchaseRequisitionPrintModal({
                             width: 100% !important;
                             background: #ffffff !important;
                             color: #000000 !important;
-                            font-family: "Times New Roman", Times, Georgia, serif !important;
+                            font-family: Calibri, 'Segoe UI', Candara, Optima, Arial, sans-serif !important;
                         }
                         .apl-a4-sheet {
                             width: 100% !important;
@@ -326,7 +326,7 @@ export default function PurchaseRequisitionPrintModal({
                     </style>
                 </head>
                 <body>
-                    <div class="apl-a4-sheet" style="font-family: 'Times New Roman', Times, Georgia, serif; color: #000000; background: #ffffff;">
+                    <div class="apl-a4-sheet" style="font-family: Calibri, 'Segoe UI', Candara, Optima, Arial, sans-serif; color: #000000; background: #ffffff;">
                         ${content.innerHTML}
                     </div>
                 </body>
@@ -559,7 +559,7 @@ export default function PurchaseRequisitionPrintModal({
                             backgroundColor: '#ffffff',
                             color: '#000000',
                             padding: '24px 30px 24px 68px',
-                            fontFamily: '"Times New Roman", Times, Georgia, serif',
+                            fontFamily: 'Calibri, "Segoe UI", Candara, Optima, Arial, sans-serif',
                             boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
                             border: '1px solid #d1d5db',
                             lineHeight: 1.3,
@@ -613,7 +613,7 @@ export default function PurchaseRequisitionPrintModal({
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                                             <div>
                                                 <span style={{ fontWeight: 600 }}>Indentor's Ref.: </span>
-                                                <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                                                <span style={{ fontWeight: 'bold' }}>
                                                     APL/{pr.pr_number}
                                                 </span>
                                             </div>
@@ -641,7 +641,7 @@ export default function PurchaseRequisitionPrintModal({
                                     <td style={{ width: '48%', verticalAlign: 'top', padding: '6px 8px' }}>
                                         <div style={{ marginBottom: '4px' }}>
                                             <span style={{ fontWeight: 600 }}>Materials Indent No: </span>
-                                            <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
+                                            <span style={{ fontWeight: 'bold' }}>
                                                 APL/C&P/{pr.sap_pr_number || pr.pr_number}
                                             </span>
                                         </div>
@@ -652,7 +652,7 @@ export default function PurchaseRequisitionPrintModal({
                                         {cr?.cr_no && (
                                             <div style={{ marginBottom: '4px' }}>
                                                 <span style={{ fontWeight: 600 }}>Contract Ref: </span>
-                                                <span style={{ fontFamily: 'monospace' }}>{cr.cr_no}</span>
+                                                <span>{cr.cr_no}</span>
                                             </div>
                                         )}
 
@@ -773,7 +773,7 @@ export default function PurchaseRequisitionPrintModal({
                                 </tr>
 
                                 {/* Numbered Reference Row (Columns 1 to 9) */}
-                                <tr style={{ borderBottom: '1px solid #000000', textAlign: 'center', fontSize: '9px', fontWeight: 'bold', backgroundColor: '#f9fafb' }}>
+                                <tr style={{ borderBottom: '1px solid #000000', textAlign: 'center', fontSize: '9px', fontWeight: 'bold', backgroundColor: '#ffffff', color: '#000000' }}>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>1</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>2</th>
                                     <th style={{ borderRight: '1px solid #000000', padding: '1px 0' }}>3</th>
@@ -817,12 +817,13 @@ export default function PurchaseRequisitionPrintModal({
                                                 style={{
                                                     borderBottom: '1px solid #000000',
                                                     verticalAlign: 'top',
-                                                    backgroundColor: isSet ? '#faf7fd' : '#ffffff',
+                                                    backgroundColor: '#ffffff',
+                                                    color: '#000000',
                                                 }}
                                             >
                                                 {/* 1. Sl. No. / Hierarchy */}
                                                 <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
-                                                    <div style={{ fontWeight: 'bold', fontSize: isChild ? '9.5px' : '10px', color: isSet ? '#6b21a8' : isChild ? '#3730a3' : '#000000' }}>
+                                                    <div style={{ fontWeight: 'bold', fontSize: isChild ? '9.5px' : '10px', color: '#000000' }}>
                                                         {hNum}{hNum.includes('.') ? '' : '.'}
                                                     </div>
                                                     {isSet ? (
@@ -831,9 +832,9 @@ export default function PurchaseRequisitionPrintModal({
                                                                 display: 'inline-block',
                                                                 fontSize: '7.5px',
                                                                 fontWeight: 'bold',
-                                                                color: '#6b21a8',
-                                                                backgroundColor: '#f3e8ff',
-                                                                border: '1px solid #d8b4fe',
+                                                                color: '#000000',
+                                                                backgroundColor: '#ffffff',
+                                                                border: '1px solid #000000',
                                                                 borderRadius: '2px',
                                                                 padding: '0 3px',
                                                                 marginTop: '2px',
@@ -849,9 +850,9 @@ export default function PurchaseRequisitionPrintModal({
                                                                 display: 'inline-block',
                                                                 fontSize: '7px',
                                                                 fontWeight: 'bold',
-                                                                color: '#4338ca',
-                                                                backgroundColor: '#e0e7ff',
-                                                                border: '1px solid #c7d2fe',
+                                                                color: '#000000',
+                                                                backgroundColor: '#ffffff',
+                                                                border: '1px solid #000000',
                                                                 borderRadius: '2px',
                                                                 padding: '0 2px',
                                                                 marginTop: '1px',
@@ -863,12 +864,12 @@ export default function PurchaseRequisitionPrintModal({
                                                 </td>
 
                                                 {/* 2. Code No. */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 3px', textAlign: 'center', fontFamily: 'monospace', fontSize: '10px' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 3px', textAlign: 'center', fontSize: '10px', color: '#000000' }}>
                                                     {item.material_code && item.material_code !== '0' ? item.material_code : '—'}
                                                 </td>
 
                                                 {/* 3. Description of Material */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: isChild ? '4px 6px 4px 14px' : '5px 6px' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: isChild ? '4px 6px 4px 14px' : '5px 6px', color: '#000000' }}>
                                                     {isSet ? (
                                                         <div>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
@@ -876,8 +877,9 @@ export default function PurchaseRequisitionPrintModal({
                                                                     style={{
                                                                         fontSize: '8px',
                                                                         fontWeight: 'bold',
-                                                                        color: '#ffffff',
-                                                                        backgroundColor: '#7c3aed',
+                                                                        color: '#000000',
+                                                                        backgroundColor: '#ffffff',
+                                                                        border: '1px solid #000000',
                                                                         borderRadius: '2px',
                                                                         padding: '1px 4px',
                                                                         textTransform: 'uppercase',
@@ -887,17 +889,17 @@ export default function PurchaseRequisitionPrintModal({
                                                                 >
                                                                     ITEM SET
                                                                 </span>
-                                                                <span style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25, color: '#111827' }}>
+                                                                <span style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25, color: '#000000' }}>
                                                                     {item.description}
                                                                 </span>
                                                             </div>
                                                             {item.item_note && (
-                                                                <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#444444', marginTop: '2px' }}>
+                                                                <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#000000', marginTop: '2px' }}>
                                                                     Note: {item.item_note}
                                                                 </div>
                                                             )}
                                                             {(item.cost_center || item.gl_account || item.material_group) && (
-                                                                <div style={{ fontSize: '9px', color: '#555555', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                                <div style={{ fontSize: '9px', color: '#000000', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                                     {item.cost_center && <span>CC: {item.cost_center}</span>}
                                                                     {item.gl_account && <span>GL: {item.gl_account}</span>}
                                                                     {item.material_group && <span>Grp: {item.material_group}</span>}
@@ -906,20 +908,20 @@ export default function PurchaseRequisitionPrintModal({
                                                         </div>
                                                     ) : isChild ? (
                                                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px' }}>
-                                                            <span style={{ color: '#4f46e5', fontWeight: 'bold', fontSize: '12px', lineHeight: 1.1, userSelect: 'none' }}>
+                                                            <span style={{ color: '#000000', fontWeight: 'bold', fontSize: '12px', lineHeight: 1.1, userSelect: 'none' }}>
                                                                 ↳
                                                             </span>
                                                             <div style={{ flex: 1 }}>
-                                                                <div style={{ fontWeight: 600, fontSize: '10.5px', lineHeight: 1.25, color: '#1f2937' }}>
+                                                                <div style={{ fontWeight: 600, fontSize: '10.5px', lineHeight: 1.25, color: '#000000' }}>
                                                                     {item.description}
                                                                 </div>
                                                                 {item.item_note && (
-                                                                    <div style={{ fontSize: '9px', fontStyle: 'italic', color: '#555555', marginTop: '1px' }}>
+                                                                    <div style={{ fontSize: '9px', fontStyle: 'italic', color: '#000000', marginTop: '1px' }}>
                                                                         Note: {item.item_note}
                                                                     </div>
                                                                 )}
                                                                 {(item.cost_center || item.gl_account || item.material_group) && (
-                                                                    <div style={{ fontSize: '8.5px', color: '#555555', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                                                    <div style={{ fontSize: '8.5px', color: '#000000', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                                                                         {item.cost_center && <span>CC: {item.cost_center}</span>}
                                                                         {item.gl_account && <span>GL: {item.gl_account}</span>}
                                                                         {item.material_group && <span>Grp: {item.material_group}</span>}
@@ -929,16 +931,16 @@ export default function PurchaseRequisitionPrintModal({
                                                         </div>
                                                     ) : (
                                                         <div>
-                                                            <div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25 }}>
+                                                            <div style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25, color: '#000000' }}>
                                                                 {item.description}
                                                             </div>
                                                             {item.item_note && (
-                                                                <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#333333', marginTop: '2px' }}>
+                                                                <div style={{ fontSize: '9.5px', fontStyle: 'italic', color: '#000000', marginTop: '2px' }}>
                                                                     Note: {item.item_note}
                                                                 </div>
                                                             )}
                                                             {(item.cost_center || item.gl_account || item.material_group) && (
-                                                                <div style={{ fontSize: '9px', color: '#444444', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                                <div style={{ fontSize: '9px', color: '#000000', marginTop: '2px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                                     {item.cost_center && <span>CC: {item.cost_center}</span>}
                                                                     {item.gl_account && <span>GL: {item.gl_account}</span>}
                                                                     {item.material_group && <span>Grp: {item.material_group}</span>}
@@ -949,17 +951,17 @@ export default function PurchaseRequisitionPrintModal({
                                                 </td>
 
                                                 {/* 4. Unit */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#000000' }}>
                                                     {isSet ? (item.unit_of_measure || 'SET') : (item.unit_of_measure || 'No.')}
                                                 </td>
 
                                                 {/* 5. Qty. Required */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', fontWeight: 'bold', color: '#000000' }}>
                                                     {isSet ? (
                                                         children.length > 0 ? (
                                                             <div>
                                                                 <span>{item.quantity ? item.quantity : '1'}</span>
-                                                                <div style={{ fontSize: '7.5px', color: '#6b21a8', fontWeight: 'normal' }}>
+                                                                <div style={{ fontSize: '7.5px', color: '#000000', fontWeight: 'normal' }}>
                                                                     ({children.length} item{children.length > 1 ? 's' : ''})
                                                                 </div>
                                                             </div>
@@ -972,23 +974,23 @@ export default function PurchaseRequisitionPrintModal({
                                                 </td>
 
                                                 {/* 6. App. Cost (Rs.) */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#000000' }}>
                                                     {isSet ? (
                                                         childrenCost > 0 ? (
                                                             <div>
-                                                                <div style={{ fontWeight: 'bold', color: '#6b21a8' }}>{formatCurrencyAmount(childrenCost)}</div>
-                                                                <div style={{ fontSize: '7.5px', color: '#6b21a8', fontStyle: 'italic' }}>Subtotal</div>
+                                                                <div style={{ fontWeight: 'bold', color: '#000000' }}>{formatCurrencyAmount(childrenCost)}</div>
+                                                                <div style={{ fontSize: '7.5px', color: '#000000', fontStyle: 'italic' }}>Subtotal</div>
                                                             </div>
                                                         ) : Number(itemCost) > 0 ? (
-                                                            <div style={{ fontWeight: 'bold' }}>{formatCurrencyAmount(itemCost)}</div>
+                                                            <div style={{ fontWeight: 'bold', color: '#000000' }}>{formatCurrencyAmount(itemCost)}</div>
                                                         ) : (
-                                                            <span style={{ color: '#888888' }}>—</span>
+                                                            <span style={{ color: '#000000' }}>—</span>
                                                         )
                                                     ) : (
                                                         <div>
-                                                            <div style={{ fontWeight: 'bold' }}>{formatCurrencyAmount(itemCost)}</div>
+                                                            <div style={{ fontWeight: 'bold', color: '#000000' }}>{formatCurrencyAmount(itemCost)}</div>
                                                             {hasUnitPrice && hasMultipleQty && (
-                                                                <div style={{ fontSize: '8.5px', color: '#555555', marginTop: '1px' }}>
+                                                                <div style={{ fontSize: '8.5px', color: '#000000', marginTop: '1px' }}>
                                                                     @ {formatCurrencyAmount(item.unit_price)}
                                                                 </div>
                                                             )}
@@ -997,24 +999,24 @@ export default function PurchaseRequisitionPrintModal({
                                                 </td>
 
                                                 {/* 7. Average Monthly Consumption */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#000000' }}>
                                                     {item.avg_monthly_consumption || 'NA'}
                                                 </td>
 
                                                 {/* 8. Present Stock: Indentor */}
-                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>
+                                                <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#000000' }}>
                                                     {item.indentor_stock || 'Nil'}
                                                 </td>
 
                                                 {/* 9. Present Stock: Stores */}
-                                                <td style={{ padding: '5px 2px', textAlign: 'center' }}>
+                                                <td style={{ padding: '5px 2px', textAlign: 'center', color: '#000000' }}>
                                                     {item.stores_stock || 'Nil'}
                                                 </td>
                                             </tr>
                                         );
                                     })
                                 ) : (
-                                    <tr style={{ borderBottom: '1px solid #000000', verticalAlign: 'top' }}>
+                                    <tr style={{ borderBottom: '1px solid #000000', verticalAlign: 'top', color: '#000000' }}>
                                         <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>1.</td>
                                         <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center' }}>—</td>
                                         <td style={{ borderRight: '1px solid #000000', padding: '5px 6px', fontStyle: 'italic' }}>{pr.description}</td>
@@ -1031,7 +1033,7 @@ export default function PurchaseRequisitionPrintModal({
                                 <tr style={{ height: `${spacerHeight}px`, verticalAlign: 'middle' }}>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
-                                    <td style={{ borderRight: '1px solid #000000', padding: '12px 8px', textAlign: 'center', fontStyle: 'italic', fontWeight: 600, fontSize: '11px', color: '#333333', letterSpacing: '0.3px' }}>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '12px 8px', textAlign: 'center', fontStyle: 'italic', fontWeight: 600, fontSize: '11px', color: '#000000', letterSpacing: '0.3px' }}>
                                         *** ({numberToWordCount(sortedItems.length || 1)}) ***
                                     </td>
                                     <td style={{ borderRight: '1px solid #000000' }}></td>
@@ -1043,7 +1045,7 @@ export default function PurchaseRequisitionPrintModal({
                                 </tr>
 
                                 {/* Total Summary Row */}
-                                <tr style={{ borderTop: '1px solid #000000', borderBottom: '1px solid #000000', fontWeight: 'bold', backgroundColor: '#fafafa', fontSize: '10px' }}>
+                                <tr style={{ borderTop: '1px solid #000000', borderBottom: '1px solid #000000', fontWeight: 'bold', backgroundColor: '#ffffff', fontSize: '10px', color: '#000000' }}>
                                     <td colSpan={4} style={{ borderRight: '1px solid #000000', padding: '5px 8px', textAlign: 'right', letterSpacing: '0.3px' }}>
                                         TOTAL:
                                     </td>
@@ -1053,9 +1055,9 @@ export default function PurchaseRequisitionPrintModal({
                                     <td style={{ borderRight: '1px solid #000000', padding: '5px 4px', textAlign: 'right', fontWeight: 'bold' }}>
                                         {formatCurrencyAmount(totalCalculatedCost)}
                                     </td>
-                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#888888' }}>—</td>
-                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#888888' }}>—</td>
-                                    <td style={{ padding: '5px 2px', textAlign: 'center', color: '#888888' }}>—</td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#000000' }}>—</td>
+                                    <td style={{ borderRight: '1px solid #000000', padding: '5px 2px', textAlign: 'center', color: '#000000' }}>—</td>
+                                    <td style={{ padding: '5px 2px', textAlign: 'center', color: '#000000' }}>—</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1106,7 +1108,7 @@ export default function PurchaseRequisitionPrintModal({
                         </table>
 
                         {/* Audit Verification Strip */}
-                        <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', color: '#555555', borderTop: '1px solid #e5e7eb', paddingTop: '3px' }}>
+                        <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', fontSize: '8.5px', color: '#000000', borderTop: '1px solid #000000', paddingTop: '3px' }}>
                             <div>APL PR Creation Portal • Ref: {pr.pr_number} • Date: {prDate}</div>
                             <div>Page 1 of 1 • Assam Petro-Chemicals Ltd. (A Govt. of Assam Undertaking)</div>
                         </div>

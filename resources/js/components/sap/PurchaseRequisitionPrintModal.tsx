@@ -873,7 +873,7 @@ export default function PurchaseRequisitionPrintModal({
                                                     {isSet ? (
                                                         <div>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-                                                                <span
+                                                                {/* <span
                                                                     style={{
                                                                         fontSize: '8px',
                                                                         fontWeight: 'bold',
@@ -888,7 +888,7 @@ export default function PurchaseRequisitionPrintModal({
                                                                     }}
                                                                 >
                                                                     ITEM SET
-                                                                </span>
+                                                                </span> */}
                                                                 <span style={{ fontWeight: 'bold', fontSize: '11px', lineHeight: 1.25, color: '#000000' }}>
                                                                     {item.description}
                                                                 </span>
@@ -908,9 +908,9 @@ export default function PurchaseRequisitionPrintModal({
                                                         </div>
                                                     ) : isChild ? (
                                                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px' }}>
-                                                            <span style={{ color: '#000000', fontWeight: 'bold', fontSize: '12px', lineHeight: 1.1, userSelect: 'none' }}>
+                                                            {/* <span style={{ color: '#000000', fontWeight: 'bold', fontSize: '12px', lineHeight: 1.1, userSelect: 'none' }}>
                                                                 ↳
-                                                            </span>
+                                                            </span> */}
                                                             <div style={{ flex: 1 }}>
                                                                 <div style={{ fontWeight: 600, fontSize: '10.5px', lineHeight: 1.25, color: '#000000' }}>
                                                                     {item.description}
